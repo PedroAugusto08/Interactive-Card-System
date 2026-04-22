@@ -1,0 +1,41 @@
+const { query } = require('./db');
+
+// Cria as tabelas basicas do projeto se ainda nao existirem.
+async function ensureSchema() {
+  // Usuarios da aplicacao.
+  await query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      username VARCHAR(50) NOT NULL UNIQUE,
+      email VARCHAR(120) NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  // Salas de partida.
+  await query(`
+    CREATE TABLE IF NOT EXISTS rooms (
+      id SERIAL PRIMARY KEY,
+      code VARCHAR(8) NOT NULL UNIQUE,
+      host_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      status VARCHAR(20) NOT NULL DEFAULT 'lobby',
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  // Relacao entre jogadores e salas.
+  await query(`
+    CREATE TABLE IF NOT EXISTS room_players (
+      room_id INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      selected_deck_id INTEGER,
+      is_ready BOOLEAN NOT NULL DEFAULT FALSE,
+      turn_order INTEGER,
+      joined_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (room_id, user_id)
+    );
+  `);
+}
+
+module.exports = { ensureSchema };
