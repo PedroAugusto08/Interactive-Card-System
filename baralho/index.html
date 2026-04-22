@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Acédia — Montador de Grimório</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <h1>Acédia</h1>
+      <p>Montagem de Deck, Compra e Exílio</p>
+    </header>
+
+    <main>
+      <section id="auth-screen" class="panel auth-panel active">
+        <h2>Login</h2>
+        <p class="panel-subtitle">Crie conta local ou entre com seus pontos atuais.</p>
+        <form id="auth-form" class="form-grid" autocomplete="off">
+          <label>
+            Usuário
+            <input id="username" type="text" minlength="3" required placeholder="Ex: errante_do_vazio" />
+          </label>
+          <label>
+            Senha
+            <input id="password" type="password" minlength="3" required placeholder="••••••" />
+          </label>
+          <div class="form-split">
+            <label>
+              Imo atual
+              <input id="imo-points" type="number" min="0" value="5" required />
+            </label>
+            <label>
+              Carne atual
+              <input id="carne-points" type="number" min="0" value="10" required />
+            </label>
+          </div>
+          <div class="form-actions">
+            <button id="btn-register" type="button" class="btn btn-secondary">Criar conta</button>
+            <button id="btn-login" type="submit" class="btn btn-primary">Entrar</button>
+          </div>
+        </form>
+        <p id="auth-feedback" class="feedback"></p>
+      </section>
+
+      <section id="main-screen" class="hidden">
+        <div class="topbar panel">
+          <div>
+            <h2>Grimório</h2>
+            <p id="welcome-text">Bem-vindo.</p>
+          </div>
+          <div class="topbar-points">
+            <span>Imo: <strong id="current-imo">0</strong></span>
+            <span>Carne: <strong id="current-carne">0</strong></span>
+          </div>
+          <div class="topbar-actions">
+            <button id="btn-reset-deck" class="btn btn-danger">Resetar deck</button>
+            <button id="btn-logout" class="btn btn-secondary">Sair</button>
+          </div>
+        </div>
+
+        <div class="grid-layout">
+          <section class="panel">
+            <h3>Cartas Base</h3>
+            <p class="panel-subtitle">Adicione cartas padrão ao grimório.</p>
+            <div id="base-cards" class="cards-grid"></div>
+          </section>
+
+          <section class="panel">
+            <h3>Cartas Imo Personalizadas</h3>
+            <p class="panel-subtitle">Crie cartas Imo com imagem, descrição e custo.</p>
+            <form id="imo-form" class="form-grid" autocomplete="off">
+              <label>
+                Nome
+                <input id="imo-name" type="text" maxlength="40" required placeholder="Ex: Fissura Carmesim" />
+              </label>
+              <label>
+                Custo de Imo
+                <input id="imo-cost" type="number" min="0" value="1" required />
+              </label>
+              <label>
+                Descrição
+                <textarea id="imo-description" maxlength="160" required placeholder="Descreva o efeito da carta..."></textarea>
+              </label>
+              <label>
+                Imagem da carta
+                <input id="imo-image" type="file" accept="image/*" required />
+              </label>
+              <button class="btn btn-accent" type="submit">Criar carta Imo</button>
+            </form>
+            <div id="imo-library" class="cards-grid"></div>
+          </section>
+
+          <section class="panel deck-panel">
+            <h3>Deck Atual</h3>
+            <p class="panel-subtitle">Clique para abrir modal; use os botões para ações.</p>
+            <div class="deck-stats">
+              <span id="deck-count">0 cartas</span>
+              <span id="deck-rule" class="rule-badge">Mínimo 15 / Máximo 25</span>
+            </div>
+            <div id="deck-cards" class="cards-grid"></div>
+            <p id="deck-feedback" class="feedback"></p>
+          </section>
+        </div>
+
+        <section class="panel draw-panel">
+          <div class="draw-header">
+            <div>
+              <h3>Compra e Exílio</h3>
+              <p class="panel-subtitle">Simule apenas compra de cartas e movimentação para exílio.</p>
+            </div>
+            <div class="draw-actions">
+              <button id="btn-start-draw" class="btn btn-primary">Iniciar simulação</button>
+              <button id="btn-draw-one" class="btn btn-secondary">Comprar 1</button>
+              <button id="btn-draw-three" class="btn btn-secondary">Comprar 3</button>
+            </div>
+          </div>
+
+          <div class="draw-board">
+            <div class="draw-column">
+              <h4>Baralho de compra</h4>
+              <div id="draw-pile" class="pile-card">0</div>
+            </div>
+            <div class="draw-column">
+              <h4>Mão</h4>
+              <div id="hand-cards" class="cards-grid"></div>
+            </div>
+            <div class="draw-column">
+              <h4>Exílio</h4>
+              <div id="exile-cards" class="cards-grid mini"></div>
+            </div>
+          </div>
+
+          <p id="draw-feedback" class="feedback"></p>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <template id="card-template">
+    <article class="card">
+      <img class="card-image" alt="Arte da carta" loading="lazy" />
+      <div class="card-top">
+        <h5 class="card-name"></h5>
+        <span class="card-type"></span>
+      </div>
+      <p class="card-description"></p>
+      <div class="card-actions"></div>
+    </article>
+  </template>
+
+  <div id="card-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-card-name">
+    <div class="modal-backdrop" id="modal-close-area"></div>
+    <div class="modal-content panel">
+      <button id="modal-close" class="btn btn-secondary modal-close" type="button">Fechar</button>
+      <img id="modal-card-image" class="modal-card-image" alt="Imagem ampliada da carta" />
+      <div class="modal-card-info">
+        <h3 id="modal-card-name"></h3>
+        <p id="modal-card-type" class="panel-subtitle"></p>
+        <p id="modal-card-description"></p>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
