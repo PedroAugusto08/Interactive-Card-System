@@ -12,6 +12,11 @@ const roomIdParamSchema = z.object({
   roomId: z.coerce.number().int().positive(),
 });
 
+// Valida o payload para sair de uma sala por id.
+const leaveRoomSchema = z.object({
+  roomId: z.coerce.number().int().positive(),
+});
+
 // Cria sala e adiciona o host como primeiro jogador.
 async function createRoom(req, res) {
   const data = await roomService.createRoomForHost(req.user.id);
@@ -29,10 +34,24 @@ async function joinRoom(req, res) {
   return res.status(200).json(data);
 }
 
+// Sai da sala informando o roomId.
+async function leaveRoom(req, res) {
+  const payload = leaveRoomSchema.parse(req.body);
+  const data = await roomService.leaveRoom({
+    roomId: payload.roomId,
+    userId: req.user.id,
+  });
+
+  return res.status(200).json(data);
+}
+
 // Lista os jogadores atuais da sala.
 async function listPlayers(req, res) {
   const { roomId } = roomIdParamSchema.parse(req.params);
-  const data = await roomService.getRoomPlayers(roomId);
+  const data = await roomService.getRoomPlayers({
+    roomId,
+    userId: req.user.id,
+  });
 
   return res.status(200).json(data);
 }
@@ -40,5 +59,6 @@ async function listPlayers(req, res) {
 module.exports = {
   createRoom,
   joinRoom,
+  leaveRoom,
   listPlayers,
 };

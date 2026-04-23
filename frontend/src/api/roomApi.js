@@ -2,7 +2,7 @@ import { request } from './httpClient';
 
 // Chamadas HTTP relacionadas a salas.
 export const roomApi = {
-  createRoom: (token) =>
+  createRoom: ({ token }) =>
     request('/rooms', {
       method: 'POST',
       token,
@@ -13,6 +13,13 @@ export const roomApi = {
       method: 'POST',
       token,
       body: { code },
+    }),
+
+  leaveRoom: ({ roomId, token }) =>
+    request('/rooms/leave', {
+      method: 'POST',
+      token,
+      body: { roomId },
     }),
 
   listPlayers: ({ roomId, token }) => request(`/rooms/${roomId}/players`, { token }),

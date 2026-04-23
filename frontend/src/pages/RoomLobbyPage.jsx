@@ -12,9 +12,9 @@ export function RoomLobbyPage() {
   const currentRoom = useRoomStore((state) => state.currentRoom);
   const players = useRoomStore((state) => state.players);
   const setRoomData = useRoomStore((state) => state.setRoomData);
+  const clearRoom = useRoomStore((state) => state.clearRoom);
 
   const [joinCode, setJoinCode] = useState('');
-  const [roomIdInput, setRoomIdInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -26,9 +26,8 @@ export function RoomLobbyPage() {
     setStatusMessage('');
 
     try {
-      const response = await roomApi.createRoom(token);
+      const response = await roomApi.createRoom({ token });
       setRoomData(response);
-      setRoomIdInput(String(response.room.id));
       setStatusMessage(`Sala criada com codigo ${response.room.code}.`);
     } catch (error) {
       setErrorMessage(formatErrorMessage(error));
@@ -56,11 +55,33 @@ export function RoomLobbyPage() {
     }
   }
 
+  // Sai da sala atual usando contrato HTTP.
+  async function handleLeaveRoom() {
+    if (!currentRoom?.id) {
+      setErrorMessage('Nao existe sala ativa para sair.');
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMessage('');
+    setStatusMessage('');
+
+    try {
+      await roomApi.leaveRoom({ roomId: currentRoom.id, token });
+      clearRoom();
+      setStatusMessage('Voce saiu da sala atual.');
+    } catch (error) {
+      setErrorMessage(formatErrorMessage(error));
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   // Busca lista de jogadores da sala pelo id.
   async function handleListPlayers() {
-    const roomId = Number(roomIdInput || currentRoom?.id);
+    const roomId = Number(currentRoom?.id);
     if (!roomId) {
-      setErrorMessage('Informe um roomId valido para listar jogadores.');
+      setErrorMessage('Entre em uma sala para listar jogadores.');
       return;
     }
 
@@ -90,13 +111,9 @@ export function RoomLobbyPage() {
             Criar sala
           </button>
 
-          <input
-            type="number"
-            min="1"
-            placeholder="roomId"
-            value={roomIdInput}
-            onChange={(event) => setRoomIdInput(event.target.value)}
-          />
+          <button className="ghost-btn" onClick={handleLeaveRoom} disabled={isLoading || !currentRoom}>
+            Sair da sala
+          </button>
 
           <button className="ghost-btn" onClick={handleListPlayers} disabled={isLoading}>
             Listar jogadores

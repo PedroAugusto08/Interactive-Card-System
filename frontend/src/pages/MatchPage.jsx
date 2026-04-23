@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 
+import { roomApi } from '../api/roomApi';
 import { useSocket } from '../hooks/useSocket';
 import { useAuthStore } from '../stores/authStore';
 import { useRoomStore } from '../stores/roomStore';
+import { formatErrorMessage } from '../utils/formatError';
 
 // Tela base de partida em tempo real via Socket.IO.
 export function MatchPage() {
@@ -12,12 +14,20 @@ export function MatchPage() {
   const currentRoom = useRoomStore((state) => state.currentRoom);
   const players = useRoomStore((state) => state.players);
   const setRoomData = useRoomStore((state) => state.setRoomData);
+  const clearRoom = useRoomStore((state) => state.clearRoom);
 
   const socket = useSocket(token);
 
   const [roomCode, setRoomCode] = useState('');
   const [matchState, setMatchState] = useState(null);
   const [logItems, setLogItems] = useState([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const isSocketConnected = Boolean(socket?.connected);
+
+  function appendLocalLog(payload) {
+    setLogItems((previous) => [payload, ...previous].slice(0, 40));
+  }
 
   // Mensagem simples de status do socket para tela.
   const socketStatus = useMemo(() => {
@@ -58,26 +68,134 @@ export function MatchPage() {
   }, [socket, setRoomData]);
 
   // Dispara evento para entrar em sala via websocket.
-  function handleSocketJoin(event) {
+  async function handleSocketJoin(event) {
     event.preventDefault();
-    if (!socket) {
+    const code = roomCode.trim().toUpperCase();
+    if (!code) {
       return;
     }
 
-    socket.emit('room:join', {
-      code: roomCode.trim().toUpperCase(),
-    });
+    if (isSocketConnected) {
+      socket.emit('room:join', { code });
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const data = await roomApi.joinRoom({ code, token });
+      setRoomData(data);
+      setMatchState({
+        roomId: data.room.id,
+        currentTurnPlayerId: null,
+        round: 1,
+        players: data.players,
+      });
+
+      appendLocalLog({
+        type: 'ROOM_JOIN_HTTP',
+        message: `Entrou na sala ${data.room.code} via HTTP fallback.`,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      appendLocalLog({
+        type: 'ERROR',
+        message: formatErrorMessage(error),
+        timestamp: new Date().toISOString(),
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   // Dispara evento para sair da sala atual.
-  function handleSocketLeave() {
-    if (!socket || !currentRoom?.id) {
+  async function handleSocketLeave() {
+    if (!currentRoom?.id) {
       return;
     }
 
-    socket.emit('room:leave', {
-      roomId: currentRoom.id,
-    });
+    if (isSocketConnected) {
+      socket.emit('room:leave', {
+        roomId: currentRoom.id,
+      });
+
+      clearRoom();
+      setMatchState(null);
+
+      appendLocalLog({
+        type: 'ROOM_LEAVE_SOCKET',
+        message: 'Saida de sala enviada via socket.',
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      await roomApi.leaveRoom({ roomId: currentRoom.id, token });
+      clearRoom();
+      setMatchState(null);
+
+      appendLocalLog({
+        type: 'ROOM_LEAVE_HTTP',
+        message: 'Voce saiu da sala via HTTP fallback.',
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      appendLocalLog({
+        type: 'ERROR',
+        message: formatErrorMessage(error),
+        timestamp: new Date().toISOString(),
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  // Atualiza jogadores manualmente via API HTTP quando necessario.
+  async function handleRefreshPlayers() {
+    if (!currentRoom?.id) {
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const data = await roomApi.listPlayers({ roomId: currentRoom.id, token });
+      setRoomData(data);
+
+      setMatchState((previous) => {
+        if (!previous) {
+          return {
+            roomId: data.room.id,
+            currentTurnPlayerId: null,
+            round: 1,
+            players: data.players,
+          };
+        }
+
+        return {
+          ...previous,
+          roomId: data.room.id,
+          players: data.players,
+        };
+      });
+
+      appendLocalLog({
+        type: 'ROOM_PLAYERS_REFRESH_HTTP',
+        message: `Jogadores da sala ${data.room.code} atualizados via HTTP.`,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      appendLocalLog({
+        type: 'ERROR',
+        message: formatErrorMessage(error),
+        timestamp: new Date().toISOString(),
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -86,6 +204,11 @@ export function MatchPage() {
         <h1>Match</h1>
         <p>
           Usuario: <strong>{user?.username}</strong> | Socket: <strong>{socketStatus}</strong>
+        </p>
+        <p className="muted-text compact">
+          {isSocketConnected
+            ? 'Eventos em tempo real ativos via Socket.IO.'
+            : 'Socket indisponivel: usando fallback HTTP para entrar/sair da sala.'}
         </p>
 
         <form className="row-wrap" onSubmit={handleSocketJoin}>
@@ -97,12 +220,26 @@ export function MatchPage() {
             required
           />
 
-          <button className="solid-btn" type="submit" disabled={!socket}>
-            Entrar via socket
+          <button className="solid-btn" type="submit" disabled={isSubmitting}>
+            {isSocketConnected ? 'Entrar via socket' : 'Entrar via HTTP'}
           </button>
 
-          <button className="ghost-btn" type="button" onClick={handleSocketLeave}>
+          <button
+            className="ghost-btn"
+            type="button"
+            onClick={handleSocketLeave}
+            disabled={isSubmitting || !currentRoom}
+          >
             Sair da sala
+          </button>
+
+          <button
+            className="ghost-btn"
+            type="button"
+            onClick={handleRefreshPlayers}
+            disabled={isSubmitting || !currentRoom}
+          >
+            Atualizar jogadores (HTTP)
           </button>
         </form>
       </article>

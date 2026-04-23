@@ -64,10 +64,16 @@ async function leaveRoom({ roomId, userId }) {
 }
 
 // Busca estado atual da sala + jogadores.
-async function getRoomPlayers(roomId) {
+async function getRoomPlayers({ roomId, userId }) {
   const room = await findRoomById(roomId);
   if (!room) {
     throw new AppError('Sala nao encontrada.', 404);
+  }
+
+  // Apenas jogadores da sala podem consultar seus participantes.
+  const alreadyInRoom = await isPlayerInRoom({ roomId, userId });
+  if (!alreadyInRoom) {
+    throw new AppError('Voce nao pertence a esta sala.', 403);
   }
 
   const players = await listRoomPlayers(roomId);
