@@ -2,27 +2,45 @@ const { z } = require('zod');
 
 const deckService = require('../services/deckService');
 
-// Valida cards como lista generica de objetos ou strings.
-const cardsSchema = z.array(z.union([z.string(), z.record(z.any())])).default([]);
+// Valida cada carta do deck com id e quantidade.
+const cardEntrySchema = z.object({
+  cardId: z.string().trim().min(1),
+  quantity: z.coerce.number().int().positive(),
+});
+
+// Valida lista de cartas do baralho.
+const cardsSchema = z.array(cardEntrySchema).min(1);
 
 // Valida payload de criacao de deck.
 const createDeckSchema = z.object({
   name: z.string().trim().min(2).max(80),
   description: z.string().trim().max(500).optional(),
-  cards: cardsSchema.optional(),
+  cards: cardsSchema,
 });
 
 // Valida payload de atualizacao de deck.
 const updateDeckSchema = z.object({
   name: z.string().trim().min(2).max(80),
   description: z.string().trim().max(500).optional(),
-  cards: cardsSchema.optional(),
+  cards: cardsSchema,
 });
 
 // Valida id de deck na URL.
 const deckIdParamSchema = z.object({
   deckId: z.coerce.number().int().positive(),
 });
+
+// Retorna regras do sistema de baralho.
+async function getDeckRules(req, res) {
+  const rules = deckService.getDeckRules();
+  return res.status(200).json({ rules });
+}
+
+// Retorna catalogo oficial de cartas.
+async function getDeckCatalog(req, res) {
+  const catalog = deckService.getDeckCatalog();
+  return res.status(200).json({ catalog });
+}
 
 // Cria deck do usuario autenticado.
 async function createDeck(req, res) {
@@ -82,6 +100,8 @@ async function deleteDeck(req, res) {
 }
 
 module.exports = {
+  getDeckRules,
+  getDeckCatalog,
   createDeck,
   listDecks,
   getDeckById,

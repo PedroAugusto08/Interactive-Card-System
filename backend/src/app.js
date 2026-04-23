@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const path = require('path');
 
 const { env } = require('./config/env');
 const { healthRoutes } = require('./routes/healthRoutes');
@@ -26,6 +27,9 @@ function createApp() {
   app.use(helmet());
   app.use(morgan('dev'));
   app.use(express.json());
+
+  // Expoe imagens das cartas armazenadas na raiz do workspace.
+  app.use('/cartas', express.static(path.resolve(__dirname, '../../cartas')));
 
   // Rotas principais da API.
   app.use('/api/health', healthRoutes);

@@ -10,6 +10,8 @@ const router = Router();
 router.use(requireAuth);
 
 // CRUD de decks do usuario autenticado.
+router.get('/rules', asyncHandler(deckController.getDeckRules));
+router.get('/catalog', asyncHandler(deckController.getDeckCatalog));
 router.post('/', asyncHandler(deckController.createDeck));
 router.get('/', asyncHandler(deckController.listDecks));
 router.get('/:deckId', asyncHandler(deckController.getDeckById));
