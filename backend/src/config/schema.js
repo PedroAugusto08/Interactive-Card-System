@@ -24,6 +24,19 @@ async function ensureSchema() {
     );
   `);
 
+  // Decks de cada jogador.
+  await query(`
+    CREATE TABLE IF NOT EXISTS decks (
+      id SERIAL PRIMARY KEY,
+      owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name VARCHAR(80) NOT NULL,
+      description TEXT,
+      cards_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
   // Relacao entre jogadores e salas.
   await query(`
     CREATE TABLE IF NOT EXISTS room_players (
