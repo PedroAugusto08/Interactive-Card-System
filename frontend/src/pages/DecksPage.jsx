@@ -12,12 +12,36 @@ import { useAuthStore } from '../stores/authStore';
 import { formatErrorMessage } from '../utils/formatError';
 
 const CATEGORY_LABEL = {
-  fixed: 'Fixa',
+  fixed: 'Fixas',
   division: 'Divisao',
   imo: 'Imo',
 };
 
+const DEFAULT_SECTION_STATE = {
+  fixed: true,
+  division: true,
+  imo: true,
+};
+
 const CATEGORY_ORDER = ['fixed', 'division', 'imo'];
+const DEFAULT_IMO_IMAGE =
+  'data:image/svg+xml;utf8,' +
+  encodeURIComponent(`
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 420">
+      <defs>
+        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#22183f"/>
+          <stop offset="100%" stop-color="#0e1420"/>
+        </linearGradient>
+      </defs>
+      <rect width="300" height="420" rx="28" fill="url(#bg)"/>
+      <circle cx="150" cy="138" r="74" fill="rgba(124,92,255,0.22)" stroke="rgba(245,197,66,0.42)" stroke-width="3"/>
+      <path d="M150 92 L165 140 L215 140 L174 170 L189 220 L150 190 L111 220 L126 170 L85 140 L135 140 Z" fill="#f5c542"/>
+      <text x="150" y="302" text-anchor="middle" fill="#E6EAF2" font-size="24" font-family="Inter, sans-serif">Carta Imo</text>
+      <text x="150" y="334" text-anchor="middle" fill="#AAB2C5" font-size="14" font-family="Inter, sans-serif">Personalizada</text>
+    </svg>
+  `);
+
 const API_ORIGIN = (import.meta.env.VITE_API_URL || 'http://localhost:3001/api').replace(/\/api\/?$/, '');
 const CARDS_BASE_URL = (import.meta.env.VITE_SOCKET_URL || API_ORIGIN).replace(/\/$/, '');
 
@@ -26,7 +50,7 @@ function resolveCardImageUrl(imagePath) {
     return '';
   }
 
-  if (/^https?:\/\//i.test(imagePath)) {
+  if (/^(https?:\/\/|data:)/i.test(imagePath)) {
     return imagePath;
   }
 
@@ -104,6 +128,16 @@ function getCategoryRuleLabel(category, rules) {
   return `${rules.imoMinCards} a ${rules.imoMaxCards}`;
 }
 
+function buildDefaultImoForm() {
+  return {
+    name: '',
+    description: '',
+    maxCopies: 1,
+    imoCost: 1,
+    imagePreview: DEFAULT_IMO_IMAGE,
+  };
+}
+
 export function DecksPage() {
   const token = useAuthStore((state) => state.token);
 
@@ -116,6 +150,9 @@ export function DecksPage() {
   const [description, setDescription] = useState('');
   const [draftQuantities, setDraftQuantities] = useState({});
   const [previewCard, setPreviewCard] = useState(null);
+  const [customImoCards, setCustomImoCards] = useState([]);
+  const [imoForm, setImoForm] = useState(buildDefaultImoForm);
+  const [openSections, setOpenSections] = useState(DEFAULT_SECTION_STATE);
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -125,6 +162,13 @@ export function DecksPage() {
   const catalogMap = useMemo(() => new Map(catalog.map((card) => [card.id, card])), [catalog]);
   const draftSummary = useMemo(() => buildSummary(draftQuantities, catalogMap), [draftQuantities, catalogMap]);
   const selectedDeck = useMemo(() => decks.find((deck) => deck.id === selectedDeckId) || null, [decks, selectedDeckId]);
+
+  const groupedCatalog = useMemo(() => {
+    return CATEGORY_ORDER.reduce((accumulator, category) => {
+      accumulator[category] = catalog.filter((card) => card.category === category);
+      return accumulator;
+    }, {});
+  }, [catalog]);
 
   function applyDeckToForm(deck) {
     setSelectedDeckId(deck?.id || null);
@@ -210,6 +254,60 @@ export function DecksPage() {
 
   function handleClosePreview() {
     setPreviewCard(null);
+  }
+
+  function handleToggleSection(category) {
+    setOpenSections((previous) => ({
+      ...previous,
+      [category]: !previous[category],
+    }));
+  }
+
+  function handleImoFormChange(field, value) {
+    setImoForm((previous) => ({
+      ...previous,
+      [field]: value,
+    }));
+  }
+
+  function handleImoImageChange(event) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setImoForm((previous) => ({
+        ...previous,
+        imagePreview: typeof reader.result === 'string' ? reader.result : DEFAULT_IMO_IMAGE,
+      }));
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function handleCreateImoCard(event) {
+    event.preventDefault();
+
+    const nextIndex = customImoCards.length + 1;
+    const parsedMaxCopies = Number(imoForm.maxCopies);
+    const parsedImoCost = Number(imoForm.imoCost);
+
+    const customCard = {
+      id: `custom_imo_${Date.now()}`,
+      name: imoForm.name.trim() || `Carta Imo ${nextIndex}`,
+      category: 'imo',
+      maxCopies: Number.isInteger(parsedMaxCopies) ? Math.max(1, parsedMaxCopies) : 1,
+      imoCost: Number.isInteger(parsedImoCost) ? Math.max(0, parsedImoCost) : 0,
+      effect: imoForm.description.trim() || 'Carta Imo personalizada criada pelo jogador.',
+      imagePath: imoForm.imagePreview || DEFAULT_IMO_IMAGE,
+      isCustom: true,
+    };
+
+    setCustomImoCards((previous) => [customCard, ...previous]);
+    setImoForm(buildDefaultImoForm());
+    setStatusMessage(`Carta Imo ${customCard.name} criada no catalogo local.`);
+    setErrorMessage('');
   }
 
   async function handleSaveDeck(event) {
@@ -345,32 +443,160 @@ export function DecksPage() {
             </form>
           </Card>
 
-          <Card description="Selecione as quantidades com feedback visual imediato." title="Catalogo de cartas">
-            <div className="deck-catalog-grid">
-              {catalog.map((card) => (
-                <CardItem
-                  category={CATEGORY_LABEL[card.category]}
-                  description={card.effect}
-                  footer={
-                    <Input
-                      inputClassName="compact"
-                      label="Quantidade"
-                      max={card.maxCopies}
-                      min="0"
-                      onChange={(event) => handleQuantityChange(card.id, event.target.value)}
-                      type="number"
-                      value={draftQuantities[card.id] ?? 0}
-                    />
-                  }
-                  imageSrc={resolveCardImageUrl(card.imagePath)}
-                  key={card.id}
-                  maxCopies={card.maxCopies}
-                  name={card.name}
-                  onClick={() => handlePreviewCard(card)}
-                  selected={Number(draftQuantities[card.id] ?? 0) > 0}
-                  showDescription={false}
-                />
-              ))}
+          <Card title="Catalogo de cartas">
+            <div className="catalog-sections">
+              {CATEGORY_ORDER.map((category) => {
+                const isOpen = openSections[category];
+
+                return (
+                  <section className="catalog-section" key={category}>
+                    <button
+                      aria-expanded={isOpen}
+                      className="catalog-section__toggle"
+                      onClick={() => handleToggleSection(category)}
+                      type="button"
+                    >
+                      <div className="catalog-section__toggle-left">
+                        <h2 className="catalog-section__title">{CATEGORY_LABEL[category]}</h2>
+                      </div>
+                      <span className={['catalog-section__chevron', isOpen ? 'is-open' : ''].join(' ')}>
+                        ▾
+                      </span>
+                    </button>
+
+                    {isOpen ? (
+                      <>
+                        {category === 'imo' ? (
+                          <div className="imo-creator-layout">
+                            <Card
+                              compact
+                              description="Crie uma carta Imo personalizada com imagem, descricao, custo e limite de copias."
+                              title="Criar carta Imo"
+                            >
+                              <form className="stack-gap" onSubmit={handleCreateImoCard}>
+                                <Input
+                                  label="Nome da carta (opcional)"
+                                  onChange={(event) => handleImoFormChange('name', event.target.value)}
+                                  placeholder="Ex.: Ritual de Eclipse"
+                                  value={imoForm.name}
+                                />
+
+                                <div className="deck-meta-grid">
+                                  <Input
+                                    description="Limite de copias por deck."
+                                    label="Maximo de copias"
+                                    max="5"
+                                    min="1"
+                                    onChange={(event) => handleImoFormChange('maxCopies', event.target.value)}
+                                    type="number"
+                                    value={imoForm.maxCopies}
+                                  />
+
+                                  <Input
+                                    description="Custo inicial de Imo da carta."
+                                    label="Custo de Imo"
+                                    min="0"
+                                    onChange={(event) => handleImoFormChange('imoCost', event.target.value)}
+                                    type="number"
+                                    value={imoForm.imoCost}
+                                  />
+                                </div>
+
+                                <Input
+                                  description="Descricao completa da carta."
+                                  label="Descricao"
+                                  multiline
+                                  onChange={(event) => handleImoFormChange('description', event.target.value)}
+                                  placeholder="Explique o efeito, custo e comportamento da carta."
+                                  rows={4}
+                                  value={imoForm.description}
+                                />
+
+                                <label className="ui-input">
+                                  <span className="ui-input__label">Imagem da carta</span>
+                                  <input accept="image/*" className="ui-input__field" onChange={handleImoImageChange} type="file" />
+                                  <span className="ui-input__description">Upload local para preview da carta Imo.</span>
+                                </label>
+
+                                <Button type="submit">Criar carta Imo</Button>
+                              </form>
+                            </Card>
+
+                            <Card compact description="Preview da proxima carta Imo antes de adicionar." title="Preview Imo">
+                              <CardItem
+                                category="Imo"
+                                description={imoForm.description || 'A descricao completa da carta Imo aparecera aqui.'}
+                                imageSrc={resolveCardImageUrl(imoForm.imagePreview)}
+                                maxCopies={Number(imoForm.maxCopies) || 1}
+                                name={imoForm.name.trim() || 'Carta Imo em criacao'}
+                                showDescription={false}
+                              />
+
+                              <div className="row-wrap">
+                                <Badge tone="accent">Custo Imo {Number(imoForm.imoCost) || 0}</Badge>
+                                <Badge tone="secondary">Rascunho</Badge>
+                              </div>
+                            </Card>
+                          </div>
+                        ) : null}
+
+                        <div className="deck-catalog-grid">
+                          {groupedCatalog[category]?.map((card) => (
+                            <CardItem
+                              category={CATEGORY_LABEL[card.category]}
+                              description={card.effect}
+                              footer={
+                                <Input
+                                  inputClassName="compact"
+                                  label="Quantidade"
+                                  max={card.maxCopies}
+                                  min="0"
+                                  onChange={(event) => handleQuantityChange(card.id, event.target.value)}
+                                  type="number"
+                                  value={draftQuantities[card.id] ?? 0}
+                                />
+                              }
+                              imageSrc={resolveCardImageUrl(card.imagePath)}
+                              key={card.id}
+                              maxCopies={card.maxCopies}
+                              name={card.name}
+                              onClick={() => handlePreviewCard(card)}
+                              selected={Number(draftQuantities[card.id] ?? 0) > 0}
+                              showDescription={false}
+                            />
+                          ))}
+
+                          {category === 'imo' &&
+                            customImoCards.map((card) => (
+                              <CardItem
+                                category="Imo"
+                                description={card.effect}
+                                footer={
+                                  <div className="stack-gap" style={{ gap: '8px' }}>
+                                    <Badge tone="accent">Custo Imo {card.imoCost}</Badge>
+                                    <Badge tone="secondary">Rascunho local</Badge>
+                                  </div>
+                                }
+                                imageSrc={resolveCardImageUrl(card.imagePath)}
+                                key={card.id}
+                                maxCopies={card.maxCopies}
+                                name={card.name}
+                                onClick={() => handlePreviewCard(card)}
+                                showDescription={false}
+                              />
+                            ))}
+                        </div>
+
+                        {category === 'imo' && !customImoCards.length ? (
+                          <div className="empty-state">
+                            Nenhuma carta Imo personalizada criada ainda. Use o formulario acima para adicionar a primeira.
+                          </div>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </section>
+                );
+              })}
             </div>
           </Card>
         </div>
@@ -416,8 +642,10 @@ export function DecksPage() {
             </div>
 
             <div className="row-wrap game-card__badges">
-              <Badge tone="secondary">{CATEGORY_LABEL[previewCard.category]}</Badge>
+              <Badge tone="secondary">{CATEGORY_LABEL[previewCard.category] || 'Imo'}</Badge>
               <Badge tone="accent">Max {previewCard.maxCopies}</Badge>
+              {previewCard.imoCost !== undefined ? <Badge tone="accent">Custo Imo {previewCard.imoCost}</Badge> : null}
+              {previewCard.isCustom ? <Badge tone="primary">Customizada</Badge> : null}
             </div>
           </div>
         ) : null}
