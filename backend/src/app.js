@@ -24,7 +24,12 @@ function createApp() {
   );
 
   // Middlewares base de seguranca, logs e parse JSON.
-  app.use(helmet());
+  app.use(
+    helmet({
+      // Permite que o frontend em outra origem carregue imagens estaticas de /cartas.
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+    })
+  );
   app.use(morgan('dev'));
   app.use(express.json());
 

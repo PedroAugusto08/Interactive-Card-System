@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 
+import { CardItem } from '../components/system/CardItem';
+import { DeckCardRow } from '../components/system/DeckCardRow';
+import { Badge } from '../components/ui/Badge';
+import { Button } from '../components/ui/Button';
+import { Card } from '../components/ui/Card';
+import { Input } from '../components/ui/Input';
+import { Modal } from '../components/ui/Modal';
 import { deckApi } from '../api/deckApi';
 import { useAuthStore } from '../stores/authStore';
 import { formatErrorMessage } from '../utils/formatError';
@@ -11,7 +18,21 @@ const CATEGORY_LABEL = {
 };
 
 const CATEGORY_ORDER = ['fixed', 'division', 'imo'];
-const CARDS_BASE_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
+const API_ORIGIN = (import.meta.env.VITE_API_URL || 'http://localhost:3001/api').replace(/\/api\/?$/, '');
+const CARDS_BASE_URL = (import.meta.env.VITE_SOCKET_URL || API_ORIGIN).replace(/\/$/, '');
+
+function resolveCardImageUrl(imagePath) {
+  if (!imagePath) {
+    return '';
+  }
+
+  if (/^https?:\/\//i.test(imagePath)) {
+    return imagePath;
+  }
+
+  const normalizedPath = imagePath.startsWith('/') ? imagePath : `/${imagePath}`;
+  return `${CARDS_BASE_URL}${normalizedPath}`;
+}
 
 function buildEmptyDraft(catalog) {
   return catalog.reduce((accumulator, card) => {
@@ -83,7 +104,6 @@ function getCategoryRuleLabel(category, rules) {
   return `${rules.imoMinCards} a ${rules.imoMaxCards}`;
 }
 
-// Tela de construcao e CRUD de baralho usando o catalogo oficial do backend.
 export function DecksPage() {
   const token = useAuthStore((state) => state.token);
 
@@ -95,23 +115,16 @@ export function DecksPage() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [draftQuantities, setDraftQuantities] = useState({});
+  const [previewCard, setPreviewCard] = useState(null);
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
-  const catalogMap = useMemo(() => {
-    return new Map(catalog.map((card) => [card.id, card]));
-  }, [catalog]);
-
-  const draftSummary = useMemo(() => {
-    return buildSummary(draftQuantities, catalogMap);
-  }, [draftQuantities, catalogMap]);
-
-  const selectedDeck = useMemo(() => {
-    return decks.find((deck) => deck.id === selectedDeckId) || null;
-  }, [decks, selectedDeckId]);
+  const catalogMap = useMemo(() => new Map(catalog.map((card) => [card.id, card])), [catalog]);
+  const draftSummary = useMemo(() => buildSummary(draftQuantities, catalogMap), [draftQuantities, catalogMap]);
+  const selectedDeck = useMemo(() => decks.find((deck) => deck.id === selectedDeckId) || null, [decks, selectedDeckId]);
 
   function applyDeckToForm(deck) {
     setSelectedDeckId(deck?.id || null);
@@ -127,31 +140,48 @@ export function DecksPage() {
     setDraftQuantities(buildEmptyDraft(catalog));
   }
 
-  async function loadDeckModuleData() {
-    setIsLoading(true);
-    setErrorMessage('');
-
-    try {
-      const [rulesResponse, catalogResponse, decksResponse] = await Promise.all([
-        deckApi.getRules({ token }),
-        deckApi.getCatalog({ token }),
-        deckApi.listDecks({ token }),
-      ]);
-
-      setRules(rulesResponse.rules);
-      setCatalog(catalogResponse.catalog);
-      setDecks(decksResponse.decks);
-      setDraftQuantities(buildEmptyDraft(catalogResponse.catalog));
-    } catch (error) {
-      setErrorMessage(formatErrorMessage(error));
-    } finally {
-      setIsLoading(false);
-    }
+  async function refreshDecks() {
+    const listResponse = await deckApi.listDecks({ token });
+    setDecks(listResponse.decks);
+    return listResponse.decks;
   }
 
   useEffect(() => {
-    loadDeckModuleData();
-  }, []);
+    let isMounted = true;
+
+    async function loadInitialData() {
+      try {
+        const [rulesResponse, catalogResponse, decksResponse] = await Promise.all([
+          deckApi.getRules({ token }),
+          deckApi.getCatalog({ token }),
+          deckApi.listDecks({ token }),
+        ]);
+
+        if (!isMounted) {
+          return;
+        }
+
+        setRules(rulesResponse.rules);
+        setCatalog(catalogResponse.catalog);
+        setDecks(decksResponse.decks);
+        setDraftQuantities(buildEmptyDraft(catalogResponse.catalog));
+      } catch (error) {
+        if (isMounted) {
+          setErrorMessage(formatErrorMessage(error));
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    loadInitialData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [token]);
 
   function handleQuantityChange(cardId, rawValue) {
     const card = catalogMap.get(cardId);
@@ -160,9 +190,7 @@ export function DecksPage() {
     }
 
     const parsedValue = Number(rawValue);
-    const safeValue = Number.isInteger(parsedValue)
-      ? Math.max(0, Math.min(parsedValue, card.maxCopies))
-      : 0;
+    const safeValue = Number.isInteger(parsedValue) ? Math.max(0, Math.min(parsedValue, card.maxCopies)) : 0;
 
     setDraftQuantities((previous) => ({
       ...previous,
@@ -176,9 +204,16 @@ export function DecksPage() {
     setStatusMessage(`Deck ${deck.name} carregado para edicao.`);
   }
 
+  function handlePreviewCard(card) {
+    setPreviewCard(card);
+  }
+
+  function handleClosePreview() {
+    setPreviewCard(null);
+  }
+
   async function handleSaveDeck(event) {
     event.preventDefault();
-
     setIsSubmitting(true);
     setErrorMessage('');
     setStatusMessage('');
@@ -189,34 +224,22 @@ export function DecksPage() {
         throw new Error('Selecione ao menos uma carta para montar o deck.');
       }
 
-      const payload = {
-        name,
-        description,
-        cards,
-      };
+      const payload = { name, description, cards };
 
       let savedDeck;
       if (selectedDeckId) {
-        const response = await deckApi.updateDeck({
-          token,
-          deckId: selectedDeckId,
-          payload,
-        });
+        const response = await deckApi.updateDeck({ token, deckId: selectedDeckId, payload });
         savedDeck = response.deck;
       } else {
         const response = await deckApi.createDeck({ token, payload });
         savedDeck = response.deck;
       }
 
-      const listResponse = await deckApi.listDecks({ token });
-      setDecks(listResponse.decks);
-
-      const persistedDeck = listResponse.decks.find((deck) => deck.id === savedDeck.id) || savedDeck;
+      const decksList = await refreshDecks();
+      const persistedDeck = decksList.find((deck) => deck.id === savedDeck.id) || savedDeck;
       applyDeckToForm(persistedDeck);
 
-      setStatusMessage(
-        selectedDeckId ? 'Deck atualizado com sucesso.' : 'Deck criado com sucesso.'
-      );
+      setStatusMessage(selectedDeckId ? 'Deck atualizado com sucesso.' : 'Deck criado com sucesso.');
     } catch (error) {
       setErrorMessage(formatErrorMessage(error));
     } finally {
@@ -236,8 +259,7 @@ export function DecksPage() {
 
     try {
       await deckApi.deleteDeck({ token, deckId: deck.id });
-      const listResponse = await deckApi.listDecks({ token });
-      setDecks(listResponse.decks);
+      await refreshDecks();
 
       if (selectedDeckId === deck.id) {
         resetForm();
@@ -252,150 +274,154 @@ export function DecksPage() {
   }
 
   return (
-    <section className="stack-gap">
-      <article className="card stack-gap">
-        <h1>Deck Builder</h1>
-        <p className="muted-text">
-          Monte seu baralho com o catalogo oficial. O backend valida tamanho total, limites por
-          categoria e maximo por carta.
-        </p>
+    <section className="stack-gap-lg">
+      <div className="section-header">
+        <div className="stack-gap" style={{ gap: '10px' }}>
+          <Badge tone="primary">Deck Builder</Badge>
+          <h1 className="page-title">Monte seu arsenal</h1>
+          <p className="page-subtitle">
+            O backend valida o baralho inteiro, enquanto a UI destaca composicao, categorias e selecao de cartas.
+          </p>
+        </div>
+      </div>
 
-        {isLoading ? <p className="muted-text">Carregando regras e cartas...</p> : null}
-        {statusMessage ? <p className="success-text">{statusMessage}</p> : null}
-        {errorMessage ? <p className="error-text">{errorMessage}</p> : null}
+      <div className="deck-builder-layout">
+        <div className="deck-builder-left">
+          <Card description="Acompanhe rapidamente a composicao antes de salvar." title="Resumo do deck">
+            {isLoading ? <p className="muted-text">Carregando regras e cartas...</p> : null}
+            {statusMessage ? <p className="success-text">{statusMessage}</p> : null}
+            {errorMessage ? <p className="error-text">{errorMessage}</p> : null}
 
-        {!isLoading && rules ? (
-          <div className="deck-rules-grid">
-            <p>
-              Total de cartas: <strong>{draftSummary.totalCards}</strong> (limite {rules.minCards}-
-              {rules.maxCards})
-            </p>
-            {CATEGORY_ORDER.map((category) => (
-              <p key={category}>
-                {CATEGORY_LABEL[category]}: <strong>{draftSummary.categoryTotals[category] || 0}</strong>{' '}
-                (regra {getCategoryRuleLabel(category, rules)})
-              </p>
-            ))}
-          </div>
-        ) : null}
-      </article>
+            {!isLoading && rules ? (
+              <div className="deck-summary-grid" style={{ marginTop: '16px' }}>
+                <div className="deck-summary-box">
+                  <span className="status-label">Total</span>
+                  <strong>{draftSummary.totalCards}</strong>
+                  <span className="muted-text compact">Limite {rules.minCards}-{rules.maxCards}</span>
+                </div>
+                {CATEGORY_ORDER.map((category) => (
+                  <div className="deck-summary-box" key={category}>
+                    <span className="status-label">{CATEGORY_LABEL[category]}</span>
+                    <strong>{draftSummary.categoryTotals[category] || 0}</strong>
+                    <span className="muted-text compact">Regra {getCategoryRuleLabel(category, rules)}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </Card>
 
-      <article className="card stack-gap">
-        <h2>{selectedDeck ? `Editando: ${selectedDeck.name}` : 'Novo deck'}</h2>
-
-        <form className="stack-gap" onSubmit={handleSaveDeck}>
-          <div className="grid-2">
-            <div className="stack-gap">
-              <label htmlFor="deck-name">Nome do deck</label>
-              <input
-                id="deck-name"
-                type="text"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="Ex.: Divisao Ofensiva"
-                required
-              />
-            </div>
-
-            <div className="stack-gap">
-              <label htmlFor="deck-description">Descricao</label>
-              <textarea
-                id="deck-description"
-                className="deck-description-input"
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                placeholder="Resumo do estilo do deck"
-                rows={3}
-              />
-            </div>
-          </div>
-
-          <div className="deck-catalog-grid">
-            {catalog.map((card) => (
-              <div className="deck-card-item" key={card.id}>
-                <img
-                  className="deck-card-image"
-                  src={`${CARDS_BASE_URL}${card.imagePath}`}
-                  alt={`Carta ${card.name}`}
-                  loading="lazy"
+          <Card description="Configure nome, descricao e quantidades." title={selectedDeck ? `Editando: ${selectedDeck.name}` : 'Novo deck'}>
+            <form className="stack-gap" onSubmit={handleSaveDeck}>
+              <div className="deck-meta-grid">
+                <Input
+                  id="deck-name"
+                  label="Nome do deck"
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="Ex.: Divisao Ofensiva"
+                  required
+                  value={name}
                 />
 
-                <div className="stack-gap">
-                  <p className="deck-card-title">{card.name}</p>
-                  <p className="compact muted-text">Categoria: {CATEGORY_LABEL[card.category]}</p>
-                  <p className="compact muted-text">Maximo: {card.maxCopies}</p>
-                  <p className="compact muted-text">{card.effect}</p>
+                <Input
+                  id="deck-description"
+                  label="Descricao"
+                  multiline
+                  onChange={(event) => setDescription(event.target.value)}
+                  placeholder="Resumo do estilo do deck"
+                  rows={3}
+                  value={description}
+                />
+              </div>
 
-                  <label htmlFor={`card-${card.id}`}>Quantidade</label>
-                  <input
-                    id={`card-${card.id}`}
-                    type="number"
-                    min="0"
-                    max={card.maxCopies}
-                    value={draftQuantities[card.id] ?? 0}
-                    onChange={(event) => handleQuantityChange(card.id, event.target.value)}
+              <div className="row-wrap">
+                <Button disabled={isLoading} loading={isSubmitting} type="submit">
+                  {selectedDeck ? 'Salvar alteracoes' : 'Criar deck'}
+                </Button>
+
+                <Button disabled={isSubmitting || isLoading} onClick={resetForm} type="button" variant="secondary">
+                  Limpar formulario
+                </Button>
+              </div>
+            </form>
+          </Card>
+
+          <Card description="Selecione as quantidades com feedback visual imediato." title="Catalogo de cartas">
+            <div className="deck-catalog-grid">
+              {catalog.map((card) => (
+                <CardItem
+                  category={CATEGORY_LABEL[card.category]}
+                  description={card.effect}
+                  footer={
+                    <Input
+                      inputClassName="compact"
+                      label="Quantidade"
+                      max={card.maxCopies}
+                      min="0"
+                      onChange={(event) => handleQuantityChange(card.id, event.target.value)}
+                      type="number"
+                      value={draftQuantities[card.id] ?? 0}
+                    />
+                  }
+                  imageSrc={resolveCardImageUrl(card.imagePath)}
+                  key={card.id}
+                  maxCopies={card.maxCopies}
+                  name={card.name}
+                  onClick={() => handlePreviewCard(card)}
+                  selected={Number(draftQuantities[card.id] ?? 0) > 0}
+                  showDescription={false}
+                />
+              ))}
+            </div>
+          </Card>
+        </div>
+
+        <div className="deck-builder-right">
+          <Card description="Baralhos salvos para edicao ou exclusao." title="Meus decks">
+            <div className="stack-gap">
+              {decks.length ? (
+                decks.map((deck) => (
+                  <DeckCardRow
+                    deck={deck}
+                    isSelected={selectedDeckId === deck.id}
+                    key={deck.id}
+                    onDelete={handleDeleteDeck}
+                    onEdit={handleSelectDeck}
                   />
-                </div>
-              </div>
-            ))}
-          </div>
+                ))
+              ) : (
+                <div className="empty-state">Nenhum deck salvo ainda.</div>
+              )}
+            </div>
+          </Card>
+        </div>
+      </div>
 
-          <div className="row-wrap">
-            <button className="solid-btn" type="submit" disabled={isSubmitting || isLoading}>
-              {selectedDeck ? 'Salvar alteracoes' : 'Criar deck'}
-            </button>
-
-            <button
-              className="ghost-btn"
-              type="button"
-              onClick={resetForm}
-              disabled={isSubmitting || isLoading}
-            >
-              Limpar formulario
-            </button>
-          </div>
-        </form>
-      </article>
-
-      <article className="card stack-gap">
-        <h2>Meus decks</h2>
-
-        {decks.length ? (
+      <Modal
+        cancelLabel="Fechar"
+        confirmLabel="Entendi"
+        description={previewCard?.effect}
+        onClose={handleClosePreview}
+        onConfirm={handleClosePreview}
+        open={Boolean(previewCard)}
+        title={previewCard?.name || 'Detalhes da carta'}
+      >
+        {previewCard ? (
           <div className="stack-gap">
-            {decks.map((deck) => (
-              <div className="deck-row" key={deck.id}>
-                <div>
-                  <p className="deck-card-title">{deck.name}</p>
-                  <p className="compact muted-text">{deck.description || 'Sem descricao'}</p>
-                  <p className="compact muted-text">
-                    Total: {deck.summary?.totalCards ?? 0} | Fixa:{' '}
-                    {deck.summary?.categoryTotals?.fixed ?? 0} | Divisao:{' '}
-                    {deck.summary?.categoryTotals?.division ?? 0} | Imo:{' '}
-                    {deck.summary?.categoryTotals?.imo ?? 0}
-                  </p>
-                </div>
+            <div className="game-card__image-wrap">
+              <img
+                alt={`Carta ${previewCard.name}`}
+                className="game-card__image"
+                src={resolveCardImageUrl(previewCard.imagePath)}
+              />
+            </div>
 
-                <div className="row-wrap">
-                  <button className="ghost-btn" type="button" onClick={() => handleSelectDeck(deck)}>
-                    Editar
-                  </button>
-
-                  <button
-                    className="ghost-btn"
-                    type="button"
-                    onClick={() => handleDeleteDeck(deck)}
-                    disabled={isSubmitting}
-                  >
-                    Excluir
-                  </button>
-                </div>
-              </div>
-            ))}
+            <div className="row-wrap game-card__badges">
+              <Badge tone="secondary">{CATEGORY_LABEL[previewCard.category]}</Badge>
+              <Badge tone="accent">Max {previewCard.maxCopies}</Badge>
+            </div>
           </div>
-        ) : (
-          <p className="muted-text">Nenhum deck salvo ainda.</p>
-        )}
-      </article>
+        ) : null}
+      </Modal>
     </section>
   );
 }

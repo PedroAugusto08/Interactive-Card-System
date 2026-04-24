@@ -1,6 +1,8 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 
 import { useAuthStore } from '../stores/authStore';
+import { Badge } from './ui/Badge';
+import { Button } from './ui/Button';
 
 // Layout principal das telas privadas com menu superior.
 export function ProtectedLayout() {
@@ -8,7 +10,6 @@ export function ProtectedLayout() {
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
 
-  // Faz logout local e manda para tela de login.
   function handleLogout() {
     logout();
     navigate('/login', { replace: true });
@@ -17,9 +18,12 @@ export function ProtectedLayout() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <div>
+        <div className="brand-panel">
+          <Badge className="brand-chip" tone="accent">
+            Arcane Dark UI
+          </Badge>
           <p className="brand">Acedia Deck App</p>
-          <p className="brand-subtitle">Gerenciamento multiplayer de baralho</p>
+          <p className="brand-subtitle">Deck building, lobby e partida em tempo real</p>
         </div>
 
         <nav className="menu-links">
@@ -30,10 +34,14 @@ export function ProtectedLayout() {
         </nav>
 
         <div className="topbar-right">
-          <p className="welcome-text">{user?.username || 'Jogador'}</p>
-          <button className="ghost-btn" onClick={handleLogout}>
+          <div className="welcome-stack">
+            <p className="welcome-text">{user?.username || 'Jogador'}</p>
+            <span className="muted-text compact">Sessao autenticada</span>
+          </div>
+
+          <Button onClick={handleLogout} size="sm" variant="secondary">
             Sair
-          </button>
+          </Button>
         </div>
       </header>
 

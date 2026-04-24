@@ -1,5 +1,10 @@
 import { useState } from 'react';
 
+import { PlayerCard } from '../components/system/PlayerCard';
+import { Badge } from '../components/ui/Badge';
+import { Button } from '../components/ui/Button';
+import { Card } from '../components/ui/Card';
+import { Input } from '../components/ui/Input';
 import { roomApi } from '../api/roomApi';
 import { useAuthStore } from '../stores/authStore';
 import { useRoomStore } from '../stores/roomStore';
@@ -19,7 +24,6 @@ export function RoomLobbyPage() {
   const [statusMessage, setStatusMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
-  // Cria nova sala e atualiza estado local.
   async function handleCreateRoom() {
     setIsLoading(true);
     setErrorMessage('');
@@ -36,7 +40,6 @@ export function RoomLobbyPage() {
     }
   }
 
-  // Entra em sala pelo codigo curto.
   async function handleJoinRoom(event) {
     event.preventDefault();
     setIsLoading(true);
@@ -46,7 +49,6 @@ export function RoomLobbyPage() {
     try {
       const response = await roomApi.joinRoom({ code: joinCode.trim().toUpperCase(), token });
       setRoomData(response);
-      setRoomIdInput(String(response.room.id));
       setStatusMessage(`Entrou na sala ${response.room.code}.`);
     } catch (error) {
       setErrorMessage(formatErrorMessage(error));
@@ -55,7 +57,6 @@ export function RoomLobbyPage() {
     }
   }
 
-  // Sai da sala atual usando contrato HTTP.
   async function handleLeaveRoom() {
     if (!currentRoom?.id) {
       setErrorMessage('Nao existe sala ativa para sair.');
@@ -77,7 +78,6 @@ export function RoomLobbyPage() {
     }
   }
 
-  // Busca lista de jogadores da sala pelo id.
   async function handleListPlayers() {
     const roomId = Number(currentRoom?.id);
     if (!roomId) {
@@ -101,66 +101,86 @@ export function RoomLobbyPage() {
   }
 
   return (
-    <section className="stack-gap">
-      <article className="card">
-        <h1>Room Lobby</h1>
-        <p className="muted-text">Gerencie a entrada dos jogadores via API HTTP.</p>
-
-        <div className="row-wrap">
-          <button className="solid-btn" onClick={handleCreateRoom} disabled={isLoading}>
-            Criar sala
-          </button>
-
-          <button className="ghost-btn" onClick={handleLeaveRoom} disabled={isLoading || !currentRoom}>
-            Sair da sala
-          </button>
-
-          <button className="ghost-btn" onClick={handleListPlayers} disabled={isLoading}>
-            Listar jogadores
-          </button>
+    <section className="stack-gap-lg">
+      <div className="section-header">
+        <div className="stack-gap" style={{ gap: '10px' }}>
+          <Badge tone="secondary">Lobby Control</Badge>
+          <h1 className="page-title">Room Lobby</h1>
+          <p className="page-subtitle">Crie uma sala, entre por codigo e acompanhe a composicao do grupo.</p>
         </div>
+      </div>
 
-        <form className="row-wrap" onSubmit={handleJoinRoom}>
-          <input
-            type="text"
-            placeholder="Codigo da sala"
-            value={joinCode}
-            onChange={(event) => setJoinCode(event.target.value)}
-            required
-          />
+      <div className="grid-2">
+        <Card description="Gerencie a entrada dos jogadores via API HTTP." title="Sala">
+          <div className="row-wrap">
+            <Button loading={isLoading} onClick={handleCreateRoom}>
+              Criar sala
+            </Button>
 
-          <button className="solid-btn" type="submit" disabled={isLoading}>
-            Entrar por codigo
-          </button>
-        </form>
+            <Button disabled={isLoading || !currentRoom} onClick={handleLeaveRoom} variant="secondary">
+              Sair da sala
+            </Button>
 
-        {statusMessage ? <p className="success-text">{statusMessage}</p> : null}
-        {errorMessage ? <p className="error-text">{errorMessage}</p> : null}
-      </article>
+            <Button disabled={isLoading} onClick={handleListPlayers} variant="secondary">
+              Listar jogadores
+            </Button>
+          </div>
 
-      <article className="card">
-        <h2>Sala atual</h2>
-        {currentRoom ? (
-          <p>
-            Code: <strong>{currentRoom.code}</strong> | Status: <strong>{currentRoom.status}</strong>
-          </p>
-        ) : (
-          <p className="muted-text">Nenhuma sala carregada.</p>
-        )}
+          <form className="stack-gap" onSubmit={handleJoinRoom} style={{ marginTop: '18px' }}>
+            <Input
+              onChange={(event) => setJoinCode(event.target.value)}
+              placeholder="Codigo da sala"
+              required
+              value={joinCode}
+            />
 
-        <h3>Jogadores conectados (API)</h3>
-        {players.length ? (
-          <ul>
-            {players.map((player) => (
-              <li key={`${player.room_id}-${player.user_id}`}>
-                {player.username} ({player.email})
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="muted-text">Sem jogadores no estado atual.</p>
-        )}
-      </article>
+            <Button loading={isLoading} type="submit">
+              Entrar por codigo
+            </Button>
+          </form>
+
+          <div className="stack-gap" style={{ marginTop: '18px' }}>
+            {statusMessage ? <p className="success-text">{statusMessage}</p> : null}
+            {errorMessage ? <p className="error-text">{errorMessage}</p> : null}
+          </div>
+        </Card>
+
+        <Card title="Sala atual" description="Status da sala e jogadores carregados no estado local.">
+          {currentRoom ? (
+            <div className="status-grid" style={{ marginBottom: '18px' }}>
+              <div className="status-item">
+                <span className="status-label">Codigo</span>
+                <span className="status-value">{currentRoom.code}</span>
+              </div>
+
+              <div className="status-item">
+                <span className="status-label">Status</span>
+                <span className="status-value">{currentRoom.status}</span>
+              </div>
+
+              <div className="status-item">
+                <span className="status-label">Jogadores</span>
+                <span className="status-value">{players.length}</span>
+              </div>
+            </div>
+          ) : (
+            <div className="empty-state">Nenhuma sala carregada.</div>
+          )}
+
+          <div className="stack-gap">
+            <div className="row-wrap">
+              <h3>Jogadores conectados</h3>
+              <Badge tone="accent">{players.length} no lobby</Badge>
+            </div>
+
+            {players.length ? (
+              players.map((player) => <PlayerCard key={`${player.room_id}-${player.user_id}`} player={player} />)
+            ) : (
+              <div className="empty-state">Sem jogadores no estado atual.</div>
+            )}
+          </div>
+        </Card>
+      </div>
     </section>
   );
 }

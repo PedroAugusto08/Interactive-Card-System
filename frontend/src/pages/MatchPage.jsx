@@ -1,12 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 
+import { ActionLogItem } from '../components/system/ActionLogItem';
+import { CardItem } from '../components/system/CardItem';
+import { PlayerCard } from '../components/system/PlayerCard';
+import { ZoneContainer } from '../components/system/ZoneContainer';
+import { Badge } from '../components/ui/Badge';
+import { Button } from '../components/ui/Button';
+import { Card } from '../components/ui/Card';
+import { Input } from '../components/ui/Input';
 import { roomApi } from '../api/roomApi';
 import { useSocket } from '../hooks/useSocket';
 import { useAuthStore } from '../stores/authStore';
 import { useRoomStore } from '../stores/roomStore';
 import { formatErrorMessage } from '../utils/formatError';
 
-// Tela base de partida em tempo real via Socket.IO.
 export function MatchPage() {
   const token = useAuthStore((state) => state.token);
   const user = useAuthStore((state) => state.user);
@@ -24,12 +31,39 @@ export function MatchPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const isSocketConnected = Boolean(socket?.connected);
+  const activeTurnPlayerId = matchState?.currentTurnPlayerId;
+
+  const handPreview = useMemo(
+    () => [
+      {
+        id: 'preview-1',
+        name: 'Ataque Normal',
+        description: 'Carta base de acao direta, pronta para uso no turno atual.',
+        imageSrc: '/cartas/1.png',
+        category: 'Fixa',
+      },
+      {
+        id: 'preview-2',
+        name: 'Reacao',
+        description: 'Resposta defensiva para negar uma ofensiva inimiga.',
+        imageSrc: '/cartas/3.png',
+        category: 'Fixa',
+      },
+      {
+        id: 'preview-3',
+        name: 'Divisao',
+        description: 'Manipula o fluxo de cartas entre aliados e alvos.',
+        imageSrc: '/cartas/11.png',
+        category: 'Divisao',
+      },
+    ],
+    []
+  );
 
   function appendLocalLog(payload) {
     setLogItems((previous) => [payload, ...previous].slice(0, 40));
   }
 
-  // Mensagem simples de status do socket para tela.
   const socketStatus = useMemo(() => {
     if (!socket) {
       return 'desconectado';
@@ -38,10 +72,9 @@ export function MatchPage() {
     return socket.connected ? 'conectado' : 'conectando';
   }, [socket]);
 
-  // Inscreve listeners dos eventos principais do backend.
   useEffect(() => {
     if (!socket) {
-      return;
+      return undefined;
     }
 
     function handleRoomUpdate(payload) {
@@ -67,7 +100,6 @@ export function MatchPage() {
     };
   }, [socket, setRoomData]);
 
-  // Dispara evento para entrar em sala via websocket.
   async function handleSocketJoin(event) {
     event.preventDefault();
     const code = roomCode.trim().toUpperCase();
@@ -108,17 +140,13 @@ export function MatchPage() {
     }
   }
 
-  // Dispara evento para sair da sala atual.
   async function handleSocketLeave() {
     if (!currentRoom?.id) {
       return;
     }
 
     if (isSocketConnected) {
-      socket.emit('room:leave', {
-        roomId: currentRoom.id,
-      });
-
+      socket.emit('room:leave', { roomId: currentRoom.id });
       clearRoom();
       setMatchState(null);
 
@@ -153,7 +181,6 @@ export function MatchPage() {
     }
   }
 
-  // Atualiza jogadores manualmente via API HTTP quando necessario.
   async function handleRefreshPlayers() {
     if (!currentRoom?.id) {
       return;
@@ -199,98 +226,127 @@ export function MatchPage() {
   }
 
   return (
-    <section className="stack-gap">
-      <article className="card">
-        <h1>Match</h1>
-        <p>
-          Usuario: <strong>{user?.username}</strong> | Socket: <strong>{socketStatus}</strong>
-        </p>
-        <p className="muted-text compact">
-          {isSocketConnected
-            ? 'Eventos em tempo real ativos via Socket.IO.'
-            : 'Socket indisponivel: usando fallback HTTP para entrar/sair da sala.'}
-        </p>
+    <section className="match-shell">
+      <div className="match-topbar">
+        <Card description="Sala, turno e conectividade em um topo consolidado." title="Match Control">
+          <div className="status-grid">
+            <div className="status-item">
+              <span className="status-label">Sala</span>
+              <span className="status-value">{currentRoom?.code || 'Sem sala'}</span>
+            </div>
+            <div className="status-item">
+              <span className="status-label">Turno atual</span>
+              <span className="status-value">{activeTurnPlayerId ?? '-'}</span>
+            </div>
+            <div className="status-item">
+              <span className="status-label">Socket</span>
+              <span className="status-value">{socketStatus}</span>
+            </div>
+            <div className="status-item">
+              <span className="status-label">Round</span>
+              <span className="status-value">{matchState?.round ?? 1}</span>
+            </div>
+          </div>
+        </Card>
 
-        <form className="row-wrap" onSubmit={handleSocketJoin}>
-          <input
-            type="text"
-            placeholder="Codigo da sala"
-            value={roomCode}
-            onChange={(event) => setRoomCode(event.target.value)}
-            required
-          />
+        <Card description="Conecte-se a uma sala e sincronize o estado da partida." title="Acoes">
+          <form className="stack-gap" onSubmit={handleSocketJoin}>
+            <Input onChange={(event) => setRoomCode(event.target.value)} placeholder="Codigo da sala" required value={roomCode} />
 
-          <button className="solid-btn" type="submit" disabled={isSubmitting}>
-            {isSocketConnected ? 'Entrar via socket' : 'Entrar via HTTP'}
-          </button>
+            <div className="row-wrap">
+              <Button loading={isSubmitting} type="submit">
+                {isSocketConnected ? 'Entrar via socket' : 'Entrar via HTTP'}
+              </Button>
 
-          <button
-            className="ghost-btn"
-            type="button"
-            onClick={handleSocketLeave}
-            disabled={isSubmitting || !currentRoom}
+              <Button disabled={isSubmitting || !currentRoom} onClick={handleSocketLeave} type="button" variant="secondary">
+                Sair da sala
+              </Button>
+
+              <Button
+                disabled={isSubmitting || !currentRoom}
+                onClick={handleRefreshPlayers}
+                type="button"
+                variant="secondary"
+              >
+                Atualizar jogadores
+              </Button>
+            </div>
+          </form>
+        </Card>
+      </div>
+
+      <div className="match-grid">
+        <div className="match-side-column players-column">
+          <Card description="Lista lateral com destaque visual para o turno ativo." title="Jogadores">
+            <div className="stack-gap">
+              <div className="row-wrap">
+                <Badge tone="accent">{players.length} conectados</Badge>
+                <Badge tone={isSocketConnected ? 'success' : 'secondary'}>
+                  {isSocketConnected ? 'Tempo real' : 'Fallback HTTP'}
+                </Badge>
+              </div>
+
+              {players.length ? (
+                players.map((player) => (
+                  <PlayerCard
+                    isActiveTurn={player.user_id === activeTurnPlayerId}
+                    isCurrentUser={player.user_id === user?.id}
+                    key={`${player.room_id}-${player.user_id}`}
+                    player={player}
+                  />
+                ))
+              ) : (
+                <div className="empty-state">Sem jogadores sincronizados.</div>
+              )}
+            </div>
+          </Card>
+        </div>
+
+        <div className="match-main-column">
+          <Card
+            description={
+              isSocketConnected
+                ? 'Eventos em tempo real ativos via Socket.IO.'
+                : 'Socket indisponivel: usando fallback HTTP para entrar e sair.'
+            }
+            title="Area principal"
           >
-            Sair da sala
-          </button>
+            <div className="zones-grid">
+              <ZoneContainer count={24} description="Fonte principal de compra." title="Deck" tone="primary" />
+              <ZoneContainer count={5} description="Cartas descartadas recentemente." title="Descarte" />
+              <ZoneContainer count={2} description="Cartas banidas ou temporariamente removidas." title="Exilio" />
+              <ZoneContainer count={3} description="Recursos e cartas persistentes." title="Zona ativa" tone="accent" />
+            </div>
+          </Card>
 
-          <button
-            className="ghost-btn"
-            type="button"
-            onClick={handleRefreshPlayers}
-            disabled={isSubmitting || !currentRoom}
-          >
-            Atualizar jogadores (HTTP)
-          </button>
-        </form>
-      </article>
+          <Card description="Cartas com leitura limpa, hover leve e destaque de selecao." title="Sua mao">
+            <div className="hand-grid">
+              {handPreview.map((card, index) => (
+                <CardItem
+                  category={card.category}
+                  description={card.description}
+                  imageSrc={card.imageSrc}
+                  key={card.id}
+                  name={card.name}
+                  selected={index === 0}
+                />
+              ))}
+            </div>
+          </Card>
+        </div>
 
-      <article className="card">
-        <h2>Estado sincronizado</h2>
-        {currentRoom ? (
-          <p>
-            Sala: <strong>{currentRoom.code}</strong> | Status: <strong>{currentRoom.status}</strong>
-          </p>
-        ) : (
-          <p className="muted-text">Nenhuma sala ativa no estado local.</p>
-        )}
-
-        {matchState ? (
-          <p>
-            Round: <strong>{matchState.round}</strong> | Current turn player id:{' '}
-            <strong>{matchState.currentTurnPlayerId ?? '-'}</strong>
-          </p>
-        ) : (
-          <p className="muted-text">Sem match:updateState recebido ainda.</p>
-        )}
-
-        <h3>Jogadores no canal</h3>
-        {players.length ? (
-          <ul>
-            {players.map((player) => (
-              <li key={`${player.room_id}-${player.user_id}`}>
-                {player.username}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="muted-text">Sem jogadores sincronizados.</p>
-        )}
-      </article>
-
-      <article className="card">
-        <h2>Log de eventos</h2>
-        {logItems.length ? (
-          <ul className="log-list">
-            {logItems.map((item, index) => (
-              <li key={`${item.timestamp || 'time'}-${index}`}>
-                <span className="log-type">[{item.type || 'INFO'}]</span> {item.message}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="muted-text">Sem eventos por enquanto.</p>
-        )}
-      </article>
+        <div className="match-side-column">
+          <Card description="Feed lateral para eventos e feedbacks da partida." title="Log de acoes">
+            <div className="log-list">
+              {logItems.length ? (
+                logItems.map((item, index) => <ActionLogItem item={item} key={`${item.timestamp || 'time'}-${index}`} />)
+              ) : (
+                <div className="empty-state">Sem eventos por enquanto.</div>
+              )}
+            </div>
+          </Card>
+        </div>
+      </div>
     </section>
   );
 }

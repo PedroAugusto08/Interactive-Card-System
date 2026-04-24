@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
+import { Button } from '../components/ui/Button';
+import { Card } from '../components/ui/Card';
+import { Input } from '../components/ui/Input';
 import { authApi } from '../api/authApi';
 import { useAuthStore } from '../stores/authStore';
 import { formatErrorMessage } from '../utils/formatError';
@@ -16,7 +19,6 @@ export function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  // Envia cadastro para API e ja autentica localmente.
   async function handleSubmit(event) {
     event.preventDefault();
     setIsLoading(true);
@@ -35,47 +37,50 @@ export function RegisterPage() {
 
   return (
     <section className="auth-wrap">
-      <form className="card auth-card" onSubmit={handleSubmit}>
-        <h1>Criar conta</h1>
-        <p className="muted-text">Cadastre-se para criar ou entrar em salas.</p>
+      <Card className="auth-card" glow>
+        <form className="auth-card-inner" onSubmit={handleSubmit}>
+          <span className="auth-eyebrow">Nova Vinculacao</span>
+          <h1>Criar conta</h1>
+          <p className="muted-text">Cadastre-se para criar ou entrar em salas.</p>
 
-        <label htmlFor="register-username">Nome de usuario</label>
-        <input
-          id="register-username"
-          type="text"
-          value={username}
-          onChange={(event) => setUsername(event.target.value)}
-          required
-        />
+          <Input
+            id="register-username"
+            label="Nome de usuario"
+            onChange={(event) => setUsername(event.target.value)}
+            required
+            type="text"
+            value={username}
+          />
 
-        <label htmlFor="register-email">Email</label>
-        <input
-          id="register-email"
-          type="email"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          required
-        />
+          <Input
+            id="register-email"
+            label="Email"
+            onChange={(event) => setEmail(event.target.value)}
+            required
+            type="email"
+            value={email}
+          />
 
-        <label htmlFor="register-password">Senha</label>
-        <input
-          id="register-password"
-          type="password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          required
-        />
+          <Input
+            id="register-password"
+            label="Senha"
+            onChange={(event) => setPassword(event.target.value)}
+            required
+            type="password"
+            value={password}
+          />
 
-        {errorMessage ? <p className="error-text">{errorMessage}</p> : null}
+          {errorMessage ? <p className="error-text">{errorMessage}</p> : null}
 
-        <button className="solid-btn" type="submit" disabled={isLoading}>
-          {isLoading ? 'Criando conta...' : 'Cadastrar'}
-        </button>
+          <Button loading={isLoading} type="submit">
+            {isLoading ? 'Criando conta...' : 'Cadastrar'}
+          </Button>
 
-        <p className="muted-text compact">
-          Ja tem conta? <Link to="/login">Entrar</Link>
-        </p>
-      </form>
+          <p className="muted-text compact">
+            Ja tem conta? <Link to="/login">Entrar</Link>
+          </p>
+        </form>
+      </Card>
     </section>
   );
 }
