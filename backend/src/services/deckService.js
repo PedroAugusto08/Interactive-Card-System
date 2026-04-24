@@ -5,27 +5,49 @@ const {
   updateDeckById,
   deleteDeckById,
 } = require('../models/deckModel');
+const {
+  createImoCard,
+  listImoCardsByOwner,
+  findImoCardById,
+} = require('../models/imoCardModel');
 const { AppError } = require('../utils/AppError');
 const {
   CARD_CATALOG,
   CARD_CATEGORIES,
   DECK_RULES,
   getCardById,
+  mapImoCardRecordToCatalogCard,
 } = require('../config/cardsCatalog');
 
-// Exibe catalogo oficial de cartas para montar o baralho.
-function getDeckCatalog() {
-  return CARD_CATALOG;
+async function getDeckCatalog(ownerId) {
+  const imoCards = await listImoCardsByOwner(ownerId);
+  return [...CARD_CATALOG, ...imoCards.map(mapImoCardRecordToCatalogCard)];
 }
 
-// Exibe regras de composicao do baralho.
 function getDeckRules() {
   return DECK_RULES;
 }
 
-// Cria deck para usuario autenticado.
+async function createImoCardForUser({ ownerId, name, description, imagePath, maxCopies, imoCost }) {
+  const created = await createImoCard({
+    ownerId,
+    name,
+    description,
+    imagePath,
+    maxCopies,
+    imoCost,
+  });
+
+  return mapImoCardRecordToCatalogCard(created);
+}
+
+async function listImoCardsForUser(ownerId) {
+  const cards = await listImoCardsByOwner(ownerId);
+  return cards.map(mapImoCardRecordToCatalogCard);
+}
+
 async function createDeckForUser({ ownerId, name, description, cards }) {
-  const normalizedCards = normalizeAndValidateDeckCards(cards);
+  const normalizedCards = await normalizeAndValidateDeckCards({ ownerId, cards });
 
   const createdDeck = await createDeck({
     ownerId,
@@ -34,33 +56,30 @@ async function createDeckForUser({ ownerId, name, description, cards }) {
     cardsJson: normalizedCards,
   });
 
-  return attachDeckSummary(createdDeck);
+  return attachDeckSummary(createdDeck, ownerId);
 }
 
-// Lista decks do usuario autenticado.
 async function listDecksForUser(ownerId) {
   const decks = await listDecksByOwner(ownerId);
-  return decks.map(attachDeckSummary);
+  return Promise.all(decks.map((deck) => attachDeckSummary(deck, ownerId)));
 }
 
-// Busca um deck do usuario.
 async function getDeckForUser({ deckId, ownerId }) {
   const deck = await findDeckById(deckId);
   if (!deck || deck.owner_id !== ownerId) {
     throw new AppError('Deck nao encontrado.', 404);
   }
 
-  return attachDeckSummary(deck);
+  return attachDeckSummary(deck, ownerId);
 }
 
-// Atualiza um deck do usuario.
 async function updateDeckForUser({ deckId, ownerId, name, description, cards }) {
   const existingDeck = await findDeckById(deckId);
   if (!existingDeck || existingDeck.owner_id !== ownerId) {
     throw new AppError('Deck nao encontrado.', 404);
   }
 
-  const normalizedCards = normalizeAndValidateDeckCards(cards);
+  const normalizedCards = await normalizeAndValidateDeckCards({ ownerId, cards });
 
   const updatedDeck = await updateDeckById({
     deckId,
@@ -70,10 +89,9 @@ async function updateDeckForUser({ deckId, ownerId, name, description, cards }) 
     cardsJson: normalizedCards,
   });
 
-  return attachDeckSummary(updatedDeck);
+  return attachDeckSummary(updatedDeck, ownerId);
 }
 
-// Remove um deck do usuario.
 async function deleteDeckForUser({ deckId, ownerId }) {
   const existingDeck = await findDeckById(deckId);
   if (!existingDeck || existingDeck.owner_id !== ownerId) {
@@ -81,16 +99,45 @@ async function deleteDeckForUser({ deckId, ownerId }) {
   }
 
   const deletedDeck = await deleteDeckById({ deckId, ownerId });
-  return attachDeckSummary(deletedDeck);
+  return attachDeckSummary(deletedDeck, ownerId);
 }
 
-// Valida e normaliza cartas recebidas no payload de deck.
-function normalizeAndValidateDeckCards(cards) {
+async function getResolvedDeckForUser({ deckId, ownerId }) {
+  const deck = await findDeckById(deckId);
+  if (!deck || deck.owner_id !== ownerId) {
+    throw new AppError('Deck nao encontrado.', 404);
+  }
+
+  const catalog = await buildCatalogMap(ownerId);
+  const expandedCards = [];
+
+  for (const entry of deck.cards_json || []) {
+    const card = catalog.get(entry.cardId);
+    if (!card) {
+      continue;
+    }
+
+    for (let index = 0; index < entry.quantity; index += 1) {
+      expandedCards.push({
+        ...card,
+        instanceId: `${entry.cardId}#${index + 1}`,
+      });
+    }
+  }
+
+  return {
+    deck,
+    expandedCards,
+  };
+}
+
+async function normalizeAndValidateDeckCards({ ownerId, cards }) {
   const entries = Array.isArray(cards) ? cards : [];
   if (!entries.length) {
     throw new AppError('O baralho precisa informar cartas.', 400);
   }
 
+  const catalog = await buildCatalogMap(ownerId);
   const normalizedCards = [];
   const seenCardIds = new Set();
 
@@ -118,16 +165,13 @@ function normalizeAndValidateDeckCards(cards) {
       throw new AppError(`Carta duplicada no baralho: ${cardId}.`, 400);
     }
 
-    const card = getCardById(cardId);
+    const card = catalog.get(cardId);
     if (!card) {
       throw new AppError(`Carta desconhecida no catalogo: ${cardId}.`, 400);
     }
 
     if (quantity > card.maxCopies) {
-      throw new AppError(
-        `Carta ${card.name} excede o limite de ${card.maxCopies} copias.`,
-        400
-      );
+      throw new AppError(`Carta ${card.name} excede o limite de ${card.maxCopies} copias.`, 400);
     }
 
     seenCardIds.add(cardId);
@@ -148,10 +192,7 @@ function normalizeAndValidateDeckCards(cards) {
   }
 
   if (categoryTotals[CARD_CATEGORIES.FIXED] < DECK_RULES.fixedMinCards) {
-    throw new AppError(
-      `Baralho invalido: minimo de ${DECK_RULES.fixedMinCards} cartas fixas.`,
-      400
-    );
+    throw new AppError(`Baralho invalido: minimo de ${DECK_RULES.fixedMinCards} cartas fixas.`, 400);
   }
 
   if (
@@ -174,10 +215,36 @@ function normalizeAndValidateDeckCards(cards) {
   return normalizedCards;
 }
 
-// Calcula totais uteis para inspecao rapida do deck.
-function buildDeckSummary(cardsJson) {
-  const entries = Array.isArray(cardsJson) ? cardsJson : [];
+async function buildCatalogMap(ownerId) {
+  const map = new Map(CARD_CATALOG.map((card) => [card.id, card]));
+  const imoCards = await listImoCardsForUser(ownerId);
 
+  for (const card of imoCards) {
+    map.set(card.id, card);
+  }
+
+  return map;
+}
+
+async function resolveCardById({ ownerId, cardId }) {
+  if (String(cardId).startsWith('imo:')) {
+    const rawId = Number(String(cardId).split(':')[1]);
+    if (!Number.isInteger(rawId)) {
+      return null;
+    }
+
+    const imoCard = await findImoCardById(rawId);
+    if (!imoCard || imoCard.owner_id !== ownerId) {
+      return null;
+    }
+
+    return mapImoCardRecordToCatalogCard(imoCard);
+  }
+
+  return getCardById(cardId);
+}
+
+function buildDeckSummary(entries, catalogMap) {
   const categoryTotals = {
     [CARD_CATEGORIES.FIXED]: 0,
     [CARD_CATEGORIES.DIVISION]: 0,
@@ -186,11 +253,11 @@ function buildDeckSummary(cardsJson) {
 
   let totalCards = 0;
 
-  for (const entry of entries) {
-    const card = getCardById(entry.cardId);
+  for (const entry of entries || []) {
+    const card = catalogMap.get(entry.cardId);
     const quantity = Number(entry.quantity) || 0;
-
     totalCards += quantity;
+
     if (card) {
       categoryTotals[card.category] += quantity;
     }
@@ -202,24 +269,29 @@ function buildDeckSummary(cardsJson) {
   };
 }
 
-// Anexa metadados de resumo sem alterar o registro do banco.
-function attachDeckSummary(deck) {
+async function attachDeckSummary(deck, ownerId) {
   if (!deck) {
     return deck;
   }
 
+  const catalogMap = await buildCatalogMap(ownerId);
+
   return {
     ...deck,
-    summary: buildDeckSummary(deck.cards_json),
+    summary: buildDeckSummary(deck.cards_json, catalogMap),
   };
 }
 
 module.exports = {
   getDeckCatalog,
   getDeckRules,
+  createImoCardForUser,
+  listImoCardsForUser,
   createDeckForUser,
   listDecksForUser,
   getDeckForUser,
   updateDeckForUser,
   deleteDeckForUser,
+  getResolvedDeckForUser,
+  resolveCardById,
 };

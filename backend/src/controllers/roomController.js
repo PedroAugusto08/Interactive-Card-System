@@ -2,28 +2,31 @@ const { z } = require('zod');
 
 const roomService = require('../services/roomService');
 
-// Valida o payload para entrar em sala por codigo.
 const joinRoomSchema = z.object({
   code: z.string().trim().min(4).max(8),
 });
 
-// Valida o id da sala vindo pela URL.
 const roomIdParamSchema = z.object({
   roomId: z.coerce.number().int().positive(),
 });
 
-// Valida o payload para sair de uma sala por id.
 const leaveRoomSchema = z.object({
   roomId: z.coerce.number().int().positive(),
 });
 
-// Cria sala e adiciona o host como primeiro jogador.
+const selectDeckSchema = z.object({
+  deckId: z.coerce.number().int().positive(),
+});
+
+const readyStateSchema = z.object({
+  isReady: z.boolean(),
+});
+
 async function createRoom(req, res) {
   const data = await roomService.createRoomForHost(req.user.id);
   return res.status(201).json(data);
 }
 
-// Entra em sala existente a partir do codigo.
 async function joinRoom(req, res) {
   const payload = joinRoomSchema.parse(req.body);
   const data = await roomService.joinRoomByCode({
@@ -34,7 +37,6 @@ async function joinRoom(req, res) {
   return res.status(200).json(data);
 }
 
-// Sai da sala informando o roomId.
 async function leaveRoom(req, res) {
   const payload = leaveRoomSchema.parse(req.body);
   const data = await roomService.leaveRoom({
@@ -45,7 +47,6 @@ async function leaveRoom(req, res) {
   return res.status(200).json(data);
 }
 
-// Lista os jogadores atuais da sala.
 async function listPlayers(req, res) {
   const { roomId } = roomIdParamSchema.parse(req.params);
   const data = await roomService.getRoomPlayers({
@@ -56,9 +57,41 @@ async function listPlayers(req, res) {
   return res.status(200).json(data);
 }
 
+async function getCurrentRoom(req, res) {
+  const data = await roomService.getCurrentRoomForUser(req.user.id);
+  return res.status(200).json(data);
+}
+
+async function selectDeck(req, res) {
+  const { roomId } = roomIdParamSchema.parse(req.params);
+  const payload = selectDeckSchema.parse(req.body);
+  const data = await roomService.selectDeckForPlayer({
+    roomId,
+    userId: req.user.id,
+    deckId: payload.deckId,
+  });
+
+  return res.status(200).json(data);
+}
+
+async function setReadyState(req, res) {
+  const { roomId } = roomIdParamSchema.parse(req.params);
+  const payload = readyStateSchema.parse(req.body);
+  const data = await roomService.setPlayerReadyState({
+    roomId,
+    userId: req.user.id,
+    isReady: payload.isReady,
+  });
+
+  return res.status(200).json(data);
+}
+
 module.exports = {
   createRoom,
   joinRoom,
   leaveRoom,
   listPlayers,
+  getCurrentRoom,
+  selectDeck,
+  setReadyState,
 };

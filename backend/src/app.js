@@ -9,6 +9,7 @@ const { healthRoutes } = require('./routes/healthRoutes');
 const { authRoutes } = require('./routes/authRoutes');
 const { roomRoutes } = require('./routes/roomRoutes');
 const { deckRoutes } = require('./routes/deckRoutes');
+const { matchRoutes } = require('./routes/matchRoutes');
 const { notFoundHandler, errorHandler } = require('./middlewares/errorMiddleware');
 
 // Monta e configura a aplicacao Express.
@@ -41,6 +42,7 @@ function createApp() {
   app.use('/api/auth', authRoutes);
   app.use('/api/rooms', roomRoutes);
   app.use('/api/decks', deckRoutes);
+  app.use('/api/match', matchRoutes);
 
   // Handlers finais (404 e erros).
   app.use(notFoundHandler);

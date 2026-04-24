@@ -1,6 +1,5 @@
 const { query } = require('../config/db');
 
-// Cria uma sala nova no banco.
 async function createRoom({ code, hostId, status = 'lobby' }) {
   const result = await query(
     `
@@ -14,7 +13,22 @@ async function createRoom({ code, hostId, status = 'lobby' }) {
   return result.rows[0];
 }
 
-// Busca sala pelo codigo curto compartilhado entre jogadores.
+async function updateRoomState({ roomId, hostId, status }) {
+  const result = await query(
+    `
+      UPDATE rooms
+      SET
+        host_id = $2,
+        status = $3
+      WHERE id = $1
+      RETURNING id, code, host_id, status, created_at;
+    `,
+    [roomId, hostId, status]
+  );
+
+  return result.rows[0] || null;
+}
+
 async function findRoomByCode(code) {
   const result = await query(
     `
@@ -29,7 +43,6 @@ async function findRoomByCode(code) {
   return result.rows[0] || null;
 }
 
-// Busca sala pelo id interno.
 async function findRoomById(roomId) {
   const result = await query(
     `
@@ -44,7 +57,22 @@ async function findRoomById(roomId) {
   return result.rows[0] || null;
 }
 
-// Adiciona jogador na sala sem duplicar entrada.
+async function findActiveRoomForUser(userId) {
+  const result = await query(
+    `
+      SELECT r.id, r.code, r.host_id, r.status, r.created_at
+      FROM room_players rp
+      INNER JOIN rooms r ON r.id = rp.room_id
+      WHERE rp.user_id = $1 AND r.status IN ('lobby', 'in_match')
+      ORDER BY rp.joined_at DESC
+      LIMIT 1;
+    `,
+    [userId]
+  );
+
+  return result.rows[0] || null;
+}
+
 async function addPlayerToRoom({ roomId, userId }) {
   await query(
     `
@@ -56,7 +84,6 @@ async function addPlayerToRoom({ roomId, userId }) {
   );
 }
 
-// Remove jogador da sala.
 async function removePlayerFromRoom({ roomId, userId }) {
   await query(
     `
@@ -67,7 +94,6 @@ async function removePlayerFromRoom({ roomId, userId }) {
   );
 }
 
-// Verifica se um jogador ja esta na sala.
 async function isPlayerInRoom({ roomId, userId }) {
   const result = await query(
     `
@@ -82,7 +108,6 @@ async function isPlayerInRoom({ roomId, userId }) {
   return result.rowCount > 0;
 }
 
-// Lista jogadores da sala com dados basicos do usuario.
 async function listRoomPlayers(roomId) {
   const result = await query(
     `
@@ -106,12 +131,52 @@ async function listRoomPlayers(roomId) {
   return result.rows;
 }
 
+async function updateRoomPlayerState({
+  roomId,
+  userId,
+  selectedDeckId = null,
+  isReady = false,
+  turnOrder = null,
+}) {
+  const result = await query(
+    `
+      UPDATE room_players
+      SET
+        selected_deck_id = $3,
+        is_ready = $4,
+        turn_order = $5
+      WHERE room_id = $1 AND user_id = $2
+      RETURNING room_id, user_id, selected_deck_id, is_ready, turn_order, joined_at;
+    `,
+    [roomId, userId, selectedDeckId, isReady, turnOrder]
+  );
+
+  return result.rows[0] || null;
+}
+
+async function assignRoomPlayerTurnOrders({ roomId, orderedUserIds }) {
+  for (let index = 0; index < orderedUserIds.length; index += 1) {
+    await query(
+      `
+        UPDATE room_players
+        SET turn_order = $3
+        WHERE room_id = $1 AND user_id = $2;
+      `,
+      [roomId, orderedUserIds[index], index + 1]
+    );
+  }
+}
+
 module.exports = {
   createRoom,
+  updateRoomState,
   findRoomByCode,
   findRoomById,
+  findActiveRoomForUser,
   addPlayerToRoom,
   removePlayerFromRoom,
   isPlayerInRoom,
   listRoomPlayers,
+  updateRoomPlayerState,
+  assignRoomPlayerTurnOrders,
 };

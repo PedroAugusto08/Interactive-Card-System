@@ -7,6 +7,8 @@
     "dev:backend": "npm --prefix backend run dev",
     "dev:frontend": "npm --prefix frontend run dev",
     "install:all": "npm --prefix backend install && npm --prefix frontend install",
+    "test:backend": "npm --prefix backend test",
+    "check:frontend": "npm --prefix frontend run build",
     "db:up": "docker start acedia-pg || docker run --name acedia-pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=acedia_deck_app -p 5432:5432 -d postgres:16",
     "db:down": "docker stop acedia-pg"
   }

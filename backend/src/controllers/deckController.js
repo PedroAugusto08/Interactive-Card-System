@@ -2,47 +2,66 @@ const { z } = require('zod');
 
 const deckService = require('../services/deckService');
 
-// Valida cada carta do deck com id e quantidade.
 const cardEntrySchema = z.object({
   cardId: z.string().trim().min(1),
   quantity: z.coerce.number().int().positive(),
 });
 
-// Valida lista de cartas do baralho.
 const cardsSchema = z.array(cardEntrySchema).min(1);
 
-// Valida payload de criacao de deck.
 const createDeckSchema = z.object({
   name: z.string().trim().min(2).max(80),
   description: z.string().trim().max(500).optional(),
   cards: cardsSchema,
 });
 
-// Valida payload de atualizacao de deck.
 const updateDeckSchema = z.object({
   name: z.string().trim().min(2).max(80),
   description: z.string().trim().max(500).optional(),
   cards: cardsSchema,
 });
 
-// Valida id de deck na URL.
+const createImoCardSchema = z.object({
+  name: z.string().trim().min(2).max(80),
+  description: z.string().trim().min(5).max(1000),
+  imagePath: z.string().trim().max(200000).optional(),
+  maxCopies: z.coerce.number().int().min(1).max(5),
+  imoCost: z.coerce.number().int().min(0).max(10),
+});
+
 const deckIdParamSchema = z.object({
   deckId: z.coerce.number().int().positive(),
 });
 
-// Retorna regras do sistema de baralho.
 async function getDeckRules(req, res) {
   const rules = deckService.getDeckRules();
   return res.status(200).json({ rules });
 }
 
-// Retorna catalogo oficial de cartas.
 async function getDeckCatalog(req, res) {
-  const catalog = deckService.getDeckCatalog();
+  const catalog = await deckService.getDeckCatalog(req.user.id);
   return res.status(200).json({ catalog });
 }
 
-// Cria deck do usuario autenticado.
+async function listImoCards(req, res) {
+  const cards = await deckService.listImoCardsForUser(req.user.id);
+  return res.status(200).json({ cards });
+}
+
+async function createImoCard(req, res) {
+  const payload = createImoCardSchema.parse(req.body);
+  const card = await deckService.createImoCardForUser({
+    ownerId: req.user.id,
+    name: payload.name,
+    description: payload.description,
+    imagePath: payload.imagePath,
+    maxCopies: payload.maxCopies,
+    imoCost: payload.imoCost,
+  });
+
+  return res.status(201).json({ card });
+}
+
 async function createDeck(req, res) {
   const payload = createDeckSchema.parse(req.body);
   const deck = await deckService.createDeckForUser({
@@ -55,13 +74,11 @@ async function createDeck(req, res) {
   return res.status(201).json({ deck });
 }
 
-// Lista decks do usuario autenticado.
 async function listDecks(req, res) {
   const decks = await deckService.listDecksForUser(req.user.id);
   return res.status(200).json({ decks });
 }
 
-// Busca um deck especifico do usuario.
 async function getDeckById(req, res) {
   const { deckId } = deckIdParamSchema.parse(req.params);
   const deck = await deckService.getDeckForUser({
@@ -72,7 +89,6 @@ async function getDeckById(req, res) {
   return res.status(200).json({ deck });
 }
 
-// Atualiza um deck especifico do usuario.
 async function updateDeck(req, res) {
   const { deckId } = deckIdParamSchema.parse(req.params);
   const payload = updateDeckSchema.parse(req.body);
@@ -88,7 +104,6 @@ async function updateDeck(req, res) {
   return res.status(200).json({ deck });
 }
 
-// Remove um deck especifico do usuario.
 async function deleteDeck(req, res) {
   const { deckId } = deckIdParamSchema.parse(req.params);
   const deck = await deckService.deleteDeckForUser({
@@ -102,6 +117,8 @@ async function deleteDeck(req, res) {
 module.exports = {
   getDeckRules,
   getDeckCatalog,
+  listImoCards,
+  createImoCard,
   createDeck,
   listDecks,
   getDeckById,

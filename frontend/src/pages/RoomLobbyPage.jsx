@@ -1,28 +1,75 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { PlayerCard } from '../components/system/PlayerCard';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
+import { deckApi } from '../api/deckApi';
+import { matchApi } from '../api/matchApi';
 import { roomApi } from '../api/roomApi';
 import { useAuthStore } from '../stores/authStore';
 import { useRoomStore } from '../stores/roomStore';
 import { formatErrorMessage } from '../utils/formatError';
 
-// Tela de lobby para criar/entrar em sala e listar jogadores.
 export function RoomLobbyPage() {
   const token = useAuthStore((state) => state.token);
+  const user = useAuthStore((state) => state.user);
 
   const currentRoom = useRoomStore((state) => state.currentRoom);
   const players = useRoomStore((state) => state.players);
+  const currentMatch = useRoomStore((state) => state.currentMatch);
   const setRoomData = useRoomStore((state) => state.setRoomData);
+  const setMatchData = useRoomStore((state) => state.setMatchData);
   const clearRoom = useRoomStore((state) => state.clearRoom);
 
   const [joinCode, setJoinCode] = useState('');
+  const [availableDecks, setAvailableDecks] = useState([]);
+  const [selectedDeckId, setSelectedDeckId] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+
+  const currentPlayer = useMemo(
+    () => players.find((player) => player.user_id === user?.id) || null,
+    [players, user?.id]
+  );
+  const isHost = currentRoom?.host_id === user?.id;
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadLobbyState() {
+      try {
+        const [roomResponse, decksResponse] = await Promise.all([
+          roomApi.getCurrentRoom({ token }),
+          deckApi.listDecks({ token }),
+        ]);
+
+        if (!isMounted) {
+          return;
+        }
+
+        setAvailableDecks(decksResponse.decks || []);
+        if (roomResponse.room) {
+          setRoomData(roomResponse);
+        }
+        if (roomResponse.match) {
+          setMatchData(roomResponse.match);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setErrorMessage(formatErrorMessage(error));
+        }
+      }
+    }
+
+    loadLobbyState();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [setMatchData, setRoomData, token]);
 
   async function handleCreateRoom() {
     setIsLoading(true);
@@ -78,10 +125,80 @@ export function RoomLobbyPage() {
     }
   }
 
-  async function handleListPlayers() {
-    const roomId = Number(currentRoom?.id);
-    if (!roomId) {
-      setErrorMessage('Entre em uma sala para listar jogadores.');
+  async function handleRefreshPlayers() {
+    if (!currentRoom?.id) {
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMessage('');
+
+    try {
+      const response = await roomApi.listPlayers({ roomId: currentRoom.id, token });
+      setRoomData(response);
+
+      if (currentRoom.status === 'in_match') {
+        const snapshot = await matchApi.getSnapshot({ roomId: currentRoom.id, token });
+        setMatchData(snapshot);
+      }
+    } catch (error) {
+      setErrorMessage(formatErrorMessage(error));
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleSelectDeck(event) {
+    const nextDeckId = Number(event.target.value);
+    setSelectedDeckId(event.target.value);
+
+    if (!currentRoom?.id || !nextDeckId) {
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMessage('');
+
+    try {
+      const response = await roomApi.selectDeck({
+        roomId: currentRoom.id,
+        deckId: nextDeckId,
+        token,
+      });
+      setRoomData(response);
+      setStatusMessage('Deck selecionado para a sala.');
+    } catch (error) {
+      setErrorMessage(formatErrorMessage(error));
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleToggleReady() {
+    if (!currentRoom?.id) {
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMessage('');
+
+    try {
+      const response = await roomApi.setReady({
+        roomId: currentRoom.id,
+        isReady: !currentPlayer?.is_ready,
+        token,
+      });
+      setRoomData(response);
+      setStatusMessage(currentPlayer?.is_ready ? 'Voce nao esta mais pronto.' : 'Voce marcou como pronto.');
+    } catch (error) {
+      setErrorMessage(formatErrorMessage(error));
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleStartMatch() {
+    if (!currentRoom?.id) {
       return;
     }
 
@@ -90,9 +207,10 @@ export function RoomLobbyPage() {
     setStatusMessage('');
 
     try {
-      const response = await roomApi.listPlayers({ roomId, token });
-      setRoomData(response);
-      setStatusMessage(`Jogadores carregados da sala ${response.room.code}.`);
+      const snapshot = await matchApi.start({ roomId: currentRoom.id, token });
+      setMatchData(snapshot);
+      setStatusMessage('Partida iniciada com sucesso.');
+      await handleRefreshPlayers();
     } catch (error) {
       setErrorMessage(formatErrorMessage(error));
     } finally {
@@ -106,12 +224,14 @@ export function RoomLobbyPage() {
         <div className="stack-gap" style={{ gap: '10px' }}>
           <Badge tone="secondary">Lobby Control</Badge>
           <h1 className="page-title">Room Lobby</h1>
-          <p className="page-subtitle">Crie uma sala, entre por codigo e acompanhe a composicao do grupo.</p>
+          <p className="page-subtitle">
+            Escolha seu deck, marque prontidao e inicie a partida quando o grupo estiver completo.
+          </p>
         </div>
       </div>
 
       <div className="grid-2">
-        <Card description="Gerencie a entrada dos jogadores via API HTTP." title="Sala">
+        <Card description="Criacao, entrada e configuracao da sua participacao na sala." title="Sala">
           <div className="row-wrap">
             <Button loading={isLoading} onClick={handleCreateRoom}>
               Criar sala
@@ -121,18 +241,13 @@ export function RoomLobbyPage() {
               Sair da sala
             </Button>
 
-            <Button disabled={isLoading} onClick={handleListPlayers} variant="secondary">
-              Listar jogadores
+            <Button disabled={isLoading} onClick={handleRefreshPlayers} variant="secondary">
+              Atualizar
             </Button>
           </div>
 
           <form className="stack-gap" onSubmit={handleJoinRoom} style={{ marginTop: '18px' }}>
-            <Input
-              onChange={(event) => setJoinCode(event.target.value)}
-              placeholder="Codigo da sala"
-              required
-              value={joinCode}
-            />
+            <Input onChange={(event) => setJoinCode(event.target.value)} placeholder="Codigo da sala" required value={joinCode} />
 
             <Button loading={isLoading} type="submit">
               Entrar por codigo
@@ -140,12 +255,42 @@ export function RoomLobbyPage() {
           </form>
 
           <div className="stack-gap" style={{ marginTop: '18px' }}>
-            {statusMessage ? <p className="success-text">{statusMessage}</p> : null}
-            {errorMessage ? <p className="error-text">{errorMessage}</p> : null}
+            <label className="ui-input">
+              <span className="ui-input__label">Meu deck para a sala</span>
+              <select
+                className="ui-input__field"
+                disabled={!currentRoom || isLoading}
+                onChange={handleSelectDeck}
+                value={selectedDeckId || String(currentPlayer?.selected_deck_id || '')}
+              >
+                <option value="">Selecione um deck</option>
+                {availableDecks.map((deck) => (
+                  <option key={deck.id} value={deck.id}>
+                    {deck.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="row-wrap">
+              <Button disabled={isLoading || !currentRoom || !selectedDeckId} onClick={handleToggleReady} variant="secondary">
+                {currentPlayer?.is_ready ? 'Desmarcar pronto' : 'Marcar como pronto'}
+              </Button>
+
+              <Button
+                disabled={isLoading || !currentRoom || !isHost || currentRoom.status !== 'lobby'}
+                onClick={handleStartMatch}
+              >
+                Iniciar partida
+              </Button>
+            </div>
           </div>
+
+          {statusMessage ? <p className="success-text">{statusMessage}</p> : null}
+          {errorMessage ? <p className="error-text">{errorMessage}</p> : null}
         </Card>
 
-        <Card title="Sala atual" description="Status da sala e jogadores carregados no estado local.">
+        <Card title="Sala atual" description="Estado atual da sala, host e preparacao dos jogadores.">
           {currentRoom ? (
             <div className="status-grid" style={{ marginBottom: '18px' }}>
               <div className="status-item">
@@ -159,8 +304,13 @@ export function RoomLobbyPage() {
               </div>
 
               <div className="status-item">
-                <span className="status-label">Jogadores</span>
-                <span className="status-value">{players.length}</span>
+                <span className="status-label">Host</span>
+                <span className="status-value">{players.find((player) => player.user_id === currentRoom.host_id)?.username || '-'}</span>
+              </div>
+
+              <div className="status-item">
+                <span className="status-label">Match</span>
+                <span className="status-value">{currentMatch?.status || 'Sem partida'}</span>
               </div>
             </div>
           ) : (
@@ -174,7 +324,13 @@ export function RoomLobbyPage() {
             </div>
 
             {players.length ? (
-              players.map((player) => <PlayerCard key={`${player.room_id}-${player.user_id}`} player={player} />)
+              players.map((player) => (
+                <PlayerCard
+                  isCurrentUser={player.user_id === user?.id}
+                  key={`${player.room_id}-${player.user_id}`}
+                  player={player}
+                />
+              ))
             ) : (
               <div className="empty-state">Sem jogadores no estado atual.</div>
             )}

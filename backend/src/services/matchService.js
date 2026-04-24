@@ -1,0 +1,503 @@
+const {
+  findRoomById,
+  listRoomPlayers,
+  updateRoomState,
+  assignRoomPlayerTurnOrders,
+  isPlayerInRoom,
+} = require('../models/roomModel');
+const {
+  createMatch,
+  findActiveMatchByRoomId,
+  updateMatchState,
+  upsertMatchPlayer,
+  listMatchPlayers,
+  addMatchLog,
+  listMatchLogs,
+} = require('../models/matchModel');
+const { AppError } = require('../utils/AppError');
+const { getResolvedDeckForUser, resolveCardById } = require('./deckService');
+
+const INITIAL_HEALTH = 10;
+const INITIAL_IMO = 3;
+const MAX_IMO = 10;
+const INITIAL_HAND_SIZE = 5;
+
+async function startMatchForRoom({ roomId, userId }) {
+  const room = await findRoomById(roomId);
+  if (!room) {
+    throw new AppError('Sala nao encontrada.', 404);
+  }
+
+  if (room.host_id !== userId) {
+    throw new AppError('Somente o host pode iniciar a partida.', 403);
+  }
+
+  if (room.status !== 'lobby') {
+    throw new AppError('A sala nao esta em lobby para iniciar partida.', 409);
+  }
+
+  const players = await listRoomPlayers(roomId);
+  if (players.length < 2) {
+    throw new AppError('A partida precisa de ao menos 2 jogadores.', 409);
+  }
+
+  const playersWithoutDeck = players.filter((player) => !player.selected_deck_id);
+  if (playersWithoutDeck.length) {
+    throw new AppError('Todos os jogadores precisam selecionar um deck.', 409);
+  }
+
+  const playersNotReady = players.filter((player) => !player.is_ready);
+  if (playersNotReady.length) {
+    throw new AppError('Todos os jogadores precisam estar prontos.', 409);
+  }
+
+  const orderedUserIds = players.map((player) => player.user_id);
+  await assignRoomPlayerTurnOrders({ roomId, orderedUserIds });
+
+  const activeMatch = await findActiveMatchByRoomId(roomId);
+  if (activeMatch) {
+    throw new AppError('Ja existe uma partida ativa para esta sala.', 409);
+  }
+
+  const match = await createMatch({
+    roomId,
+    currentTurnPlayerId: orderedUserIds[0],
+  });
+
+  for (let index = 0; index < players.length; index += 1) {
+    const player = players[index];
+    const { expandedCards } = await getResolvedDeckForUser({
+      deckId: player.selected_deck_id,
+      ownerId: player.user_id,
+    });
+
+    const shuffledDeck = shuffleCards(expandedCards);
+    const handCards = shuffledDeck.splice(0, INITIAL_HAND_SIZE);
+
+    await upsertMatchPlayer({
+      matchId: match.id,
+      userId: player.user_id,
+      turnOrder: index + 1,
+      health: INITIAL_HEALTH,
+      imo: INITIAL_IMO,
+      maxImo: MAX_IMO,
+      hasDrawnThisTurn: false,
+      isDefeated: false,
+      deckCards: shuffledDeck,
+      handCards,
+      discardCards: [],
+      exileCards: [],
+    });
+  }
+
+  await updateRoomState({
+    roomId: room.id,
+    hostId: room.host_id,
+    status: 'in_match',
+  });
+
+  await addMatchLog({
+    matchId: match.id,
+    type: 'MATCH_START',
+    message: 'A partida foi iniciada.',
+    payload: { roomId: room.id },
+  });
+
+  return getMatchSnapshot({ roomId, userId });
+}
+
+async function getMatchSnapshot({ roomId, userId }) {
+  const room = await findRoomById(roomId);
+  if (!room) {
+    throw new AppError('Sala nao encontrada.', 404);
+  }
+
+  const belongsToRoom = await isPlayerInRoom({ roomId, userId });
+  if (!belongsToRoom) {
+    throw new AppError('Voce nao pertence a esta sala.', 403);
+  }
+
+  const players = await listRoomPlayers(roomId);
+  const activeMatch = await findActiveMatchByRoomId(roomId);
+
+  if (!activeMatch) {
+    return {
+      room,
+      players,
+      match: null,
+      currentTurnPlayerId: null,
+      round: null,
+      currentUserState: null,
+      logs: [],
+    };
+  }
+
+  const matchPlayers = await listMatchPlayers(activeMatch.id);
+  const logs = await listMatchLogs(activeMatch.id);
+
+  const hydratedPlayers = await Promise.all(
+    matchPlayers.map(async (player) => {
+      const handCards = await hydrateCardsForUser(player.user_id, player.hand_cards_json || []);
+      const discardCards = await hydrateCardsForUser(player.user_id, player.discard_cards_json || []);
+      const exileCards = await hydrateCardsForUser(player.user_id, player.exile_cards_json || []);
+
+      return {
+        userId: player.user_id,
+        username: player.username,
+        email: player.email,
+        turnOrder: player.turn_order,
+        health: player.health,
+        imo: player.imo,
+        maxImo: player.max_imo,
+        hasDrawnThisTurn: player.has_drawn_this_turn,
+        isDefeated: player.is_defeated,
+        zones: {
+          deckCount: (player.deck_cards_json || []).length,
+          handCount: handCards.length,
+          discardCount: discardCards.length,
+          exileCount: exileCards.length,
+        },
+        handCards: player.user_id === userId ? handCards : [],
+        discardCards: player.user_id === userId ? discardCards : [],
+        exileCards: player.user_id === userId ? exileCards : [],
+        availableActions: buildAvailableActions({
+          activeMatch,
+          matchPlayer: player,
+          requesterUserId: userId,
+        }),
+      };
+    })
+  );
+
+  const currentUserState = hydratedPlayers.find((player) => player.userId === userId) || null;
+
+  return {
+    room,
+    players,
+    match: {
+      id: activeMatch.id,
+      status: activeMatch.status,
+      round: activeMatch.round,
+      currentTurnPlayerId: activeMatch.current_turn_player_id,
+      winnerUserId: activeMatch.winner_user_id,
+      startedAt: activeMatch.started_at,
+      endedAt: activeMatch.ended_at,
+    },
+    currentTurnPlayerId: activeMatch.current_turn_player_id,
+    round: activeMatch.round,
+    currentUserState,
+    playerStates: hydratedPlayers,
+    logs: logs.map((item) => ({
+      id: item.id,
+      type: item.type,
+      message: item.message,
+      payload: item.payload_json,
+      timestamp: item.created_at,
+    })),
+  };
+}
+
+async function drawCardForPlayer({ roomId, userId }) {
+  const context = await requireActiveTurnContext({ roomId, userId });
+  const playerState = context.currentPlayer;
+
+  if (playerState.has_drawn_this_turn) {
+    throw new AppError('Voce ja comprou uma carta neste turno.', 409);
+  }
+
+  if (!(playerState.deck_cards_json || []).length) {
+    throw new AppError('Nao ha mais cartas no deck para comprar.', 409);
+  }
+
+  const deckCards = [...playerState.deck_cards_json];
+  const nextCard = deckCards.shift();
+  const handCards = [...playerState.hand_cards_json, nextCard];
+
+  await upsertMatchPlayer({
+    matchId: context.match.id,
+    userId,
+    turnOrder: playerState.turn_order,
+    health: playerState.health,
+    imo: playerState.imo,
+    maxImo: playerState.max_imo,
+    hasDrawnThisTurn: true,
+    isDefeated: playerState.is_defeated,
+    deckCards,
+    handCards,
+    discardCards: playerState.discard_cards_json,
+    exileCards: playerState.exile_cards_json,
+  });
+
+  await addMatchLog({
+    matchId: context.match.id,
+    type: 'MATCH_DRAW',
+    message: `${playerState.username} comprou uma carta.`,
+    payload: { userId, cardId: nextCard.cardId },
+  });
+
+  return getMatchSnapshot({ roomId, userId });
+}
+
+async function playCardForPlayer({ roomId, userId, cardId }) {
+  const context = await requireActiveTurnContext({ roomId, userId });
+  const playerState = context.currentPlayer;
+  const handCards = [...playerState.hand_cards_json];
+  const cardIndex = handCards.findIndex((entry) => entry.instanceId === cardId);
+
+  if (cardIndex < 0) {
+    throw new AppError('Carta nao encontrada na sua mao.', 404);
+  }
+
+  const [playedCard] = handCards.splice(cardIndex, 1);
+  const resolvedCard = await resolveCardById({ ownerId: userId, cardId: playedCard.cardId });
+  if (!resolvedCard) {
+    throw new AppError('Carta jogada nao encontrada no catalogo.', 404);
+  }
+
+  const imoCost = Number(resolvedCard.imoCost || 0);
+  if (playerState.imo < imoCost) {
+    throw new AppError('Imo insuficiente para jogar esta carta.', 409);
+  }
+
+  const nextImo = playerState.imo - imoCost;
+  const discardCards = [...playerState.discard_cards_json, playedCard];
+
+  await upsertMatchPlayer({
+    matchId: context.match.id,
+    userId,
+    turnOrder: playerState.turn_order,
+    health: playerState.health,
+    imo: nextImo,
+    maxImo: playerState.max_imo,
+    hasDrawnThisTurn: playerState.has_drawn_this_turn,
+    isDefeated: playerState.is_defeated,
+    deckCards: playerState.deck_cards_json,
+    handCards,
+    discardCards,
+    exileCards: playerState.exile_cards_json,
+  });
+
+  await addMatchLog({
+    matchId: context.match.id,
+    type: 'MATCH_PLAY_CARD',
+    message: `${playerState.username} jogou ${resolvedCard.name}.`,
+    payload: {
+      userId,
+      cardId: playedCard.cardId,
+      imoCost,
+    },
+  });
+
+  return getMatchSnapshot({ roomId, userId });
+}
+
+async function endTurnForPlayer({ roomId, userId }) {
+  const context = await requireActiveTurnContext({ roomId, userId });
+  const currentPlayer = context.currentPlayer;
+  const activePlayers = context.matchPlayers.filter((player) => !player.is_defeated);
+
+  const nextPlayer = getNextTurnPlayer(activePlayers, currentPlayer.user_id);
+  const nextRound =
+    nextPlayer && nextPlayer.user_id === activePlayers[0]?.user_id
+      ? context.match.round + 1
+      : context.match.round;
+
+  for (const player of context.matchPlayers) {
+    await upsertMatchPlayer({
+      matchId: context.match.id,
+      userId: player.user_id,
+      turnOrder: player.turn_order,
+      health: player.health,
+      imo: player.user_id === nextPlayer.user_id ? Math.min(player.max_imo, player.imo + 1) : player.imo,
+      maxImo: player.max_imo,
+      hasDrawnThisTurn: player.user_id === nextPlayer.user_id ? false : player.has_drawn_this_turn,
+      isDefeated: player.is_defeated,
+      deckCards: player.deck_cards_json,
+      handCards: player.hand_cards_json,
+      discardCards: player.discard_cards_json,
+      exileCards: player.exile_cards_json,
+    });
+  }
+
+  await updateMatchState({
+    matchId: context.match.id,
+    status: 'active',
+    round: nextRound,
+    currentTurnPlayerId: nextPlayer.user_id,
+    winnerUserId: null,
+  });
+
+  await addMatchLog({
+    matchId: context.match.id,
+    type: 'MATCH_END_TURN',
+    message: `${currentPlayer.username} encerrou o turno.`,
+    payload: { userId },
+  });
+
+  return getMatchSnapshot({ roomId, userId });
+}
+
+async function forfeitMatchByLeavingRoom({ roomId, userId }) {
+  const match = await findActiveMatchByRoomId(roomId);
+  if (!match) {
+    return null;
+  }
+
+  const matchPlayers = await listMatchPlayers(match.id);
+  const leavingPlayer = matchPlayers.find((player) => player.user_id === userId);
+  if (!leavingPlayer) {
+    return null;
+  }
+
+  await upsertMatchPlayer({
+    matchId: match.id,
+    userId: leavingPlayer.user_id,
+    turnOrder: leavingPlayer.turn_order,
+    health: leavingPlayer.health,
+    imo: leavingPlayer.imo,
+    maxImo: leavingPlayer.max_imo,
+    hasDrawnThisTurn: leavingPlayer.has_drawn_this_turn,
+    isDefeated: true,
+    deckCards: leavingPlayer.deck_cards_json,
+    handCards: leavingPlayer.hand_cards_json,
+    discardCards: leavingPlayer.discard_cards_json,
+    exileCards: leavingPlayer.exile_cards_json,
+  });
+
+  const remainingPlayers = matchPlayers.filter((player) => player.user_id !== userId && !player.is_defeated);
+  if (remainingPlayers.length === 1) {
+    await updateMatchState({
+      matchId: match.id,
+      status: 'finished',
+      round: match.round,
+      currentTurnPlayerId: null,
+      winnerUserId: remainingPlayers[0].user_id,
+      endedAt: new Date().toISOString(),
+    });
+
+    await updateRoomState({
+      roomId,
+      hostId: remainingPlayers[0].user_id,
+      status: 'finished',
+    });
+
+    await addMatchLog({
+      matchId: match.id,
+      type: 'MATCH_FINISH',
+      message: `${remainingPlayers[0].username} venceu por abandono.`,
+      payload: { winnerUserId: remainingPlayers[0].user_id, leavingUserId: userId },
+    });
+  }
+
+  return match.id;
+}
+
+async function requireActiveTurnContext({ roomId, userId }) {
+  const room = await findRoomById(roomId);
+  if (!room) {
+    throw new AppError('Sala nao encontrada.', 404);
+  }
+
+  const belongsToRoom = await isPlayerInRoom({ roomId, userId });
+  if (!belongsToRoom) {
+    throw new AppError('Voce nao pertence a esta sala.', 403);
+  }
+
+  const match = await findActiveMatchByRoomId(roomId);
+  if (!match) {
+    throw new AppError('Nao existe partida ativa para esta sala.', 409);
+  }
+
+  const matchPlayers = await listMatchPlayers(match.id);
+  const currentPlayer = matchPlayers.find((player) => player.user_id === userId);
+
+  if (!currentPlayer) {
+    throw new AppError('Jogador nao encontrado na partida.', 404);
+  }
+
+  if (match.current_turn_player_id !== userId) {
+    throw new AppError('Nao e o seu turno.', 409);
+  }
+
+  if (currentPlayer.is_defeated) {
+    throw new AppError('Jogador derrotado nao pode agir.', 409);
+  }
+
+  return {
+    room,
+    match,
+    matchPlayers,
+    currentPlayer,
+  };
+}
+
+function buildAvailableActions({ activeMatch, matchPlayer, requesterUserId }) {
+  if (!activeMatch || activeMatch.status !== 'active') {
+    return [];
+  }
+
+  if (matchPlayer.user_id !== requesterUserId) {
+    return [];
+  }
+
+  if (activeMatch.current_turn_player_id !== requesterUserId || matchPlayer.is_defeated) {
+    return [];
+  }
+
+  const actions = ['playCard', 'endTurn'];
+  if (!matchPlayer.has_drawn_this_turn) {
+    actions.unshift('drawCard');
+  }
+
+  return actions;
+}
+
+function getNextTurnPlayer(activePlayers, currentUserId) {
+  const currentIndex = activePlayers.findIndex((player) => player.user_id === currentUserId);
+  if (currentIndex < 0) {
+    return activePlayers[0];
+  }
+
+  return activePlayers[(currentIndex + 1) % activePlayers.length];
+}
+
+function shuffleCards(cards) {
+  const entries = [...cards];
+  for (let index = entries.length - 1; index > 0; index -= 1) {
+    const randomIndex = Math.floor(Math.random() * (index + 1));
+    [entries[index], entries[randomIndex]] = [entries[randomIndex], entries[index]];
+  }
+
+  return entries.map((card, index) => ({
+    ...card,
+    instanceId: `${card.id}::${index + 1}::${Math.random().toString(36).slice(2, 8)}`,
+    cardId: card.id,
+  }));
+}
+
+async function hydrateCardsForUser(ownerId, cardEntries) {
+  const hydrated = [];
+
+  for (const entry of cardEntries || []) {
+    const baseCard = await resolveCardById({ ownerId, cardId: entry.cardId });
+    if (!baseCard) {
+      continue;
+    }
+
+    hydrated.push({
+      ...baseCard,
+      instanceId: entry.instanceId,
+    });
+  }
+
+  return hydrated;
+}
+
+module.exports = {
+  startMatchForRoom,
+  getMatchSnapshot,
+  drawCardForPlayer,
+  playCardForPlayer,
+  endTurnForPlayer,
+  forfeitMatchByLeavingRoom,
+};

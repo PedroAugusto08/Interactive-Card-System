@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { ActionLogItem } from '../components/system/ActionLogItem';
 import { CardItem } from '../components/system/CardItem';
@@ -8,6 +8,7 @@ import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
+import { matchApi } from '../api/matchApi';
 import { roomApi } from '../api/roomApi';
 import { useSocket } from '../hooks/useSocket';
 import { useAuthStore } from '../stores/authStore';
@@ -20,57 +21,50 @@ export function MatchPage() {
 
   const currentRoom = useRoomStore((state) => state.currentRoom);
   const players = useRoomStore((state) => state.players);
+  const currentMatch = useRoomStore((state) => state.currentMatch);
+  const currentUserState = useRoomStore((state) => state.currentUserState);
+  const logs = useRoomStore((state) => state.logs);
   const setRoomData = useRoomStore((state) => state.setRoomData);
+  const setMatchData = useRoomStore((state) => state.setMatchData);
   const clearRoom = useRoomStore((state) => state.clearRoom);
 
   const socket = useSocket(token);
 
   const [roomCode, setRoomCode] = useState('');
-  const [matchState, setMatchState] = useState(null);
-  const [logItems, setLogItems] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [localError, setLocalError] = useState('');
+  const [syncMessage, setSyncMessage] = useState('');
 
   const isSocketConnected = Boolean(socket?.connected);
-  const activeTurnPlayerId = matchState?.currentTurnPlayerId;
+  const activeTurnPlayerId = currentMatch?.currentTurnPlayerId;
 
-  const handPreview = useMemo(
-    () => [
-      {
-        id: 'preview-1',
-        name: 'Ataque Normal',
-        description: 'Carta base de acao direta, pronta para uso no turno atual.',
-        imageSrc: '/cartas/1.png',
-        category: 'Fixa',
-      },
-      {
-        id: 'preview-2',
-        name: 'Reacao',
-        description: 'Resposta defensiva para negar uma ofensiva inimiga.',
-        imageSrc: '/cartas/3.png',
-        category: 'Fixa',
-      },
-      {
-        id: 'preview-3',
-        name: 'Divisao',
-        description: 'Manipula o fluxo de cartas entre aliados e alvos.',
-        imageSrc: '/cartas/11.png',
-        category: 'Divisao',
-      },
-    ],
-    []
-  );
+  useEffect(() => {
+    let isMounted = true;
 
-  function appendLocalLog(payload) {
-    setLogItems((previous) => [payload, ...previous].slice(0, 40));
-  }
+    async function hydrateFromApi() {
+      try {
+        const roomState = await roomApi.getCurrentRoom({ token });
+        if (!isMounted || !roomState.room) {
+          return;
+        }
 
-  const socketStatus = useMemo(() => {
-    if (!socket) {
-      return 'desconectado';
+        setRoomData(roomState);
+        if (roomState.match) {
+          setMatchData(roomState.match);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setLocalError(formatErrorMessage(error));
+        }
+      }
     }
 
-    return socket.connected ? 'conectado' : 'conectando';
-  }, [socket]);
+    hydrateFromApi();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [setMatchData, setRoomData, token]);
 
   useEffect(() => {
     if (!socket) {
@@ -81,149 +75,135 @@ export function MatchPage() {
       setRoomData(payload);
     }
 
-    function handleMatchUpdate(payload) {
-      setMatchState(payload);
+    function handleMatchSync(payload) {
+      setMatchData({
+        ...payload,
+        matchPlayers: payload.playerStates || [],
+      });
     }
 
     function handleLog(payload) {
-      setLogItems((previous) => [payload, ...previous].slice(0, 40));
+      setSyncMessage(payload.message);
     }
 
     socket.on('room:update', handleRoomUpdate);
-    socket.on('match:updateState', handleMatchUpdate);
+    socket.on('match:sync', handleMatchSync);
     socket.on('match:log', handleLog);
 
     return () => {
       socket.off('room:update', handleRoomUpdate);
-      socket.off('match:updateState', handleMatchUpdate);
+      socket.off('match:sync', handleMatchSync);
       socket.off('match:log', handleLog);
     };
-  }, [socket, setRoomData]);
+  }, [setMatchData, setRoomData, socket]);
 
-  async function handleSocketJoin(event) {
+  useEffect(() => {
+    if (socket && currentRoom?.id && isSocketConnected) {
+      socket.emit('room:join', { code: currentRoom.code });
+      socket.emit('match:sync', { roomId: currentRoom.id });
+    }
+  }, [currentRoom?.code, currentRoom?.id, isSocketConnected, socket]);
+
+  async function handleJoinRoom(event) {
     event.preventDefault();
     const code = roomCode.trim().toUpperCase();
     if (!code) {
       return;
     }
 
-    if (isSocketConnected) {
-      socket.emit('room:join', { code });
-      return;
-    }
-
     setIsSubmitting(true);
+    setLocalError('');
 
     try {
-      const data = await roomApi.joinRoom({ code, token });
-      setRoomData(data);
-      setMatchState({
-        roomId: data.room.id,
-        currentTurnPlayerId: null,
-        round: 1,
-        players: data.players,
-      });
+      const roomData = await roomApi.joinRoom({ code, token });
+      setRoomData(roomData);
 
-      appendLocalLog({
-        type: 'ROOM_JOIN_HTTP',
-        message: `Entrou na sala ${data.room.code} via HTTP fallback.`,
-        timestamp: new Date().toISOString(),
-      });
+      if (isSocketConnected) {
+        socket.emit('room:join', { code });
+      } else {
+        const snapshot = await matchApi.getSnapshot({ roomId: roomData.room.id, token });
+        setMatchData({
+          ...snapshot,
+          matchPlayers: snapshot.playerStates || [],
+        });
+      }
     } catch (error) {
-      appendLocalLog({
-        type: 'ERROR',
-        message: formatErrorMessage(error),
-        timestamp: new Date().toISOString(),
-      });
+      setLocalError(formatErrorMessage(error));
     } finally {
       setIsSubmitting(false);
     }
   }
 
-  async function handleSocketLeave() {
+  async function handleLeaveRoom() {
     if (!currentRoom?.id) {
       return;
     }
 
-    if (isSocketConnected) {
-      socket.emit('room:leave', { roomId: currentRoom.id });
-      clearRoom();
-      setMatchState(null);
-
-      appendLocalLog({
-        type: 'ROOM_LEAVE_SOCKET',
-        message: 'Saida de sala enviada via socket.',
-        timestamp: new Date().toISOString(),
-      });
-      return;
-    }
-
     setIsSubmitting(true);
+    setLocalError('');
 
     try {
       await roomApi.leaveRoom({ roomId: currentRoom.id, token });
       clearRoom();
-      setMatchState(null);
-
-      appendLocalLog({
-        type: 'ROOM_LEAVE_HTTP',
-        message: 'Voce saiu da sala via HTTP fallback.',
-        timestamp: new Date().toISOString(),
-      });
     } catch (error) {
-      appendLocalLog({
-        type: 'ERROR',
-        message: formatErrorMessage(error),
-        timestamp: new Date().toISOString(),
-      });
+      setLocalError(formatErrorMessage(error));
     } finally {
       setIsSubmitting(false);
     }
   }
 
-  async function handleRefreshPlayers() {
+  async function handleAction(action, payload = {}) {
     if (!currentRoom?.id) {
       return;
     }
 
     setIsSubmitting(true);
+    setLocalError('');
 
     try {
-      const data = await roomApi.listPlayers({ roomId: currentRoom.id, token });
-      setRoomData(data);
+      if (isSocketConnected) {
+        socket.emit(action, {
+          roomId: currentRoom.id,
+          ...payload,
+        });
+      } else {
+        let snapshot = null;
 
-      setMatchState((previous) => {
-        if (!previous) {
-          return {
-            roomId: data.room.id,
-            currentTurnPlayerId: null,
-            round: 1,
-            players: data.players,
-          };
+        if (action === 'match:draw') {
+          snapshot = await matchApi.draw({ roomId: currentRoom.id, token });
+        } else if (action === 'match:playCard') {
+          snapshot = await matchApi.playCard({
+            roomId: currentRoom.id,
+            token,
+            cardId: payload.cardId,
+          });
+        } else if (action === 'match:endTurn') {
+          snapshot = await matchApi.endTurn({ roomId: currentRoom.id, token });
         }
 
-        return {
-          ...previous,
-          roomId: data.room.id,
-          players: data.players,
-        };
-      });
-
-      appendLocalLog({
-        type: 'ROOM_PLAYERS_REFRESH_HTTP',
-        message: `Jogadores da sala ${data.room.code} atualizados via HTTP.`,
-        timestamp: new Date().toISOString(),
-      });
+        if (snapshot) {
+          setMatchData({
+            ...snapshot,
+            matchPlayers: snapshot.playerStates || [],
+          });
+        }
+      }
     } catch (error) {
-      appendLocalLog({
-        type: 'ERROR',
-        message: formatErrorMessage(error),
-        timestamp: new Date().toISOString(),
-      });
+      setLocalError(formatErrorMessage(error));
     } finally {
       setIsSubmitting(false);
     }
   }
+
+  const currentTurnPlayer = players.find((player) => player.user_id === activeTurnPlayerId);
+  const currentZones = currentUserState?.zones || {
+    deckCount: 0,
+    handCount: 0,
+    discardCount: 0,
+    exileCount: 0,
+  };
+  const handCards = currentUserState?.handCards || [];
+  const availableActions = currentUserState?.availableActions || [];
 
   return (
     <section className="match-shell">
@@ -236,42 +216,54 @@ export function MatchPage() {
             </div>
             <div className="status-item">
               <span className="status-label">Turno atual</span>
-              <span className="status-value">{activeTurnPlayerId ?? '-'}</span>
+              <span className="status-value">{currentTurnPlayer?.username || '-'}</span>
             </div>
             <div className="status-item">
               <span className="status-label">Socket</span>
-              <span className="status-value">{socketStatus}</span>
+              <span className="status-value">{isSocketConnected ? 'conectado' : 'fallback HTTP'}</span>
             </div>
             <div className="status-item">
               <span className="status-label">Round</span>
-              <span className="status-value">{matchState?.round ?? 1}</span>
+              <span className="status-value">{currentMatch?.round ?? '-'}</span>
             </div>
           </div>
         </Card>
 
-        <Card description="Conecte-se a uma sala e sincronize o estado da partida." title="Acoes">
-          <form className="stack-gap" onSubmit={handleSocketJoin}>
+        <Card description="Conecte-se a uma sala ativa ou recupere o estado apos refresh." title="Acoes">
+          <form className="stack-gap" onSubmit={handleJoinRoom}>
             <Input onChange={(event) => setRoomCode(event.target.value)} placeholder="Codigo da sala" required value={roomCode} />
 
             <div className="row-wrap">
               <Button loading={isSubmitting} type="submit">
-                {isSocketConnected ? 'Entrar via socket' : 'Entrar via HTTP'}
+                Entrar na sala
               </Button>
 
-              <Button disabled={isSubmitting || !currentRoom} onClick={handleSocketLeave} type="button" variant="secondary">
+              <Button disabled={isSubmitting || !currentRoom} onClick={handleLeaveRoom} type="button" variant="secondary">
                 Sair da sala
-              </Button>
-
-              <Button
-                disabled={isSubmitting || !currentRoom}
-                onClick={handleRefreshPlayers}
-                type="button"
-                variant="secondary"
-              >
-                Atualizar jogadores
               </Button>
             </div>
           </form>
+
+          <div className="row-wrap" style={{ marginTop: '16px' }}>
+            <Button
+              disabled={isSubmitting || !currentRoom || !availableActions.includes('drawCard')}
+              onClick={() => handleAction('match:draw')}
+              variant="secondary"
+            >
+              Comprar
+            </Button>
+
+            <Button
+              disabled={isSubmitting || !currentRoom || !availableActions.includes('endTurn')}
+              onClick={() => handleAction('match:endTurn')}
+              variant="secondary"
+            >
+              Encerrar turno
+            </Button>
+          </div>
+
+          {syncMessage ? <p className="success-text">{syncMessage}</p> : null}
+          {localError ? <p className="error-text">{localError}</p> : null}
         </Card>
       </div>
 
@@ -292,7 +284,10 @@ export function MatchPage() {
                     isActiveTurn={player.user_id === activeTurnPlayerId}
                     isCurrentUser={player.user_id === user?.id}
                     key={`${player.room_id}-${player.user_id}`}
-                    player={player}
+                    player={{
+                      ...player,
+                      is_ready: player.is_ready,
+                    }}
                   />
                 ))
               ) : (
@@ -303,34 +298,56 @@ export function MatchPage() {
         </div>
 
         <div className="match-main-column">
-          <Card
-            description={
-              isSocketConnected
-                ? 'Eventos em tempo real ativos via Socket.IO.'
-                : 'Socket indisponivel: usando fallback HTTP para entrar e sair.'
-            }
-            title="Area principal"
-          >
+          <Card description="Zonas e recursos reais da sua participacao na partida." title="Area principal">
+            <div className="status-grid" style={{ marginBottom: '16px' }}>
+              <div className="status-item">
+                <span className="status-label">Vida</span>
+                <span className="status-value">{currentUserState?.health ?? '-'}</span>
+              </div>
+              <div className="status-item">
+                <span className="status-label">Imo</span>
+                <span className="status-value">
+                  {currentUserState ? `${currentUserState.imo}/${currentUserState.maxImo}` : '-'}
+                </span>
+              </div>
+            </div>
+
             <div className="zones-grid">
-              <ZoneContainer count={24} description="Fonte principal de compra." title="Deck" tone="primary" />
-              <ZoneContainer count={5} description="Cartas descartadas recentemente." title="Descarte" />
-              <ZoneContainer count={2} description="Cartas banidas ou temporariamente removidas." title="Exilio" />
-              <ZoneContainer count={3} description="Recursos e cartas persistentes." title="Zona ativa" tone="accent" />
+              <ZoneContainer count={currentZones.deckCount} description="Fonte principal de compra." title="Deck" tone="primary" />
+              <ZoneContainer count={currentZones.discardCount} description="Cartas descartadas." title="Descarte" />
+              <ZoneContainer count={currentZones.exileCount} description="Cartas exiladas." title="Exilio" />
+              <ZoneContainer count={currentZones.handCount} description="Cartas atualmente na sua mao." title="Mao" tone="accent" />
             </div>
           </Card>
 
-          <Card description="Cartas com leitura limpa, hover leve e destaque de selecao." title="Sua mao">
+          <Card description="Jogue cartas reais da sua mao quando for seu turno." title="Sua mao">
             <div className="hand-grid">
-              {handPreview.map((card, index) => (
-                <CardItem
-                  category={card.category}
-                  description={card.description}
-                  imageSrc={card.imageSrc}
-                  key={card.id}
-                  name={card.name}
-                  selected={index === 0}
-                />
-              ))}
+              {handCards.length ? (
+                handCards.map((card) => (
+                  <CardItem
+                    category={card.category}
+                    description={card.effect}
+                    footer={
+                      <div className="row-wrap">
+                        <Badge tone="accent">Custo {card.imoCost || 0}</Badge>
+                        <Button
+                          disabled={!availableActions.includes('playCard') || isSubmitting}
+                          onClick={() => handleAction('match:playCard', { cardId: card.instanceId })}
+                          size="sm"
+                        >
+                          Jogar
+                        </Button>
+                      </div>
+                    }
+                    imageSrc={card.imagePath}
+                    key={card.instanceId}
+                    name={card.name}
+                    showDescription={false}
+                  />
+                ))
+              ) : (
+                <div className="empty-state">Sem cartas na mao no momento.</div>
+              )}
             </div>
           </Card>
         </div>
@@ -338,8 +355,8 @@ export function MatchPage() {
         <div className="match-side-column">
           <Card description="Feed lateral para eventos e feedbacks da partida." title="Log de acoes">
             <div className="log-list">
-              {logItems.length ? (
-                logItems.map((item, index) => <ActionLogItem item={item} key={`${item.timestamp || 'time'}-${index}`} />)
+              {logs.length ? (
+                logs.map((item, index) => <ActionLogItem item={item} key={`${item.id || 'log'}-${index}`} />)
               ) : (
                 <div className="empty-state">Sem eventos por enquanto.</div>
               )}

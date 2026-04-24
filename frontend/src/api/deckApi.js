@@ -6,6 +6,15 @@ export const deckApi = {
 
   getCatalog: ({ token }) => request('/decks/catalog', { token }),
 
+  listImoCards: ({ token }) => request('/decks/imo-cards', { token }),
+
+  createImoCard: ({ token, payload }) =>
+    request('/decks/imo-cards', {
+      method: 'POST',
+      token,
+      body: payload,
+    }),
+
   listDecks: ({ token }) => request('/decks', { token }),
 
   createDeck: ({ token, payload }) =>

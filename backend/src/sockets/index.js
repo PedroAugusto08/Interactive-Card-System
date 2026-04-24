@@ -4,8 +4,8 @@ const jwt = require('jsonwebtoken');
 const { env } = require('../config/env');
 const { findUserById } = require('../models/userModel');
 const roomService = require('../services/roomService');
+const matchService = require('../services/matchService');
 
-// Configura servidor Socket.IO com autenticacao por JWT.
 function createSocketServer(httpServer) {
   const io = new Server(httpServer, {
     cors: {
@@ -14,10 +14,8 @@ function createSocketServer(httpServer) {
     },
   });
 
-  // Middleware de autenticacao para toda conexao websocket.
   io.use(async (socket, next) => {
     try {
-      // Token pode vir no auth do handshake ou no header Authorization.
       const token =
         socket.handshake.auth?.token ||
         extractBearerToken(socket.handshake.headers?.authorization || '');
@@ -38,7 +36,6 @@ function createSocketServer(httpServer) {
         return next(new Error('Usuario nao encontrado.'));
       }
 
-      // Salva usuario autenticado no contexto do socket.
       socket.data.user = user;
       return next();
     } catch (error) {
@@ -49,10 +46,9 @@ function createSocketServer(httpServer) {
   io.on('connection', (socket) => {
     const user = socket.data.user;
 
-    // Entra em sala e sincroniza estado para todos os jogadores da sala.
     socket.on('room:join', async ({ code }) => {
       try {
-        const { room, players } = await roomService.joinRoomByCode({
+        const { room } = await roomService.joinRoomByCode({
           code,
           userId: user.id,
         });
@@ -61,86 +57,119 @@ function createSocketServer(httpServer) {
         socket.join(roomChannel);
         socket.data.currentRoomId = room.id;
 
-        // Atualiza dados de lobby/sala para todos no canal.
-        io.to(roomChannel).emit('room:update', {
-          room,
-          players,
-        });
-
-        // Estado inicial da partida (base para evoluir depois).
-        io.to(roomChannel).emit('match:updateState', {
-          roomId: room.id,
-          currentTurnPlayerId: null,
-          round: 1,
-          players,
-        });
-
-        // Log de evento para feed da partida.
-        io.to(roomChannel).emit('match:log', {
-          type: 'ROOM_JOIN',
-          roomId: room.id,
-          userId: user.id,
-          username: user.username,
-          message: `${user.username} entrou na sala.`,
-          timestamp: new Date().toISOString(),
-        });
+        await syncSocketRoomState(socket, room.id);
+        await broadcastRoomState(io, room.id);
       } catch (error) {
-        // Retorna erro para o proprio cliente.
-        socket.emit('match:log', {
-          type: 'ERROR',
-          message: error.message,
-          timestamp: new Date().toISOString(),
-        });
+        emitSocketError(socket, error.message);
       }
     });
 
-    // Sai da sala e publica novo estado para quem permaneceu no canal.
     socket.on('room:leave', async ({ roomId }) => {
       try {
         const targetRoomId = Number(roomId || socket.data.currentRoomId);
-        if (!Number.isInteger(targetRoomId) || targetRoomId <= 0) {
-          throw new Error('roomId invalido.');
-        }
-
-        const { room, players } = await roomService.leaveRoom({
+        const data = await roomService.leaveRoom({
           roomId: targetRoomId,
           userId: user.id,
         });
 
-        const roomChannel = getRoomChannel(room.id);
-        socket.leave(roomChannel);
+        socket.leave(getRoomChannel(targetRoomId));
         socket.data.currentRoomId = null;
+        socket.emit('room:update', data);
 
-        // Atualiza dados de lobby/sala para todos no canal.
-        io.to(roomChannel).emit('room:update', {
-          room,
-          players,
-        });
-
-        // Estado inicial da partida (base para evoluir depois).
-        io.to(roomChannel).emit('match:updateState', {
-          roomId: room.id,
-          currentTurnPlayerId: null,
-          round: 1,
-          players,
-        });
-
-        // Log de evento para feed da partida.
-        io.to(roomChannel).emit('match:log', {
-          type: 'ROOM_LEAVE',
-          roomId: room.id,
-          userId: user.id,
-          username: user.username,
-          message: `${user.username} saiu da sala.`,
-          timestamp: new Date().toISOString(),
-        });
+        await broadcastRoomState(io, targetRoomId);
       } catch (error) {
-        // Retorna erro para o proprio cliente.
-        socket.emit('match:log', {
-          type: 'ERROR',
-          message: error.message,
-          timestamp: new Date().toISOString(),
+        emitSocketError(socket, error.message);
+      }
+    });
+
+    socket.on('room:selectDeck', async ({ roomId, deckId }) => {
+      try {
+        await roomService.selectDeckForPlayer({
+          roomId: Number(roomId),
+          userId: user.id,
+          deckId: Number(deckId),
         });
+
+        await syncSocketRoomState(socket, Number(roomId));
+        await broadcastRoomState(io, Number(roomId));
+      } catch (error) {
+        emitSocketError(socket, error.message);
+      }
+    });
+
+    socket.on('room:setReady', async ({ roomId, isReady }) => {
+      try {
+        await roomService.setPlayerReadyState({
+          roomId: Number(roomId),
+          userId: user.id,
+          isReady: Boolean(isReady),
+        });
+
+        await syncSocketRoomState(socket, Number(roomId));
+        await broadcastRoomState(io, Number(roomId));
+      } catch (error) {
+        emitSocketError(socket, error.message);
+      }
+    });
+
+    socket.on('match:start', async ({ roomId }) => {
+      try {
+        await matchService.startMatchForRoom({
+          roomId: Number(roomId),
+          userId: user.id,
+        });
+
+        await broadcastRoomState(io, Number(roomId));
+      } catch (error) {
+        emitSocketError(socket, error.message);
+      }
+    });
+
+    socket.on('match:draw', async ({ roomId }) => {
+      try {
+        await matchService.drawCardForPlayer({
+          roomId: Number(roomId),
+          userId: user.id,
+        });
+
+        await broadcastRoomState(io, Number(roomId));
+      } catch (error) {
+        emitSocketError(socket, error.message);
+      }
+    });
+
+    socket.on('match:playCard', async ({ roomId, cardId }) => {
+      try {
+        await matchService.playCardForPlayer({
+          roomId: Number(roomId),
+          userId: user.id,
+          cardId,
+        });
+
+        await broadcastRoomState(io, Number(roomId));
+      } catch (error) {
+        emitSocketError(socket, error.message);
+      }
+    });
+
+    socket.on('match:endTurn', async ({ roomId }) => {
+      try {
+        await matchService.endTurnForPlayer({
+          roomId: Number(roomId),
+          userId: user.id,
+        });
+
+        await broadcastRoomState(io, Number(roomId));
+      } catch (error) {
+        emitSocketError(socket, error.message);
+      }
+    });
+
+    socket.on('match:sync', async ({ roomId }) => {
+      try {
+        await syncSocketRoomState(socket, Number(roomId || socket.data.currentRoomId));
+      } catch (error) {
+        emitSocketError(socket, error.message);
       }
     });
   });
@@ -148,7 +177,57 @@ function createSocketServer(httpServer) {
   return io;
 }
 
-// Extrai token quando Authorization vem no formato Bearer <token>.
+async function syncSocketRoomState(socket, roomId) {
+  if (!roomId) {
+    return;
+  }
+
+  const roomData = await roomService.getRoomPlayers({
+    roomId,
+    userId: socket.data.user.id,
+  });
+
+  socket.emit('room:update', roomData);
+
+  const matchSnapshot = await matchService.getMatchSnapshot({
+    roomId,
+    userId: socket.data.user.id,
+  });
+
+  socket.emit('match:sync', matchSnapshot);
+
+  if (matchSnapshot.match) {
+    socket.emit('match:updateState', {
+      roomId,
+      currentTurnPlayerId: matchSnapshot.currentTurnPlayerId,
+      round: matchSnapshot.round,
+      players: matchSnapshot.playerStates,
+    });
+  }
+
+  for (const logItem of matchSnapshot.logs.slice().reverse()) {
+    socket.emit('match:log', {
+      type: logItem.type,
+      message: logItem.message,
+      timestamp: logItem.timestamp,
+    });
+  }
+}
+
+async function broadcastRoomState(io, roomId) {
+  const roomChannel = getRoomChannel(roomId);
+  const sockets = await io.in(roomChannel).fetchSockets();
+  await Promise.all(sockets.map((socket) => syncSocketRoomState(socket, roomId)));
+}
+
+function emitSocketError(socket, message) {
+  socket.emit('match:log', {
+    type: 'ERROR',
+    message,
+    timestamp: new Date().toISOString(),
+  });
+}
+
 function extractBearerToken(authorizationHeader) {
   const [scheme, token] = String(authorizationHeader).split(' ');
   if (scheme !== 'Bearer') {
@@ -158,7 +237,6 @@ function extractBearerToken(authorizationHeader) {
   return token;
 }
 
-// Nome padrao de canal para cada sala.
 function getRoomChannel(roomId) {
   return `room:${roomId}`;
 }

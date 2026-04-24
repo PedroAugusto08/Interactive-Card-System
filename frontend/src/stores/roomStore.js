@@ -1,21 +1,31 @@
 import { create } from 'zustand';
 
-// Store simples para estado de sala no frontend.
 export const useRoomStore = create((set) => ({
   currentRoom: null,
   players: [],
+  currentMatch: null,
+  currentUserState: null,
+  logs: [],
 
-  // Atualiza sala e lista de jogadores de uma vez.
   setRoomData: ({ room, players }) =>
     set({
       currentRoom: room || null,
       players: players || [],
     }),
 
-  // Limpa dados da sala atual.
+  setMatchData: (snapshot) =>
+    set({
+      currentMatch: snapshot?.match || null,
+      currentUserState: snapshot?.currentUserState || null,
+      logs: snapshot?.logs || [],
+    }),
+
   clearRoom: () =>
     set({
       currentRoom: null,
       players: [],
+      currentMatch: null,
+      currentUserState: null,
+      logs: [],
     }),
 }));
