@@ -101,7 +101,7 @@ export function ProtectedLayout() {
           <button
             aria-controls="profile-sidebar"
             aria-expanded={isProfileOpen}
-            aria-label="Abrir menu do usuario"
+            aria-label="Abrir menu do usuário"
             className="profile-trigger"
             onClick={toggleProfileSidebar}
             type="button"
@@ -116,7 +116,7 @@ export function ProtectedLayout() {
 
       {isProfileOpen ? (
         <button
-          aria-label="Fechar menu do usuario"
+          aria-label="Fechar menu do usuário"
           className="profile-overlay"
           onClick={closeProfileSidebar}
           type="button"
@@ -126,11 +126,11 @@ export function ProtectedLayout() {
       <aside className={['profile-sidebar', isProfileOpen ? 'is-open' : ''].join(' ')} id="profile-sidebar">
         <div className="profile-sidebar__header">
           <div className="stack-gap" style={{ gap: '6px' }}>
-            <p className="welcome-text">Bem vindo, {user?.username || 'Jogador'}!</p>
+            <p className="welcome-text">Bem-vindo, {user?.username || 'Jogador'}!</p>
             <span className="muted-text compact">{user?.email || 'Sem login cadastrado'}</span>
           </div>
 
-          <button aria-label="Fechar menu do usuario" className="profile-close" onClick={closeProfileSidebar} type="button">
+          <button aria-label="Fechar menu do usuário" className="profile-close" onClick={closeProfileSidebar} type="button">
             X
           </button>
         </div>
@@ -141,7 +141,7 @@ export function ProtectedLayout() {
             onClick={() => setActiveSection(activeSection === 'username' ? '' : 'username')}
             variant="secondary"
           >
-            Alterar nome de usuario
+            Alterar nome de usuário
           </Button>
 
           {activeSection === 'username' ? (
@@ -149,7 +149,7 @@ export function ProtectedLayout() {
               <Input
                 label="Novo nome"
                 onChange={(event) => setUsername(event.target.value)}
-                placeholder="Digite o nome do usuario"
+                placeholder="Digite o nome de usuário"
                 value={username}
               />
 

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 
 import { ActionLogItem } from '../components/system/ActionLogItem';
-import { CardItem } from '../components/system/CardItem';
 import { PlayerCard } from '../components/system/PlayerCard';
+import { PlayerHand } from '../components/system/PlayerHand';
+import { TurnBanner } from '../components/system/TurnBanner';
 import { ZoneContainer } from '../components/system/ZoneContainer';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
@@ -34,6 +35,7 @@ export function MatchPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [localError, setLocalError] = useState('');
   const [syncMessage, setSyncMessage] = useState('');
+  const [selectedHandCardId, setSelectedHandCardId] = useState(null);
 
   const isSocketConnected = Boolean(socket?.connected);
   const activeTurnPlayerId = currentMatch?.currentTurnPlayerId;
@@ -196,6 +198,7 @@ export function MatchPage() {
   }
 
   const currentTurnPlayer = players.find((player) => player.user_id === activeTurnPlayerId);
+  const isCurrentUserTurn = Boolean(user?.id && activeTurnPlayerId === user.id);
   const currentZones = currentUserState?.zones || {
     deckCount: 0,
     handCount: 0,
@@ -204,98 +207,87 @@ export function MatchPage() {
   };
   const handCards = currentUserState?.handCards || [];
   const availableActions = currentUserState?.availableActions || [];
+  const connectionState = !socket ? 'offline' : isSocketConnected ? 'connected' : 'reconnecting';
+  const connectionLabel =
+    connectionState === 'connected'
+      ? 'Conectado'
+      : connectionState === 'reconnecting'
+        ? 'Reconectando...'
+        : 'Desconectado';
 
   return (
     <section className="match-shell">
-      <Card className="match-hero" glow title="Painel da partida" description="Acompanhe o estado atual e acione jogadas com mais clareza.">
-        <div className="match-hero__layout">
-          <div className="match-hero__status">
-            <div className="status-grid">
-              <div className="status-item">
-                <span className="status-label">Sala</span>
-                <span className="status-value">{currentRoom?.code || 'Sem sala'}</span>
-              </div>
-              <div className="status-item">
-                <span className="status-label">Turno atual</span>
-                <span className="status-value">{currentTurnPlayer?.username || '-'}</span>
-              </div>
-              <div className="status-item">
-                <span className="status-label">Conexao</span>
-                <span className="status-value">{isSocketConnected ? 'Tempo real' : 'Fallback HTTP'}</span>
-              </div>
-              <div className="status-item">
-                <span className="status-label">Round</span>
-                <span className="status-value">{currentMatch?.round ?? '-'}</span>
-              </div>
-            </div>
-
-            {(syncMessage || localError) ? (
-              <div className="stack-gap" style={{ gap: '8px' }}>
-                {syncMessage ? <p className="success-text">{syncMessage}</p> : null}
-                {localError ? <p className="error-text">{localError}</p> : null}
-              </div>
-            ) : null}
+      <div className="match-header">
+        <div className="match-header__meta">
+          <div className="match-header__room">
+            <span className="status-label">Sala</span>
+            <strong>{currentRoom?.code || 'Sem sala'}</strong>
           </div>
 
-          <div className="match-hero__actions">
-            <form className="stack-gap" onSubmit={handleJoinRoom}>
-              <Input onChange={(event) => setRoomCode(event.target.value)} placeholder="Codigo da sala" required value={roomCode} />
+          <Badge tone={connectionState === 'connected' ? 'success' : connectionState === 'reconnecting' ? 'accent' : 'danger'}>
+            <span className={['status-dot', `status-dot--${connectionState}`].join(' ')} aria-hidden="true" />
+            {connectionLabel}
+          </Badge>
+        </div>
 
-              <div className="row-wrap">
-                <Button loading={isSubmitting} type="submit">
-                  Entrar na sala
-                </Button>
+        <TurnBanner isCurrentUser={isCurrentUserTurn} playerName={currentTurnPlayer?.username} />
 
-                <Button disabled={isSubmitting || !currentRoom} onClick={handleLeaveRoom} type="button" variant="secondary">
-                  Sair da sala
-                </Button>
-              </div>
-            </form>
-
-            <div className="match-action-bar">
-              <Button
-                disabled={isSubmitting || !currentRoom || !availableActions.includes('drawCard')}
-                onClick={() => handleAction('match:draw')}
-                variant="secondary"
-              >
-                Comprar carta
-              </Button>
-
-              <Button
-                disabled={isSubmitting || !currentRoom || !availableActions.includes('endTurn')}
-                onClick={() => handleAction('match:endTurn')}
-                variant="secondary"
-              >
-                Encerrar turno
-              </Button>
+        <div className="match-header__utility">
+          <div className="match-header__stats">
+            <div className="status-item">
+              <span className="status-label">Round</span>
+              <span className="status-value">{currentMatch?.round ?? '-'}</span>
             </div>
           </div>
-        </div>
-      </Card>
 
-      <Card description="Quem esta na sala e quem esta controlando o turno agora." title="Mesa">
-        <div className="match-player-strip">
-          {players.length ? (
-            players.map((player) => (
-              <PlayerCard
-                isActiveTurn={player.user_id === activeTurnPlayerId}
-                isCurrentUser={player.user_id === user?.id}
-                key={`${player.room_id}-${player.user_id}`}
-                player={{
-                  ...player,
-                  is_ready: player.is_ready,
-                }}
-              />
-            ))
-          ) : (
-            <div className="empty-state">Sem jogadores sincronizados.</div>
-          )}
+          <form className="match-join-form" onSubmit={handleJoinRoom}>
+            <Input onChange={(event) => setRoomCode(event.target.value)} placeholder="Código da sala" required value={roomCode} />
+
+            <div className="row-wrap">
+              <Button loading={isSubmitting} type="submit" variant="secondary">
+                Entrar na sala
+              </Button>
+
+              <Button disabled={isSubmitting || !currentRoom} onClick={handleLeaveRoom} type="button" variant="secondary">
+                Sair da sala
+              </Button>
+            </div>
+          </form>
         </div>
-      </Card>
+      </div>
+
+      {(syncMessage || localError) ? (
+        <div className="match-feedback">
+          {syncMessage ? <p className="success-text">{syncMessage}</p> : null}
+          {localError ? <p className="error-text">{localError}</p> : null}
+        </div>
+      ) : null}
 
       <div className="match-grid">
-        <div className="match-main-column">
-          <Card description="Recursos e zonas organizados em um unico quadro principal." title="Seu campo">
+        <aside className="match-left-column">
+          <Card className="match-side-panel" description="Jogadores ativos na mesa." title="Jogadores">
+            <div className="match-player-list">
+              {players.length ? (
+                players.map((player) => (
+                  <PlayerCard
+                    isActiveTurn={player.user_id === activeTurnPlayerId}
+                    isCurrentUser={player.user_id === user?.id}
+                    key={`${player.room_id}-${player.user_id}`}
+                    player={{
+                      ...player,
+                      is_ready: player.is_ready,
+                    }}
+                  />
+                ))
+              ) : (
+                <div className="empty-state">Sem jogadores sincronizados.</div>
+              )}
+            </div>
+          </Card>
+        </aside>
+
+        <main className="match-main-column">
+          <Card className="match-board-card" description="Zonas do jogador organizadas como tabuleiro." title="Seu campo">
             <div className="match-board">
               <div className="match-board__summary">
                 <div className="status-item">
@@ -311,54 +303,56 @@ export function MatchPage() {
                 </div>
 
                 <div className="status-item">
-                  <span className="status-label">Cartas na mao</span>
+                  <span className="status-label">Cartas na mão</span>
                   <span className="status-value">{currentZones.handCount}</span>
                 </div>
               </div>
 
               <div className="zones-grid">
                 <ZoneContainer count={currentZones.deckCount} description="Fonte principal de compra." title="Deck" tone="primary" />
-                <ZoneContainer count={currentZones.handCount} description="Cartas atualmente na sua mao." title="Mao" tone="accent" />
-                <ZoneContainer count={currentZones.discardCount} description="Cartas descartadas." title="Descarte" />
-                <ZoneContainer count={currentZones.exileCount} description="Cartas exiladas." title="Exilio" />
+                <ZoneContainer count={currentZones.discardCount} description="Cartas descartadas." title="Descarte" tone="secondary" />
+                <ZoneContainer count={currentZones.exileCount} description="Cartas exiladas." title="Exílio" tone="accent" />
               </div>
             </div>
           </Card>
 
-          <Card description="Jogue cartas reais da sua mao quando for seu turno." title="Sua mao">
-            <div className="hand-grid">
-              {handCards.length ? (
-                handCards.map((card) => (
-                  <CardItem
-                    category={card.category}
-                    description={card.effect}
-                    footer={
-                      <div className="row-wrap">
-                        {card.category === 'imo' ? <Badge tone="accent">Custo Imo {card.imoCost || 0}</Badge> : null}
-                        <Button
-                          disabled={!availableActions.includes('playCard') || isSubmitting}
-                          onClick={() => handleAction('match:playCard', { cardId: card.instanceId })}
-                          size="sm"
-                        >
-                          Jogar
-                        </Button>
-                      </div>
-                    }
-                    imageSrc={card.imagePath}
-                    key={card.instanceId}
-                    name={card.name}
-                    showDescription={false}
-                  />
-                ))
-              ) : (
-                <div className="empty-state">Sem cartas na mao no momento.</div>
-              )}
-            </div>
-          </Card>
-        </div>
+          <Card
+            className="player-hand-panel"
+            description="Sua mão é o foco da mesa: selecione e jogue suas cartas daqui."
+            title="Sua mão"
+            actions={
+              <div className="match-action-bar">
+                <Button
+                  disabled={isSubmitting || !currentRoom || !availableActions.includes('drawCard')}
+                  onClick={() => handleAction('match:draw')}
+                  variant="secondary"
+                >
+                  Comprar carta
+                </Button>
 
-        <div className="match-side-column">
-          <Card description="Feed de eventos recentes da partida." title="Log de acoes">
+                <Button
+                  disabled={isSubmitting || !currentRoom || !availableActions.includes('endTurn')}
+                  onClick={() => handleAction('match:endTurn')}
+                  variant="primary"
+                >
+                  Encerrar turno
+                </Button>
+              </div>
+            }
+          >
+            <PlayerHand
+              cards={handCards}
+              canPlay={availableActions.includes('playCard')}
+              isSubmitting={isSubmitting}
+              onPlayCard={(cardId) => handleAction('match:playCard', { cardId })}
+              onSelectCard={setSelectedHandCardId}
+              selectedCardId={selectedHandCardId}
+            />
+          </Card>
+        </main>
+
+        <aside className="match-right-column">
+          <Card className="match-side-panel" description="Feed dos eventos mais recentes." title="Log de ações">
             <div className="log-list">
               {logs.length ? (
                 logs.map((item, index) => <ActionLogItem item={item} key={`${item.id || 'log'}-${index}`} />)
@@ -367,7 +361,7 @@ export function MatchPage() {
               )}
             </div>
           </Card>
-        </div>
+        </aside>
       </div>
     </section>
   );

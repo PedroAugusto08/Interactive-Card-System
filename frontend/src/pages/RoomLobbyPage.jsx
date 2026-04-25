@@ -79,7 +79,7 @@ export function RoomLobbyPage() {
     try {
       const response = await roomApi.createRoom({ token });
       setRoomData(response);
-      setStatusMessage(`Sala criada com codigo ${response.room.code}.`);
+      setStatusMessage(`Sala criada com código ${response.room.code}.`);
     } catch (error) {
       setErrorMessage(formatErrorMessage(error));
     } finally {
@@ -106,7 +106,7 @@ export function RoomLobbyPage() {
 
   async function handleLeaveRoom() {
     if (!currentRoom?.id) {
-      setErrorMessage('Nao existe sala ativa para sair.');
+      setErrorMessage('Não existe sala ativa para sair.');
       return;
     }
 
@@ -117,7 +117,7 @@ export function RoomLobbyPage() {
     try {
       await roomApi.leaveRoom({ roomId: currentRoom.id, token });
       clearRoom();
-      setStatusMessage('Voce saiu da sala atual.');
+      setStatusMessage('Você saiu da sala atual.');
     } catch (error) {
       setErrorMessage(formatErrorMessage(error));
     } finally {
@@ -189,7 +189,7 @@ export function RoomLobbyPage() {
         token,
       });
       setRoomData(response);
-      setStatusMessage(currentPlayer?.is_ready ? 'Voce nao esta mais pronto.' : 'Voce marcou como pronto.');
+      setStatusMessage(currentPlayer?.is_ready ? 'Você não está mais pronto.' : 'Você marcou como pronto.');
     } catch (error) {
       setErrorMessage(formatErrorMessage(error));
     } finally {
@@ -227,7 +227,7 @@ export function RoomLobbyPage() {
       </div>
 
       <div className="grid-2">
-        <Card description="Criacao, entrada e configuracao da sua participacao na sala." title="Sala">
+        <Card description="Criação, entrada e configuração da sua participação na sala." title="Sala">
           <div className="row-wrap">
             <Button loading={isLoading} onClick={handleCreateRoom}>
               Criar sala
@@ -243,10 +243,10 @@ export function RoomLobbyPage() {
           </div>
 
           <form className="stack-gap" onSubmit={handleJoinRoom} style={{ marginTop: '18px' }}>
-            <Input onChange={(event) => setJoinCode(event.target.value)} placeholder="Codigo da sala" required value={joinCode} />
+            <Input onChange={(event) => setJoinCode(event.target.value)} placeholder="Código da sala" required value={joinCode} />
 
             <Button loading={isLoading} type="submit">
-              Entrar por codigo
+              Entrar por código
             </Button>
           </form>
 
@@ -274,11 +274,11 @@ export function RoomLobbyPage() {
           {errorMessage ? <p className="error-text">{errorMessage}</p> : null}
         </Card>
 
-        <Card title="Sala atual" description="Estado atual da sala, host e preparacao dos jogadores.">
+        <Card title="Sala atual" description="Estado atual da sala, host e preparação dos jogadores.">
           {currentRoom ? (
             <div className="status-grid" style={{ marginBottom: '18px' }}>
               <div className="status-item">
-                <span className="status-label">Codigo</span>
+                <span className="status-label">Código</span>
                 <span className="status-value">{currentRoom.code}</span>
               </div>
 

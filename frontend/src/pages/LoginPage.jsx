@@ -67,7 +67,7 @@ export function LoginPage() {
           </Button>
 
           <p className="muted-text compact">
-            Nao tem conta? <Link to="/register">Criar conta</Link>
+            Não tem conta? <Link to="/register">Criar conta</Link>
           </p>
         </form>
       </Card>

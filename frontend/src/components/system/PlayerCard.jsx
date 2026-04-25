@@ -23,12 +23,12 @@ export function PlayerCard({ player, isActiveTurn = false, isCurrentUser = false
 
         <div className="stack-gap" style={{ gap: '4px' }}>
           <span>{player.username}</span>
-          <span className="muted-text compact">{player.email || 'Sem email visivel'}</span>
+          <span className="muted-text compact">{player.email || 'Sem e-mail visível'}</span>
         </div>
       </div>
 
       <div className="row-wrap">
-        {isCurrentUser ? <Badge tone="primary">Voce</Badge> : null}
+        {isCurrentUser ? <Badge tone="primary">Você</Badge> : null}
         {isActiveTurn ? <Badge tone="accent">Turno ativo</Badge> : null}
         {player.is_ready ? <Badge tone="success">Pronto</Badge> : <Badge tone="secondary">Aguardando</Badge>}
       </div>

@@ -1,5 +1,4 @@
 import { Badge } from '../ui/Badge';
-import { Card } from '../ui/Card';
 
 const TONE_BY_TYPE = {
   ERROR: 'danger',
@@ -8,6 +7,7 @@ const TONE_BY_TYPE = {
   ROOM_LEAVE: 'secondary',
   ROOM_LEAVE_HTTP: 'secondary',
   ROOM_LEAVE_SOCKET: 'secondary',
+  INFO: 'primary',
 };
 
 function formatTimestamp(timestamp) {
@@ -30,13 +30,16 @@ export function ActionLogItem({ item }) {
   const tone = TONE_BY_TYPE[item.type] || 'primary';
 
   return (
-    <Card className="action-log-item" compact>
+    <article className={['action-log-item', `action-log-item--${tone}`].join(' ')}>
       <div className="action-log-item__top">
-        <Badge tone={tone}>{item.type || 'INFO'}</Badge>
+        <div className="action-log-item__meta">
+          <span className={['action-log-item__icon', `action-log-item__icon--${tone}`].join(' ')} aria-hidden="true" />
+          <Badge tone={tone}>{item.type || 'INFO'}</Badge>
+        </div>
         <span className="muted-text compact">{formatTimestamp(item.timestamp)}</span>
       </div>
 
       <p className="action-log-item__message">{item.message}</p>
-    </Card>
+    </article>
   );
 }

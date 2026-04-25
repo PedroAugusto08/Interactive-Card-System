@@ -5,7 +5,7 @@ export function ZoneContainer({ title, count = 0, tone = 'secondary', descriptio
   const stackPreview = Array.from({ length: Math.min(Math.max(count, 1), 4) });
 
   return (
-    <Card className="zone-container" compact>
+    <Card className={['zone-container', `zone-container--${tone}`].join(' ')} compact interactive>
       <div className="zone-container__header">
         <div>
           <h3>{title}</h3>
@@ -15,7 +15,7 @@ export function ZoneContainer({ title, count = 0, tone = 'secondary', descriptio
       </div>
 
       <div className="zone-container__body">
-        <div className="zone-stack">
+        <div className="zone-stack" aria-hidden="true">
           {stackPreview.map((_, index) => (
             <div className="zone-stack__card" key={`${title}-${index}`} style={{ opacity: 1 - index * 0.12 }} />
           ))}

@@ -39,13 +39,13 @@ export function RegisterPage() {
     <section className="auth-wrap">
       <Card className="auth-card" glow>
         <form className="auth-card-inner" onSubmit={handleSubmit}>
-          <span className="auth-eyebrow">Nova Vinculacao</span>
+          <span className="auth-eyebrow">Nova Vinculação</span>
           <h1>Criar conta</h1>
           <p className="muted-text">Cadastre-se para criar ou entrar em salas.</p>
 
           <Input
             id="register-username"
-            label="Nome de usuario"
+            label="Nome de usuário"
             onChange={(event) => setUsername(event.target.value)}
             required
             type="text"
@@ -77,7 +77,7 @@ export function RegisterPage() {
           </Button>
 
           <p className="muted-text compact">
-            Ja tem conta? <Link to="/login">Entrar</Link>
+            Já tem conta? <Link to="/login">Entrar</Link>
           </p>
         </form>
       </Card>

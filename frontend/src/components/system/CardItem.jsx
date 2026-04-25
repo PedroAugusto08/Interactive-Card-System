@@ -7,14 +7,17 @@ export function CardItem({
   imageSrc,
   category,
   maxCopies,
+  cost,
+  costLabel = 'Custo',
   selected = false,
   footer,
   showDescription = true,
   onClick,
+  className = '',
 }) {
   return (
     <Card
-      className="game-card"
+      className={['game-card', className].filter(Boolean).join(' ')}
       compact
       glow={selected}
       interactive={Boolean(onClick)}
@@ -34,6 +37,7 @@ export function CardItem({
       <div className="game-card__meta">
         <div className="row-wrap game-card__badges">
           {category ? <Badge tone="secondary">{category}</Badge> : null}
+          {typeof cost === 'number' ? <Badge tone="accent">{costLabel} {cost}</Badge> : null}
           {selected ? <Badge tone="primary">Selecionada</Badge> : null}
           {typeof maxCopies === 'number' ? <Badge tone="accent">Max {maxCopies}</Badge> : null}
         </div>

@@ -12,7 +12,7 @@ import { formatErrorMessage } from '../utils/formatError';
 
 const CATEGORY_LABEL = {
   fixed: 'Fixas',
-  division: 'Divisao',
+  division: 'Divisão',
   imo: 'Imo',
 };
 
@@ -418,7 +418,7 @@ export function DecksPage() {
 
       <div className="deck-builder-layout">
         <div className="deck-builder-left">
-          <Card description="Acompanhe rapidamente a composicao antes de salvar." title="Resumo do deck">
+          <Card description="Acompanhe rapidamente a composição antes de salvar." title="Resumo do deck">
             {isLoading ? <p className="muted-text">Carregando regras e cartas...</p> : null}
             {statusMessage ? <p className="success-text">{statusMessage}</p> : null}
             {errorMessage ? <p className="error-text">{errorMessage}</p> : null}
@@ -451,7 +451,7 @@ export function DecksPage() {
                   id="deck-name"
                   label="Nome do deck"
                   onChange={(event) => setName(event.target.value)}
-                  placeholder="Ex.: Divisao Ofensiva"
+                  placeholder="Ex.: Divisão Ofensiva"
                   required
                   value={name}
                 />
@@ -459,7 +459,7 @@ export function DecksPage() {
 
               <div className="row-wrap">
                 <Button disabled={isLoading} loading={isSubmitting} type="submit">
-                  {userDeck ? 'Salvar alteracoes' : 'Criar deck'}
+                  {userDeck ? 'Salvar alterações' : 'Criar deck'}
                 </Button>
 
                 <Button disabled={isSubmitting || isLoading} onClick={resetForm} type="button" variant="secondary">
@@ -469,7 +469,7 @@ export function DecksPage() {
             </form>
           </Card>
 
-          <Card title="Catalogo de cartas">
+          <Card title="Catálogo de cartas">
             <div className="catalog-sections">
               {CATEGORY_ORDER.map((category) => {
                 const isOpen = openSections[category];
@@ -505,7 +505,7 @@ export function DecksPage() {
 
                                 <div className="deck-meta-grid">
                                   <Input
-                                    label="Maximo de copias"
+                                    label="Máximo de cópias"
                                     max="5"
                                     min="1"
                                     onChange={(event) => handleImoFormChange('maxCopies', event.target.value)}
@@ -523,7 +523,7 @@ export function DecksPage() {
                                 </div>
 
                                 <Input
-                                  label="Descricao"
+                                  label="Descrição"
                                   multiline
                                   onChange={(event) => handleImoFormChange('description', event.target.value)}
                                   placeholder="Explique o efeito, custo e comportamento da carta."
@@ -546,10 +546,10 @@ export function DecksPage() {
                             <Card compact description="Preview da carta Imo antes de salvar." title="Preview Imo">
                               <CardItem
                                 category="Imo"
-                                description={imoForm.description || 'A descricao completa da carta Imo aparecera aqui.'}
+                      description={imoForm.description || 'A descrição completa da carta Imo aparecerá aqui.'}
                                 imageSrc={resolveCardImageUrl(imoForm.imagePath)}
                                 maxCopies={Number(imoForm.maxCopies) || 1}
-                                name={imoForm.name.trim() || 'Carta Imo em criacao'}
+                      name={imoForm.name.trim() || 'Carta Imo em criação'}
                                 showDescription={false}
                               />
 
@@ -597,7 +597,7 @@ export function DecksPage() {
         </div>
 
         <div className="deck-builder-right">
-          <Card description="Resumo da composicao atual do seu deck." title="Meu Deck">
+          <Card description="Resumo da composição atual do seu deck." title="Meu Deck">
             <div className="stack-gap">
               {userDeck || draftSummary.totalCards > 0 || name ? (
                 <>
@@ -636,7 +636,7 @@ export function DecksPage() {
                   </div>
                 </>
               ) : (
-                <div className="empty-state">Voce ainda nao tem deck salvo.</div>
+                <div className="empty-state">Você ainda não tem deck salvo.</div>
               )}
             </div>
           </Card>
