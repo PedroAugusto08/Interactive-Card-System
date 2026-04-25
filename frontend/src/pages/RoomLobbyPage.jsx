@@ -8,6 +8,7 @@ import { Input } from '../components/ui/Input';
 import { deckApi } from '../api/deckApi';
 import { matchApi } from '../api/matchApi';
 import { roomApi } from '../api/roomApi';
+import { useSocket } from '../hooks/useSocket';
 import { useAuthStore } from '../stores/authStore';
 import { useRoomStore } from '../stores/roomStore';
 import { formatErrorMessage } from '../utils/formatError';
@@ -22,6 +23,7 @@ export function RoomLobbyPage() {
   const setRoomData = useRoomStore((state) => state.setRoomData);
   const setMatchData = useRoomStore((state) => state.setMatchData);
   const clearRoom = useRoomStore((state) => state.clearRoom);
+  const socket = useSocket(token);
 
   const [joinCode, setJoinCode] = useState('');
   const [availableDecks, setAvailableDecks] = useState([]);
@@ -29,6 +31,7 @@ export function RoomLobbyPage() {
   const [statusMessage, setStatusMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const userDeck = useMemo(() => availableDecks[0] || null, [availableDecks]);
+  const isSocketConnected = Boolean(socket?.connected);
 
   const currentPlayer = useMemo(
     () => players.find((player) => player.user_id === user?.id) || null,
@@ -70,6 +73,47 @@ export function RoomLobbyPage() {
       isMounted = false;
     };
   }, [setMatchData, setRoomData, token]);
+
+  useEffect(() => {
+    if (!socket) {
+      return undefined;
+    }
+
+    function handleRoomUpdate(payload) {
+      setRoomData(payload);
+    }
+
+    function handleMatchSync(payload) {
+      setMatchData(payload);
+    }
+
+    function handleLog(payload) {
+      if (payload?.type === 'ERROR' && payload.message) {
+        setErrorMessage(payload.message);
+      }
+    }
+
+    socket.on('room:update', handleRoomUpdate);
+    socket.on('match:sync', handleMatchSync);
+    socket.on('match:log', handleLog);
+
+    return () => {
+      socket.off('room:update', handleRoomUpdate);
+      socket.off('match:sync', handleMatchSync);
+      socket.off('match:log', handleLog);
+    };
+  }, [setMatchData, setRoomData, socket]);
+
+  useEffect(() => {
+    if (!socket || !currentRoom?.id || !currentRoom?.code || !isSocketConnected) {
+      return;
+    }
+
+    socket.emit('room:join', { code: currentRoom.code });
+    if (currentRoom.status === 'in_match') {
+      socket.emit('match:sync', { roomId: currentRoom.id });
+    }
+  }, [currentRoom?.code, currentRoom?.id, currentRoom?.status, isSocketConnected, socket]);
 
   async function handleCreateRoom() {
     setIsLoading(true);
