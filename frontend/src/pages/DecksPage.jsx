@@ -384,11 +384,7 @@ export function DecksPage() {
     <section className="stack-gap-lg">
       <div className="section-header">
         <div className="stack-gap" style={{ gap: '10px' }}>
-          <Badge tone="primary">Deck Builder</Badge>
           <h1 className="page-title">Monte seu arsenal</h1>
-          <p className="page-subtitle">
-            O backend agora e a fonte de verdade para decks e cartas Imo personalizadas.
-          </p>
         </div>
       </div>
 

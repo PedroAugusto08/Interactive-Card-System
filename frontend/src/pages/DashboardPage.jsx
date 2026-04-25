@@ -12,12 +12,8 @@ export function DashboardPage() {
     <section className="stack-gap-lg">
       <div className="section-header">
         <div className="stack-gap" style={{ gap: '10px' }}>
-          <Badge tone="primary">Command Center</Badge>
           <h1 className="page-title">Dashboard</h1>
-          <p className="page-subtitle">
-            Bem-vindo, <strong>{user?.username || 'Jogador'}</strong>. Seu fluxo de decks, salas e
-            partida agora vive em uma interface dark, limpa e com um toque arcano.
-          </p>
+          <p className="page-subtitle">Bem vindo, {user?.username || 'Jogador'}!</p>
         </div>
       </div>
 

@@ -222,11 +222,7 @@ export function RoomLobbyPage() {
     <section className="stack-gap-lg">
       <div className="section-header">
         <div className="stack-gap" style={{ gap: '10px' }}>
-          <Badge tone="secondary">Lobby Control</Badge>
           <h1 className="page-title">Room Lobby</h1>
-          <p className="page-subtitle">
-            Escolha seu deck, marque prontidao e inicie a partida quando o grupo estiver completo.
-          </p>
         </div>
       </div>
 

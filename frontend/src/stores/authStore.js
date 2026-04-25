@@ -19,6 +19,17 @@ export const useAuthStore = create(
           isAuthenticated: true,
         }),
 
+      // Atualiza parcialmente os dados do usuario na sessao local.
+      updateUser: (nextUserFields) =>
+        set((state) => ({
+          user: state.user
+            ? {
+                ...state.user,
+                ...nextUserFields,
+              }
+            : state.user,
+        })),
+
       // Limpa sessao local.
       logout: () =>
         set({
