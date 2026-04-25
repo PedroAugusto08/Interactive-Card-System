@@ -329,7 +329,7 @@ export function MatchPage() {
                     description={card.effect}
                     footer={
                       <div className="row-wrap">
-                        <Badge tone="accent">Custo {card.imoCost || 0}</Badge>
+                        {card.category === 'imo' ? <Badge tone="accent">Custo Imo {card.imoCost || 0}</Badge> : null}
                         <Button
                           disabled={!availableActions.includes('playCard') || isSubmitting}
                           onClick={() => handleAction('match:playCard', { cardId: card.instanceId })}

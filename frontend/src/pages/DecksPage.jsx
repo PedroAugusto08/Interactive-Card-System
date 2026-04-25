@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { CardItem } from '../components/system/CardItem';
-import { DeckCardRow } from '../components/system/DeckCardRow';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -116,7 +115,7 @@ function getCategoryRuleLabel(category, rules) {
   }
 
   if (category === 'fixed') {
-    return `min ${rules.fixedMinCards}`;
+    return '10';
   }
 
   if (category === 'division') {
@@ -149,7 +148,6 @@ export function DecksPage() {
 
   const [selectedDeckId, setSelectedDeckId] = useState(null);
   const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
   const [draftQuantities, setDraftQuantities] = useState({});
 
   const [isLoading, setIsLoading] = useState(true);
@@ -160,6 +158,29 @@ export function DecksPage() {
   const catalogMap = useMemo(() => new Map(catalog.map((card) => [card.id, card])), [catalog]);
   const draftSummary = useMemo(() => buildSummary(draftQuantities, catalogMap), [draftQuantities, catalogMap]);
   const selectedDeck = useMemo(() => decks.find((deck) => deck.id === selectedDeckId) || null, [decks, selectedDeckId]);
+  const userDeck = useMemo(() => decks[0] || null, [decks]);
+  const selectedCards = useMemo(() => {
+    return Object.entries(draftQuantities)
+      .map(([cardId, quantity]) => {
+        const parsedQuantity = Number(quantity) || 0;
+        if (parsedQuantity <= 0) {
+          return null;
+        }
+
+        const card = catalogMap.get(cardId);
+        if (!card) {
+          return null;
+        }
+
+        return {
+          id: cardId,
+          name: card.name,
+          quantity: parsedQuantity,
+          category: card.category,
+        };
+      })
+      .filter(Boolean);
+  }, [draftQuantities, catalogMap]);
 
   const groupedCatalog = useMemo(() => {
     return CATEGORY_ORDER.reduce((accumulator, category) => {
@@ -188,7 +209,15 @@ export function DecksPage() {
         setCatalog(catalogResponse.catalog);
         setDecks(decksResponse.decks);
         setImoCards(imoResponse.cards || []);
-        setDraftQuantities(buildEmptyDraft(catalogResponse.catalog));
+
+        const existingDeck = decksResponse.decks?.[0] || null;
+        if (existingDeck) {
+          setSelectedDeckId(existingDeck.id);
+          setName(existingDeck.name || '');
+          setDraftQuantities(buildDraftFromDeckCards(existingDeck.cards_json || [], catalogResponse.catalog));
+        } else {
+          setDraftQuantities(buildEmptyDraft(catalogResponse.catalog));
+        }
       } catch (error) {
         if (isMounted) {
           setErrorMessage(formatErrorMessage(error));
@@ -210,14 +239,12 @@ export function DecksPage() {
   function applyDeckToForm(deck) {
     setSelectedDeckId(deck?.id || null);
     setName(deck?.name || '');
-    setDescription(deck?.description || '');
     setDraftQuantities(buildDraftFromDeckCards(deck?.cards_json || [], catalog));
   }
 
   function resetForm() {
     setSelectedDeckId(null);
     setName('');
-    setDescription('');
     setDraftQuantities(buildEmptyDraft(catalog));
   }
 
@@ -322,15 +349,16 @@ export function DecksPage() {
 
       const payload = {
         name,
-        description,
+        description: '',
         cards,
       };
 
       let savedDeck;
-      if (selectedDeckId) {
+      const deckToPersist = userDeck?.id || selectedDeckId;
+      if (deckToPersist) {
         const response = await deckApi.updateDeck({
           token,
-          deckId: selectedDeckId,
+          deckId: deckToPersist,
           payload,
         });
         savedDeck = response.deck;
@@ -345,7 +373,7 @@ export function DecksPage() {
       const persistedDeck = listResponse.decks.find((deck) => deck.id === savedDeck.id) || savedDeck;
       applyDeckToForm(persistedDeck);
 
-      setStatusMessage(selectedDeckId ? 'Deck atualizado com sucesso.' : 'Deck criado com sucesso.');
+      setStatusMessage(deckToPersist ? 'Deck atualizado com sucesso.' : 'Deck criado com sucesso.');
     } catch (error) {
       setErrorMessage(formatErrorMessage(error));
     } finally {
@@ -384,7 +412,7 @@ export function DecksPage() {
     <section className="stack-gap-lg">
       <div className="section-header">
         <div className="stack-gap" style={{ gap: '10px' }}>
-          <h1 className="page-title">Monte seu arsenal</h1>
+          <h1 className="page-title">Monte seu deck</h1>
         </div>
       </div>
 
@@ -398,24 +426,27 @@ export function DecksPage() {
             {!isLoading && rules ? (
               <div className="deck-summary-grid" style={{ marginTop: '16px' }}>
                 <div className="deck-summary-box">
-                  <span className="status-label">Total</span>
+                  <span className="status-label">Total ({rules.minCards} a {rules.maxCards})</span>
                   <strong>{draftSummary.totalCards}</strong>
-                  <span className="muted-text compact">Limite {rules.minCards}-{rules.maxCards}</span>
                 </div>
                 {CATEGORY_ORDER.map((category) => (
                   <div className="deck-summary-box" key={category}>
-                    <span className="status-label">{CATEGORY_LABEL[category]}</span>
+                    <span className="status-label">
+                      {CATEGORY_LABEL[category]} ({getCategoryRuleLabel(category, rules)})
+                    </span>
                     <strong>{draftSummary.categoryTotals[category] || 0}</strong>
-                    <span className="muted-text compact">Regra {getCategoryRuleLabel(category, rules)}</span>
                   </div>
                 ))}
               </div>
             ) : null}
           </Card>
 
-          <Card description="Configure nome, descricao e quantidades." title={selectedDeck ? `Editando: ${selectedDeck.name}` : 'Novo deck'}>
+          <Card
+            description="Configure nome e quantidades."
+            title={selectedDeck ? `Editando: ${selectedDeck.name}` : 'Meu deck'}
+          >
             <form className="stack-gap" onSubmit={handleSaveDeck}>
-              <div className="deck-meta-grid">
+              <div>
                 <Input
                   id="deck-name"
                   label="Nome do deck"
@@ -424,21 +455,11 @@ export function DecksPage() {
                   required
                   value={name}
                 />
-
-                <Input
-                  id="deck-description"
-                  label="Descricao"
-                  multiline
-                  onChange={(event) => setDescription(event.target.value)}
-                  placeholder="Resumo do estilo do deck"
-                  rows={3}
-                  value={description}
-                />
               </div>
 
               <div className="row-wrap">
                 <Button disabled={isLoading} loading={isSubmitting} type="submit">
-                  {selectedDeck ? 'Salvar alteracoes' : 'Criar deck'}
+                  {userDeck ? 'Salvar alteracoes' : 'Criar deck'}
                 </Button>
 
                 <Button disabled={isSubmitting || isLoading} onClick={resetForm} type="button" variant="secondary">
@@ -576,20 +597,46 @@ export function DecksPage() {
         </div>
 
         <div className="deck-builder-right">
-          <Card description="Baralhos salvos para edicao ou exclusao." title="Meus decks">
+          <Card description="Resumo da composicao atual do seu deck." title="Meu Deck">
             <div className="stack-gap">
-              {decks.length ? (
-                decks.map((deck) => (
-                  <DeckCardRow
-                    deck={deck}
-                    isSelected={selectedDeckId === deck.id}
-                    key={deck.id}
-                    onDelete={handleDeleteDeck}
-                    onEdit={applyDeckToForm}
-                  />
-                ))
+              {userDeck || draftSummary.totalCards > 0 || name ? (
+                <>
+                  <div className="stack-gap" style={{ gap: '8px' }}>
+                    <div className="row-wrap">
+                      <h3>{name || userDeck?.name || 'Meu deck'}</h3>
+                    </div>
+                  </div>
+
+                  <div className="stack-gap" style={{ gap: '10px' }}>
+                    <span className="status-label">Cartas selecionadas</span>
+                    {selectedCards.length ? (
+                      <div className="selected-card-list">
+                        {selectedCards.map((card) => (
+                          <div className="selected-card-row" key={card.id}>
+                            <div className="stack-gap" style={{ gap: '4px' }}>
+                              <strong>{card.name}</strong>
+                              <span className="muted-text compact">{CATEGORY_LABEL[card.category] || 'Carta'}</span>
+                            </div>
+                            <Badge tone="secondary">x{card.quantity}</Badge>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="empty-state">Nenhuma carta selecionada.</div>
+                    )}
+                  </div>
+
+                  <div className="row-wrap">
+                    <Button disabled={!userDeck || isSubmitting} onClick={() => applyDeckToForm(userDeck)} size="sm" variant="secondary">
+                      Recarregar deck salvo
+                    </Button>
+                    <Button disabled={!userDeck || isSubmitting} onClick={() => handleDeleteDeck(userDeck)} size="sm" variant="danger">
+                      Excluir deck
+                    </Button>
+                  </div>
+                </>
               ) : (
-                <div className="empty-state">Nenhum deck salvo ainda.</div>
+                <div className="empty-state">Voce ainda nao tem deck salvo.</div>
               )}
             </div>
           </Card>
@@ -614,7 +661,7 @@ export function DecksPage() {
             <div className="row-wrap game-card__badges">
               <Badge tone="secondary">{CATEGORY_LABEL[previewCard.category] || 'Imo'}</Badge>
               <Badge tone="accent">Max {previewCard.maxCopies}</Badge>
-              {previewCard.imoCost !== undefined ? <Badge tone="accent">Custo Imo {previewCard.imoCost}</Badge> : null}
+              {previewCard.category === 'imo' ? <Badge tone="accent">Custo Imo {previewCard.imoCost || 0}</Badge> : null}
               {String(previewCard.id).startsWith('imo:') ? <Badge tone="primary">Customizada</Badge> : null}
             </div>
           </div>

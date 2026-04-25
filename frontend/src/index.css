@@ -352,7 +352,8 @@ ul {
 
 .catalog-sections,
 .catalog-section,
-.imo-creator-layout {
+.imo-creator-layout,
+.selected-card-list {
   display: grid;
   gap: 18px;
 }
@@ -520,6 +521,17 @@ ul {
 .status-item,
 .deck-summary-box {
   padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.selected-card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.02);

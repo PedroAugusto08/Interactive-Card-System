@@ -25,10 +25,10 @@ export function RoomLobbyPage() {
 
   const [joinCode, setJoinCode] = useState('');
   const [availableDecks, setAvailableDecks] = useState([]);
-  const [selectedDeckId, setSelectedDeckId] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const userDeck = useMemo(() => availableDecks[0] || null, [availableDecks]);
 
   const currentPlayer = useMemo(
     () => players.find((player) => player.user_id === user?.id) || null,
@@ -148,30 +148,23 @@ export function RoomLobbyPage() {
     }
   }
 
-  async function handleSelectDeck(event) {
-    const nextDeckId = Number(event.target.value);
-    setSelectedDeckId(event.target.value);
-
-    if (!currentRoom?.id || !nextDeckId) {
-      return;
+  async function ensureUserDeckSelected() {
+    const deckId = userDeck?.id;
+    if (!currentRoom?.id || !deckId) {
+      return false;
     }
 
-    setIsLoading(true);
-    setErrorMessage('');
-
-    try {
-      const response = await roomApi.selectDeck({
-        roomId: currentRoom.id,
-        deckId: nextDeckId,
-        token,
-      });
-      setRoomData(response);
-      setStatusMessage('Deck selecionado para a sala.');
-    } catch (error) {
-      setErrorMessage(formatErrorMessage(error));
-    } finally {
-      setIsLoading(false);
+    if (Number(currentPlayer?.selected_deck_id) === Number(deckId)) {
+      return true;
     }
+
+    const response = await roomApi.selectDeck({
+      roomId: currentRoom.id,
+      deckId,
+      token,
+    });
+    setRoomData(response);
+    return true;
   }
 
   async function handleToggleReady() {
@@ -183,6 +176,13 @@ export function RoomLobbyPage() {
     setErrorMessage('');
 
     try {
+      if (!currentPlayer?.is_ready) {
+        const hasDeck = await ensureUserDeckSelected();
+        if (!hasDeck) {
+          throw new Error('Crie seu deck antes de marcar como pronto.');
+        }
+      }
+
       const response = await roomApi.setReady({
         roomId: currentRoom.id,
         isReady: !currentPlayer?.is_ready,
@@ -251,25 +251,13 @@ export function RoomLobbyPage() {
           </form>
 
           <div className="stack-gap" style={{ marginTop: '18px' }}>
-            <label className="ui-input">
-              <span className="ui-input__label">Meu deck para a sala</span>
-              <select
-                className="ui-input__field"
-                disabled={!currentRoom || isLoading}
-                onChange={handleSelectDeck}
-                value={selectedDeckId || String(currentPlayer?.selected_deck_id || '')}
-              >
-                <option value="">Selecione um deck</option>
-                {availableDecks.map((deck) => (
-                  <option key={deck.id} value={deck.id}>
-                    {deck.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="status-item">
+              <span className="status-label">Meu deck para a sala</span>
+              <span className="status-value">{userDeck?.name || 'Nenhum deck criado'}</span>
+            </div>
 
             <div className="row-wrap">
-              <Button disabled={isLoading || !currentRoom || !selectedDeckId} onClick={handleToggleReady} variant="secondary">
+              <Button disabled={isLoading || !currentRoom || !userDeck} onClick={handleToggleReady} variant="secondary">
                 {currentPlayer?.is_ready ? 'Desmarcar pronto' : 'Marcar como pronto'}
               </Button>
 
