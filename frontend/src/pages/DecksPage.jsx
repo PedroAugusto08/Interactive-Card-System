@@ -8,18 +8,13 @@ import { Input } from '../components/ui/Input';
 import { Modal } from '../components/ui/Modal';
 import { deckApi } from '../api/deckApi';
 import { useAuthStore } from '../stores/authStore';
+import { useDeckStore } from '../stores/deckStore';
 import { formatErrorMessage } from '../utils/formatError';
 
 const CATEGORY_LABEL = {
   fixed: 'Fixas',
   division: 'Divisão',
   imo: 'Imo',
-};
-
-const DEFAULT_SECTION_STATE = {
-  fixed: true,
-  division: true,
-  imo: true,
 };
 
 const CATEGORY_ORDER = ['fixed', 'division', 'imo'];
@@ -71,6 +66,13 @@ function buildDraftFromDeckCards(deckCards, catalog) {
   }
 
   return draft;
+}
+
+function mergeDraftWithCatalog(draftQuantities, catalog) {
+  return {
+    ...buildEmptyDraft(catalog),
+    ...(draftQuantities || {}),
+  };
 }
 
 function toCardsPayload(draftQuantities) {
@@ -125,32 +127,34 @@ function getCategoryRuleLabel(category, rules) {
   return `${rules.imoMinCards} a ${rules.imoMaxCards}`;
 }
 
-function buildDefaultImoForm() {
-  return {
-    name: '',
-    description: '',
-    maxCopies: 1,
-    imoCost: 1,
-    imagePath: DEFAULT_IMO_IMAGE,
-  };
-}
-
 export function DecksPage() {
   const token = useAuthStore((state) => state.token);
-
-  const [rules, setRules] = useState(null);
-  const [catalog, setCatalog] = useState([]);
-  const [decks, setDecks] = useState([]);
+  const rules = useDeckStore((state) => state.rules);
+  const catalog = useDeckStore((state) => state.catalog);
+  const decks = useDeckStore((state) => state.decks);
+  const imoCards = useDeckStore((state) => state.imoCards);
+  const openSections = useDeckStore((state) => state.openSections);
+  const selectedDeckId = useDeckStore((state) => state.selectedDeckId);
+  const name = useDeckStore((state) => state.name);
+  const draftQuantities = useDeckStore((state) => state.draftQuantities);
+  const imoForm = useDeckStore((state) => state.imoForm);
+  const isDraftDirty = useDeckStore((state) => state.isDraftDirty);
+  const setModuleData = useDeckStore((state) => state.setModuleData);
+  const setDraftState = useDeckStore((state) => state.setDraftState);
+  const updateDraftName = useDeckStore((state) => state.updateDraftName);
+  const updateDraftQuantities = useDeckStore((state) => state.updateDraftQuantities);
+  const setOpenSections = useDeckStore((state) => state.setOpenSections);
+  const setImoForm = useDeckStore((state) => state.setImoForm);
+  const resetImoForm = useDeckStore((state) => state.resetImoForm);
   const [previewCard, setPreviewCard] = useState(null);
-  const [imoCards, setImoCards] = useState([]);
-  const [imoForm, setImoForm] = useState(buildDefaultImoForm);
-  const [openSections, setOpenSections] = useState(DEFAULT_SECTION_STATE);
-
-  const [selectedDeckId, setSelectedDeckId] = useState(null);
-  const [name, setName] = useState('');
-  const [draftQuantities, setDraftQuantities] = useState({});
-
-  const [isLoading, setIsLoading] = useState(true);
+  const hasModuleCache = Boolean(
+    rules ||
+      catalog.length ||
+      decks.length ||
+      imoCards.length ||
+      Object.keys(draftQuantities || {}).length
+  );
+  const [isLoading, setIsLoading] = useState(!hasModuleCache);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -193,6 +197,18 @@ export function DecksPage() {
     let isMounted = true;
 
     async function loadDeckModuleData() {
+      const currentDeckState = useDeckStore.getState();
+      const shouldShowLoading =
+        !currentDeckState.rules &&
+        !currentDeckState.catalog.length &&
+        !currentDeckState.decks.length &&
+        !currentDeckState.imoCards.length &&
+        !Object.keys(currentDeckState.draftQuantities || {}).length;
+
+      if (shouldShowLoading && isMounted) {
+        setIsLoading(true);
+      }
+
       try {
         const [rulesResponse, catalogResponse, decksResponse, imoResponse] = await Promise.all([
           deckApi.getRules({ token }),
@@ -205,18 +221,54 @@ export function DecksPage() {
           return;
         }
 
-        setRules(rulesResponse.rules);
-        setCatalog(catalogResponse.catalog);
-        setDecks(decksResponse.decks);
-        setImoCards(imoResponse.cards || []);
+        setModuleData({
+          rules: rulesResponse.rules,
+          catalog: catalogResponse.catalog,
+          decks: decksResponse.decks,
+          imoCards: imoResponse.cards || [],
+        });
 
+        const deckState = useDeckStore.getState();
         const existingDeck = decksResponse.decks?.[0] || null;
-        if (existingDeck) {
-          setSelectedDeckId(existingDeck.id);
-          setName(existingDeck.name || '');
-          setDraftQuantities(buildDraftFromDeckCards(existingDeck.cards_json || [], catalogResponse.catalog));
+        if (!deckState.hasInitializedDraft) {
+          if (existingDeck) {
+            setDraftState({
+              selectedDeckId: existingDeck.id,
+              name: existingDeck.name || '',
+              draftQuantities: buildDraftFromDeckCards(existingDeck.cards_json || [], catalogResponse.catalog),
+            });
+          } else {
+            setDraftState({
+              selectedDeckId: null,
+              name: '',
+              draftQuantities: buildEmptyDraft(catalogResponse.catalog),
+            });
+          }
+        } else if (!deckState.isDraftDirty) {
+          const syncedDeck =
+            decksResponse.decks.find((deck) => deck.id === deckState.selectedDeckId) ||
+            existingDeck;
+
+          if (syncedDeck) {
+            setDraftState({
+              selectedDeckId: syncedDeck.id,
+              name: syncedDeck.name || '',
+              draftQuantities: buildDraftFromDeckCards(syncedDeck.cards_json || [], catalogResponse.catalog),
+            });
+          } else {
+            setDraftState({
+              selectedDeckId: null,
+              name: '',
+              draftQuantities: buildEmptyDraft(catalogResponse.catalog),
+            });
+          }
         } else {
-          setDraftQuantities(buildEmptyDraft(catalogResponse.catalog));
+          setDraftState({
+            selectedDeckId: deckState.selectedDeckId,
+            name: deckState.name,
+            draftQuantities: mergeDraftWithCatalog(deckState.draftQuantities, catalogResponse.catalog),
+            isDraftDirty: true,
+          });
         }
       } catch (error) {
         if (isMounted) {
@@ -234,18 +286,22 @@ export function DecksPage() {
     return () => {
       isMounted = false;
     };
-  }, [token]);
+  }, [setDraftState, setModuleData, token]);
 
   function applyDeckToForm(deck) {
-    setSelectedDeckId(deck?.id || null);
-    setName(deck?.name || '');
-    setDraftQuantities(buildDraftFromDeckCards(deck?.cards_json || [], catalog));
+    setDraftState({
+      selectedDeckId: deck?.id || null,
+      name: deck?.name || '',
+      draftQuantities: buildDraftFromDeckCards(deck?.cards_json || [], catalog),
+    });
   }
 
   function resetForm() {
-    setSelectedDeckId(null);
-    setName('');
-    setDraftQuantities(buildEmptyDraft(catalog));
+    setDraftState({
+      selectedDeckId: null,
+      name: '',
+      draftQuantities: buildEmptyDraft(catalog),
+    });
   }
 
   function handleQuantityChange(cardId, rawValue) {
@@ -257,7 +313,7 @@ export function DecksPage() {
     const parsedValue = Number(rawValue);
     const safeValue = Number.isInteger(parsedValue) ? Math.max(0, Math.min(parsedValue, card.maxCopies)) : 0;
 
-    setDraftQuantities((previous) => ({
+    updateDraftQuantities((previous) => ({
       ...previous,
       [cardId]: safeValue,
     }));
@@ -320,13 +376,22 @@ export function DecksPage() {
       });
 
       const nextCatalog = [...catalog, response.card];
-      setCatalog(nextCatalog);
-      setImoCards((previous) => [response.card, ...previous]);
-      setDraftQuantities((previous) => ({
-        ...previous,
-        [response.card.id]: 0,
-      }));
-      setImoForm(buildDefaultImoForm());
+      setModuleData({
+        rules,
+        catalog: nextCatalog,
+        decks,
+        imoCards: [response.card, ...imoCards],
+      });
+      setDraftState({
+        selectedDeckId,
+        name,
+        draftQuantities: {
+          ...draftQuantities,
+          [response.card.id]: 0,
+        },
+        isDraftDirty,
+      });
+      resetImoForm();
       setStatusMessage(`Carta Imo ${response.card.name} criada com sucesso.`);
     } catch (error) {
       setErrorMessage(formatErrorMessage(error));
@@ -368,7 +433,12 @@ export function DecksPage() {
       }
 
       const listResponse = await deckApi.listDecks({ token });
-      setDecks(listResponse.decks);
+      setModuleData({
+        rules,
+        catalog,
+        decks: listResponse.decks,
+        imoCards,
+      });
 
       const persistedDeck = listResponse.decks.find((deck) => deck.id === savedDeck.id) || savedDeck;
       applyDeckToForm(persistedDeck);
@@ -394,7 +464,12 @@ export function DecksPage() {
     try {
       await deckApi.deleteDeck({ token, deckId: deck.id });
       const listResponse = await deckApi.listDecks({ token });
-      setDecks(listResponse.decks);
+      setModuleData({
+        rules,
+        catalog,
+        decks: listResponse.decks,
+        imoCards,
+      });
 
       if (selectedDeckId === deck.id) {
         resetForm();
@@ -450,7 +525,7 @@ export function DecksPage() {
                 <Input
                   id="deck-name"
                   label="Nome do deck"
-                  onChange={(event) => setName(event.target.value)}
+                  onChange={(event) => updateDraftName(event.target.value)}
                   placeholder="Ex.: Divisão Ofensiva"
                   required
                   value={name}

@@ -10,6 +10,7 @@ import { matchApi } from '../api/matchApi';
 import { roomApi } from '../api/roomApi';
 import { useSocket } from '../hooks/useSocket';
 import { useAuthStore } from '../stores/authStore';
+import { useDeckStore } from '../stores/deckStore';
 import { useRoomStore } from '../stores/roomStore';
 import { formatErrorMessage } from '../utils/formatError';
 
@@ -23,10 +24,11 @@ export function RoomLobbyPage() {
   const setRoomData = useRoomStore((state) => state.setRoomData);
   const setMatchData = useRoomStore((state) => state.setMatchData);
   const clearRoom = useRoomStore((state) => state.clearRoom);
+  const availableDecks = useDeckStore((state) => state.decks);
+  const setDeckModuleData = useDeckStore((state) => state.setModuleData);
   const socket = useSocket(token);
 
   const [joinCode, setJoinCode] = useState('');
-  const [availableDecks, setAvailableDecks] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -53,7 +55,13 @@ export function RoomLobbyPage() {
           return;
         }
 
-        setAvailableDecks(decksResponse.decks || []);
+        const deckState = useDeckStore.getState();
+        setDeckModuleData({
+          rules: deckState.rules,
+          catalog: deckState.catalog,
+          decks: decksResponse.decks || [],
+          imoCards: deckState.imoCards,
+        });
         if (roomResponse.room) {
           setRoomData(roomResponse);
         }
@@ -72,7 +80,7 @@ export function RoomLobbyPage() {
     return () => {
       isMounted = false;
     };
-  }, [setMatchData, setRoomData, token]);
+  }, [setDeckModuleData, setMatchData, setRoomData, token]);
 
   useEffect(() => {
     if (!socket) {
