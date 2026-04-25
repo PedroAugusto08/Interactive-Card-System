@@ -9,7 +9,11 @@ const matchService = require('../services/matchService');
 function createSocketServer(httpServer) {
   const io = new Server(httpServer, {
     cors: {
-      origin: env.clientOrigin,
+      origin: [
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+        env.clientOrigin,
+      ].filter(Boolean),
       credentials: true,
     },
   });

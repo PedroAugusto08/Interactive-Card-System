@@ -16,14 +16,25 @@ const { notFoundHandler, errorHandler } = require('./middlewares/errorMiddleware
 function createApp() {
   const app = express();
 
-  // CORS para permitir frontend local chamar a API.
+  const allowedOrigins = [
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    env.clientOrigin,
+  ].filter(Boolean);
+
+  // CORS para permitir frontend local e frontend em producao chamarem a API.
   app.use(
     cors({
-      origin: env.clientOrigin,
+      origin(origin, callback) {
+        if (!origin || allowedOrigins.includes(origin)) {
+          return callback(null, true);
+        }
+
+        return callback(new Error(`CORS bloqueado: ${origin}`));
+      },
       credentials: true,
     })
   );
-
   // Middlewares base de seguranca, logs e parse JSON.
   app.use(
     helmet({
