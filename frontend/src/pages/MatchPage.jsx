@@ -207,116 +207,121 @@ export function MatchPage() {
 
   return (
     <section className="match-shell">
-      <div className="match-topbar">
-        <Card description="Sala, turno e conectividade em um topo consolidado." title="Match Control">
-          <div className="status-grid">
-            <div className="status-item">
-              <span className="status-label">Sala</span>
-              <span className="status-value">{currentRoom?.code || 'Sem sala'}</span>
+      <Card className="match-hero" glow title="Painel da partida" description="Acompanhe o estado atual e acione jogadas com mais clareza.">
+        <div className="match-hero__layout">
+          <div className="match-hero__status">
+            <div className="status-grid">
+              <div className="status-item">
+                <span className="status-label">Sala</span>
+                <span className="status-value">{currentRoom?.code || 'Sem sala'}</span>
+              </div>
+              <div className="status-item">
+                <span className="status-label">Turno atual</span>
+                <span className="status-value">{currentTurnPlayer?.username || '-'}</span>
+              </div>
+              <div className="status-item">
+                <span className="status-label">Conexao</span>
+                <span className="status-value">{isSocketConnected ? 'Tempo real' : 'Fallback HTTP'}</span>
+              </div>
+              <div className="status-item">
+                <span className="status-label">Round</span>
+                <span className="status-value">{currentMatch?.round ?? '-'}</span>
+              </div>
             </div>
-            <div className="status-item">
-              <span className="status-label">Turno atual</span>
-              <span className="status-value">{currentTurnPlayer?.username || '-'}</span>
-            </div>
-            <div className="status-item">
-              <span className="status-label">Socket</span>
-              <span className="status-value">{isSocketConnected ? 'conectado' : 'fallback HTTP'}</span>
-            </div>
-            <div className="status-item">
-              <span className="status-label">Round</span>
-              <span className="status-value">{currentMatch?.round ?? '-'}</span>
-            </div>
-          </div>
-        </Card>
 
-        <Card description="Conecte-se a uma sala ativa ou recupere o estado apos refresh." title="Acoes">
-          <form className="stack-gap" onSubmit={handleJoinRoom}>
-            <Input onChange={(event) => setRoomCode(event.target.value)} placeholder="Codigo da sala" required value={roomCode} />
-
-            <div className="row-wrap">
-              <Button loading={isSubmitting} type="submit">
-                Entrar na sala
-              </Button>
-
-              <Button disabled={isSubmitting || !currentRoom} onClick={handleLeaveRoom} type="button" variant="secondary">
-                Sair da sala
-              </Button>
-            </div>
-          </form>
-
-          <div className="row-wrap" style={{ marginTop: '16px' }}>
-            <Button
-              disabled={isSubmitting || !currentRoom || !availableActions.includes('drawCard')}
-              onClick={() => handleAction('match:draw')}
-              variant="secondary"
-            >
-              Comprar
-            </Button>
-
-            <Button
-              disabled={isSubmitting || !currentRoom || !availableActions.includes('endTurn')}
-              onClick={() => handleAction('match:endTurn')}
-              variant="secondary"
-            >
-              Encerrar turno
-            </Button>
+            {(syncMessage || localError) ? (
+              <div className="stack-gap" style={{ gap: '8px' }}>
+                {syncMessage ? <p className="success-text">{syncMessage}</p> : null}
+                {localError ? <p className="error-text">{localError}</p> : null}
+              </div>
+            ) : null}
           </div>
 
-          {syncMessage ? <p className="success-text">{syncMessage}</p> : null}
-          {localError ? <p className="error-text">{localError}</p> : null}
-        </Card>
-      </div>
+          <div className="match-hero__actions">
+            <form className="stack-gap" onSubmit={handleJoinRoom}>
+              <Input onChange={(event) => setRoomCode(event.target.value)} placeholder="Codigo da sala" required value={roomCode} />
+
+              <div className="row-wrap">
+                <Button loading={isSubmitting} type="submit">
+                  Entrar na sala
+                </Button>
+
+                <Button disabled={isSubmitting || !currentRoom} onClick={handleLeaveRoom} type="button" variant="secondary">
+                  Sair da sala
+                </Button>
+              </div>
+            </form>
+
+            <div className="match-action-bar">
+              <Button
+                disabled={isSubmitting || !currentRoom || !availableActions.includes('drawCard')}
+                onClick={() => handleAction('match:draw')}
+                variant="secondary"
+              >
+                Comprar carta
+              </Button>
+
+              <Button
+                disabled={isSubmitting || !currentRoom || !availableActions.includes('endTurn')}
+                onClick={() => handleAction('match:endTurn')}
+                variant="secondary"
+              >
+                Encerrar turno
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <Card description="Quem esta na sala e quem esta controlando o turno agora." title="Mesa">
+        <div className="match-player-strip">
+          {players.length ? (
+            players.map((player) => (
+              <PlayerCard
+                isActiveTurn={player.user_id === activeTurnPlayerId}
+                isCurrentUser={player.user_id === user?.id}
+                key={`${player.room_id}-${player.user_id}`}
+                player={{
+                  ...player,
+                  is_ready: player.is_ready,
+                }}
+              />
+            ))
+          ) : (
+            <div className="empty-state">Sem jogadores sincronizados.</div>
+          )}
+        </div>
+      </Card>
 
       <div className="match-grid">
-        <div className="match-side-column players-column">
-          <Card description="Lista lateral com destaque visual para o turno ativo." title="Jogadores">
-            <div className="stack-gap">
-              <div className="row-wrap">
-                <Badge tone="accent">{players.length} conectados</Badge>
-                <Badge tone={isSocketConnected ? 'success' : 'secondary'}>
-                  {isSocketConnected ? 'Tempo real' : 'Fallback HTTP'}
-                </Badge>
-              </div>
-
-              {players.length ? (
-                players.map((player) => (
-                  <PlayerCard
-                    isActiveTurn={player.user_id === activeTurnPlayerId}
-                    isCurrentUser={player.user_id === user?.id}
-                    key={`${player.room_id}-${player.user_id}`}
-                    player={{
-                      ...player,
-                      is_ready: player.is_ready,
-                    }}
-                  />
-                ))
-              ) : (
-                <div className="empty-state">Sem jogadores sincronizados.</div>
-              )}
-            </div>
-          </Card>
-        </div>
-
         <div className="match-main-column">
-          <Card description="Zonas e recursos reais da sua participacao na partida." title="Area principal">
-            <div className="status-grid" style={{ marginBottom: '16px' }}>
-              <div className="status-item">
-                <span className="status-label">Vida</span>
-                <span className="status-value">{currentUserState?.health ?? '-'}</span>
-              </div>
-              <div className="status-item">
-                <span className="status-label">Imo</span>
-                <span className="status-value">
-                  {currentUserState ? `${currentUserState.imo}/${currentUserState.maxImo}` : '-'}
-                </span>
-              </div>
-            </div>
+          <Card description="Recursos e zonas organizados em um unico quadro principal." title="Seu campo">
+            <div className="match-board">
+              <div className="match-board__summary">
+                <div className="status-item">
+                  <span className="status-label">Vida</span>
+                  <span className="status-value">{currentUserState?.health ?? '-'}</span>
+                </div>
 
-            <div className="zones-grid">
-              <ZoneContainer count={currentZones.deckCount} description="Fonte principal de compra." title="Deck" tone="primary" />
-              <ZoneContainer count={currentZones.discardCount} description="Cartas descartadas." title="Descarte" />
-              <ZoneContainer count={currentZones.exileCount} description="Cartas exiladas." title="Exilio" />
-              <ZoneContainer count={currentZones.handCount} description="Cartas atualmente na sua mao." title="Mao" tone="accent" />
+                <div className="status-item">
+                  <span className="status-label">Imo</span>
+                  <span className="status-value">
+                    {currentUserState ? `${currentUserState.imo}/${currentUserState.maxImo}` : '-'}
+                  </span>
+                </div>
+
+                <div className="status-item">
+                  <span className="status-label">Cartas na mao</span>
+                  <span className="status-value">{currentZones.handCount}</span>
+                </div>
+              </div>
+
+              <div className="zones-grid">
+                <ZoneContainer count={currentZones.deckCount} description="Fonte principal de compra." title="Deck" tone="primary" />
+                <ZoneContainer count={currentZones.handCount} description="Cartas atualmente na sua mao." title="Mao" tone="accent" />
+                <ZoneContainer count={currentZones.discardCount} description="Cartas descartadas." title="Descarte" />
+                <ZoneContainer count={currentZones.exileCount} description="Cartas exiladas." title="Exilio" />
+              </div>
             </div>
           </Card>
 
@@ -353,7 +358,7 @@ export function MatchPage() {
         </div>
 
         <div className="match-side-column">
-          <Card description="Feed lateral para eventos e feedbacks da partida." title="Log de acoes">
+          <Card description="Feed de eventos recentes da partida." title="Log de acoes">
             <div className="log-list">
               {logs.length ? (
                 logs.map((item, index) => <ActionLogItem item={item} key={`${item.id || 'log'}-${index}`} />)

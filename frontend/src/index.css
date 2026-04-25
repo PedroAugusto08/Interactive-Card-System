@@ -380,9 +380,41 @@ ul {
 }
 
 .match-grid {
-  grid-template-columns: 290px minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1.55fr) minmax(300px, 0.85fr);
   align-items: start;
   gap: 18px;
+}
+
+.match-hero__layout,
+.match-board,
+.match-board__summary,
+.match-player-strip,
+.match-action-bar {
+  display: grid;
+  gap: 16px;
+}
+
+.match-hero__layout {
+  grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.9fr);
+  align-items: start;
+}
+
+.match-hero__status,
+.match-hero__actions {
+  display: grid;
+  gap: 14px;
+}
+
+.match-action-bar {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.match-player-strip {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.match-board__summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .hand-grid {
@@ -1008,11 +1040,11 @@ ul {
 
 @media (max-width: 1200px) {
   .match-grid {
-    grid-template-columns: 260px minmax(0, 1fr);
+    grid-template-columns: 1fr;
   }
 
-  .match-side-column {
-    grid-column: span 2;
+  .match-hero__layout {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -1033,6 +1065,11 @@ ul {
 
   .deck-catalog-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .match-board__summary,
+  .match-action-bar {
+    grid-template-columns: 1fr;
   }
 
   .match-topbar,
