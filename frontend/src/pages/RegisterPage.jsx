@@ -27,7 +27,7 @@ export function RegisterPage() {
     try {
       const response = await authApi.register({ username, email, password });
       setAuth(response.token, response.user);
-      navigate('/dashboard', { replace: true });
+      navigate('/lobby', { replace: true });
     } catch (error) {
       setErrorMessage(formatErrorMessage(error));
     } finally {

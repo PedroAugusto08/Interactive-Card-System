@@ -266,7 +266,7 @@ export function RoomLobbyPage() {
     <section className="stack-gap-lg">
       <div className="section-header">
         <div className="stack-gap" style={{ gap: '10px' }}>
-          <h1 className="page-title">Room Lobby</h1>
+          <h1 className="page-title">Lobby</h1>
         </div>
       </div>
 

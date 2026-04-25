@@ -1,7 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 
 import { ProtectedLayout } from '../components/ProtectedLayout';
-import { DashboardPage } from '../pages/DashboardPage';
 import { DecksPage } from '../pages/DecksPage';
 import { LoginPage } from '../pages/LoginPage';
 import { MatchPage } from '../pages/MatchPage';
@@ -18,24 +17,24 @@ export function AppRoutes() {
     <Routes>
       <Route
         path="/"
-        element={<Navigate to={isAuthenticated ? '/dashboard' : '/login'} replace />}
+        element={<Navigate to={isAuthenticated ? '/lobby' : '/login'} replace />}
       />
 
       <Route
         path="/login"
-        element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <LoginPage />}
+        element={isAuthenticated ? <Navigate to="/lobby" replace /> : <LoginPage />}
       />
 
       <Route
         path="/register"
-        element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <RegisterPage />}
+        element={isAuthenticated ? <Navigate to="/lobby" replace /> : <RegisterPage />}
       />
 
       <Route element={<ProtectedRoute />}>
         <Route element={<ProtectedLayout />}>
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/decks" element={<DecksPage />} />
           <Route path="/lobby" element={<RoomLobbyPage />} />
+          <Route path="/dashboard" element={<Navigate to="/lobby" replace />} />
+          <Route path="/decks" element={<DecksPage />} />
           <Route path="/match" element={<MatchPage />} />
         </Route>
       </Route>

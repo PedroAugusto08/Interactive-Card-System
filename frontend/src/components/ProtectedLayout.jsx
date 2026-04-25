@@ -91,9 +91,8 @@ export function ProtectedLayout() {
     <div className="app-shell">
       <header className="topbar">
         <nav className="menu-links">
-          <NavLink to="/dashboard">Dashboard</NavLink>
-          <NavLink to="/decks">Decks</NavLink>
           <NavLink to="/lobby">Lobby</NavLink>
+          <NavLink to="/decks">Decks</NavLink>
           <NavLink to="/match">Partida</NavLink>
         </nav>
 

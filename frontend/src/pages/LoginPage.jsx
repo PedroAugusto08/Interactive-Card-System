@@ -26,7 +26,7 @@ export function LoginPage() {
     try {
       const response = await authApi.login({ email, password });
       setAuth(response.token, response.user);
-      navigate('/dashboard', { replace: true });
+      navigate('/lobby', { replace: true });
     } catch (error) {
       setErrorMessage(formatErrorMessage(error));
     } finally {
