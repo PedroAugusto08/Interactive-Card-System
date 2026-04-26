@@ -448,7 +448,7 @@ export function MatchPage() {
       <Modal
         cancelLabel={null}
         confirmLabel="Fechar"
-        description="Todas as cartas atualmente exiladas pelo seu jogador."
+        description="As cartas aparecem em ordem no exilio: do topo para o fundo."
         onClose={() => setIsExileModalOpen(false)}
         onConfirm={() => setIsExileModalOpen(false)}
         open={isExileModalOpen}
@@ -456,12 +456,18 @@ export function MatchPage() {
       >
         {exileCards.length ? (
           <div className="exile-modal-grid">
-            {exileCards.map((card) => (
+            {exileCards.map((card, index) => (
               <CardItem
                 category={card.category}
                 cost={card.category === 'imo' ? card.imoCost || 0 : undefined}
                 costLabel="Custo Imo"
                 description={card.effect}
+                footer={
+                  <div className="exile-card-order">
+                    <span>{index === 0 ? 'Topo do exilio' : `Posicao ${index + 1}`}</span>
+                    <span>{index === exileCards.length - 1 ? 'Fundo' : null}</span>
+                  </div>
+                }
                 imageSrc={resolveCardImageUrl(card.imagePath)}
                 key={card.instanceId}
                 name={card.name}

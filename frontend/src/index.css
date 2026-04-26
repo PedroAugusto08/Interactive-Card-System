@@ -1174,7 +1174,8 @@ ul {
 }
 
 .zone-preview-strip,
-.exile-modal-grid {
+.exile-modal-grid,
+.exile-card-order {
   display: grid;
   gap: 12px;
 }
@@ -1196,6 +1197,13 @@ ul {
 .exile-modal-grid {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   margin-top: 8px;
+}
+
+.exile-card-order {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
 }
 
 .action-log-item {
