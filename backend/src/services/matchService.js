@@ -1,10 +1,4 @@
-const {
-  findRoomById,
-  listRoomPlayers,
-  updateRoomState,
-  assignRoomPlayerTurnOrders,
-  isPlayerInRoom,
-} = require('../models/roomModel');
+const { findRoomById, listRoomPlayers, updateRoomState, assignRoomPlayerTurnOrders, isPlayerInRoom } = require('../models/roomModel');
 const {
   createMatch,
   findActiveMatchByRoomId,
@@ -416,28 +410,29 @@ async function drawCardForPlayer({ roomId, userId, includeSnapshot = true }) {
   const nextCard = deckCards.shift();
   const handCards = [...playerState.hand_cards_json, nextCard];
 
-  await upsertMatchPlayer({
-    matchId: context.match.id,
-    userId,
-    turnOrder: playerState.turn_order,
-    health: playerState.health,
-    imo: playerState.imo,
-    maxImo: playerState.max_imo,
-    hasDrawnThisTurn: true,
-    hasUsedCardActionThisTurn: playerState.has_used_card_action_this_turn,
-    isDefeated: playerState.is_defeated,
-    deckCards,
-    handCards,
-    discardCards: playerState.discard_cards_json,
-    exileCards: playerState.exile_cards_json,
-  });
-
-  await addMatchLog({
-    matchId: context.match.id,
-    type: 'MATCH_DRAW',
-    message: `${playerState.username} comprou uma carta.`,
-    payload: { userId, cardId: nextCard.cardId },
-  });
+  await Promise.all([
+    upsertMatchPlayer({
+      matchId: context.match.id,
+      userId,
+      turnOrder: playerState.turn_order,
+      health: playerState.health,
+      imo: playerState.imo,
+      maxImo: playerState.max_imo,
+      hasDrawnThisTurn: true,
+      hasUsedCardActionThisTurn: playerState.has_used_card_action_this_turn,
+      isDefeated: playerState.is_defeated,
+      deckCards,
+      handCards,
+      discardCards: playerState.discard_cards_json,
+      exileCards: playerState.exile_cards_json,
+    }),
+    addMatchLog({
+      matchId: context.match.id,
+      type: 'MATCH_DRAW',
+      message: `${playerState.username} comprou uma carta.`,
+      payload: { userId, cardId: nextCard.cardId },
+    }),
+  ]);
 
   return finalizeActionResponse({ roomId, userId, includeSnapshot });
 }
@@ -475,32 +470,33 @@ async function playCardForPlayer({ roomId, userId, cardId, includeSnapshot = tru
   const nextImo = playerState.imo - imoCost;
   const deckCards = [...playerState.deck_cards_json, playedCard];
 
-  await upsertMatchPlayer({
-    matchId: context.match.id,
-    userId,
-    turnOrder: playerState.turn_order,
-    health: playerState.health,
-    imo: nextImo,
-    maxImo: playerState.max_imo,
-    hasDrawnThisTurn: playerState.has_drawn_this_turn,
-    hasUsedCardActionThisTurn: true,
-    isDefeated: playerState.is_defeated,
-    deckCards,
-    handCards,
-    discardCards: playerState.discard_cards_json,
-    exileCards: playerState.exile_cards_json,
-  });
-
-  await addMatchLog({
-    matchId: context.match.id,
-    type: 'MATCH_PLAY_CARD',
-    message: `${playerState.username} jogou ${resolvedCard.name}.`,
-    payload: {
+  await Promise.all([
+    upsertMatchPlayer({
+      matchId: context.match.id,
       userId,
-      cardId: playedCard.cardId,
-      imoCost,
-    },
-  });
+      turnOrder: playerState.turn_order,
+      health: playerState.health,
+      imo: nextImo,
+      maxImo: playerState.max_imo,
+      hasDrawnThisTurn: playerState.has_drawn_this_turn,
+      hasUsedCardActionThisTurn: true,
+      isDefeated: playerState.is_defeated,
+      deckCards,
+      handCards,
+      discardCards: playerState.discard_cards_json,
+      exileCards: playerState.exile_cards_json,
+    }),
+    addMatchLog({
+      matchId: context.match.id,
+      type: 'MATCH_PLAY_CARD',
+      message: `${playerState.username} jogou ${resolvedCard.name}.`,
+      payload: {
+        userId,
+        cardId: playedCard.cardId,
+        imoCost,
+      },
+    }),
+  ]);
 
   return finalizeActionResponse({ roomId, userId, includeSnapshot });
 }
@@ -532,31 +528,32 @@ async function discardCardForPlayer({ roomId, userId, cardId, includeSnapshot = 
 
   const exileCards = [...playerState.exile_cards_json, discardedCard];
 
-  await upsertMatchPlayer({
-    matchId: context.match.id,
-    userId,
-    turnOrder: playerState.turn_order,
-    health: playerState.health,
-    imo: playerState.imo,
-    maxImo: playerState.max_imo,
-    hasDrawnThisTurn: playerState.has_drawn_this_turn,
-    hasUsedCardActionThisTurn: true,
-    isDefeated: playerState.is_defeated,
-    deckCards: playerState.deck_cards_json,
-    handCards,
-    discardCards: playerState.discard_cards_json,
-    exileCards,
-  });
-
-  await addMatchLog({
-    matchId: context.match.id,
-    type: 'MATCH_DISCARD_CARD',
-    message: `${playerState.username} descartou ${resolvedCard.name}.`,
-    payload: {
+  await Promise.all([
+    upsertMatchPlayer({
+      matchId: context.match.id,
       userId,
-      cardId: discardedCard.cardId,
-    },
-  });
+      turnOrder: playerState.turn_order,
+      health: playerState.health,
+      imo: playerState.imo,
+      maxImo: playerState.max_imo,
+      hasDrawnThisTurn: playerState.has_drawn_this_turn,
+      hasUsedCardActionThisTurn: true,
+      isDefeated: playerState.is_defeated,
+      deckCards: playerState.deck_cards_json,
+      handCards,
+      discardCards: playerState.discard_cards_json,
+      exileCards,
+    }),
+    addMatchLog({
+      matchId: context.match.id,
+      type: 'MATCH_DISCARD_CARD',
+      message: `${playerState.username} descartou ${resolvedCard.name}.`,
+      payload: {
+        userId,
+        cardId: discardedCard.cardId,
+      },
+    }),
+  ]);
 
   return finalizeActionResponse({ roomId, userId, includeSnapshot });
 }
@@ -572,38 +569,38 @@ async function endTurnForPlayer({ roomId, userId, includeSnapshot = true }) {
       ? context.match.round + 1
       : context.match.round;
 
-  if (nextPlayer) {
-    await upsertMatchPlayer({
+  await Promise.all([
+    nextPlayer
+      ? upsertMatchPlayer({
+          matchId: context.match.id,
+          userId: nextPlayer.user_id,
+          turnOrder: nextPlayer.turn_order,
+          health: nextPlayer.health,
+          imo: Math.min(nextPlayer.max_imo, nextPlayer.imo + 1),
+          maxImo: nextPlayer.max_imo,
+          hasDrawnThisTurn: false,
+          hasUsedCardActionThisTurn: false,
+          isDefeated: nextPlayer.is_defeated,
+          deckCards: nextPlayer.deck_cards_json,
+          handCards: nextPlayer.hand_cards_json,
+          discardCards: nextPlayer.discard_cards_json,
+          exileCards: nextPlayer.exile_cards_json,
+        })
+      : Promise.resolve(null),
+    updateMatchState({
       matchId: context.match.id,
-      userId: nextPlayer.user_id,
-      turnOrder: nextPlayer.turn_order,
-      health: nextPlayer.health,
-      imo: Math.min(nextPlayer.max_imo, nextPlayer.imo + 1),
-      maxImo: nextPlayer.max_imo,
-      hasDrawnThisTurn: false,
-      hasUsedCardActionThisTurn: false,
-      isDefeated: nextPlayer.is_defeated,
-      deckCards: nextPlayer.deck_cards_json,
-      handCards: nextPlayer.hand_cards_json,
-      discardCards: nextPlayer.discard_cards_json,
-      exileCards: nextPlayer.exile_cards_json,
-    });
-  }
-
-  await updateMatchState({
-    matchId: context.match.id,
-    status: 'active',
-    round: nextRound,
-    currentTurnPlayerId: nextPlayer.user_id,
-    winnerUserId: null,
-  });
-
-  await addMatchLog({
-    matchId: context.match.id,
-    type: 'MATCH_END_TURN',
-    message: `${currentPlayer.username} encerrou o turno.`,
-    payload: { userId },
-  });
+      status: 'active',
+      round: nextRound,
+      currentTurnPlayerId: nextPlayer.user_id,
+      winnerUserId: null,
+    }),
+    addMatchLog({
+      matchId: context.match.id,
+      type: 'MATCH_END_TURN',
+      message: `${currentPlayer.username} encerrou o turno.`,
+      payload: { userId },
+    }),
+  ]);
 
   return finalizeActionResponse({ roomId, userId, includeSnapshot });
 }
@@ -665,11 +662,13 @@ async function forfeitMatchByLeavingRoom({ roomId, userId }) {
 }
 
 async function requireActiveTurnContext({ roomId, userId, includeAllPlayers = false }) {
-  const [room, match] = await Promise.all([findRoomById(roomId), findActiveMatchByRoomId(roomId)]);
-  if (!room) {
-    throw new AppError('Sala nao encontrada.', 404);
-  }
+  const match = await findActiveMatchByRoomId(roomId);
   if (!match) {
+    const room = await findRoomById(roomId);
+    if (!room) {
+      throw new AppError('Sala nao encontrada.', 404);
+    }
+
     throw new AppError('Nao existe partida ativa para esta sala.', 409);
   }
 
@@ -696,7 +695,6 @@ async function requireActiveTurnContext({ roomId, userId, includeAllPlayers = fa
   }
 
   return {
-    room,
     match,
     matchPlayers: matchPlayers || [currentPlayer],
     currentPlayer,
