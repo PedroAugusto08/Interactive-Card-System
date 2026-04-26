@@ -390,6 +390,41 @@ async function buildPlayerState({ activeMatch, matchPlayer, requesterUserId, car
   };
 }
 
+async function buildActionRealtimeState({ activeMatch, currentUserId, currentPlayer, log }) {
+  const currentUserState = await buildPlayerState({
+    activeMatch,
+    matchPlayer: currentPlayer,
+    requesterUserId: currentUserId,
+    cardCatalogCache: new Map(),
+  });
+
+  return {
+    snapshot: {
+      match: {
+        id: activeMatch.id,
+        status: activeMatch.status,
+        round: activeMatch.round,
+        currentTurnPlayerId: activeMatch.current_turn_player_id,
+        winnerUserId: activeMatch.winner_user_id,
+        startedAt: activeMatch.started_at,
+        endedAt: activeMatch.ended_at,
+      },
+      currentTurnPlayerId: activeMatch.current_turn_player_id,
+      round: activeMatch.round,
+      currentUserState,
+    },
+    log: log
+      ? {
+          id: log.id,
+          type: log.type,
+          message: log.message,
+          payload: log.payload_json,
+          timestamp: log.created_at,
+        }
+      : null,
+  };
+}
+
 async function drawCardForPlayer({ roomId, userId, includeSnapshot = true }) {
   const context = await requireActiveTurnContext({ roomId, userId, includeAllPlayers: false });
   const playerState = context.currentPlayer;
@@ -410,7 +445,7 @@ async function drawCardForPlayer({ roomId, userId, includeSnapshot = true }) {
   const nextCard = deckCards.shift();
   const handCards = [...playerState.hand_cards_json, nextCard];
 
-  await Promise.all([
+  const [updatedPlayerState, createdLog] = await Promise.all([
     upsertMatchPlayer({
       matchId: context.match.id,
       userId,
@@ -434,7 +469,21 @@ async function drawCardForPlayer({ roomId, userId, includeSnapshot = true }) {
     }),
   ]);
 
-  return finalizeActionResponse({ roomId, userId, includeSnapshot });
+  return finalizeActionResponse({
+    roomId,
+    userId,
+    includeSnapshot,
+    actionState: await buildActionRealtimeState({
+      activeMatch: context.match,
+      currentUserId: userId,
+      currentPlayer: {
+        ...updatedPlayerState,
+        username: playerState.username,
+        email: playerState.email,
+      },
+      log: createdLog,
+    }),
+  });
 }
 
 async function playCardForPlayer({ roomId, userId, cardId, includeSnapshot = true }) {
@@ -470,7 +519,7 @@ async function playCardForPlayer({ roomId, userId, cardId, includeSnapshot = tru
   const nextImo = playerState.imo - imoCost;
   const deckCards = [...playerState.deck_cards_json, playedCard];
 
-  await Promise.all([
+  const [updatedPlayerState, createdLog] = await Promise.all([
     upsertMatchPlayer({
       matchId: context.match.id,
       userId,
@@ -498,7 +547,21 @@ async function playCardForPlayer({ roomId, userId, cardId, includeSnapshot = tru
     }),
   ]);
 
-  return finalizeActionResponse({ roomId, userId, includeSnapshot });
+  return finalizeActionResponse({
+    roomId,
+    userId,
+    includeSnapshot,
+    actionState: await buildActionRealtimeState({
+      activeMatch: context.match,
+      currentUserId: userId,
+      currentPlayer: {
+        ...updatedPlayerState,
+        username: playerState.username,
+        email: playerState.email,
+      },
+      log: createdLog,
+    }),
+  });
 }
 
 async function discardCardForPlayer({ roomId, userId, cardId, includeSnapshot = true }) {
@@ -528,7 +591,7 @@ async function discardCardForPlayer({ roomId, userId, cardId, includeSnapshot = 
 
   const exileCards = [...playerState.exile_cards_json, discardedCard];
 
-  await Promise.all([
+  const [updatedPlayerState, createdLog] = await Promise.all([
     upsertMatchPlayer({
       matchId: context.match.id,
       userId,
@@ -555,7 +618,21 @@ async function discardCardForPlayer({ roomId, userId, cardId, includeSnapshot = 
     }),
   ]);
 
-  return finalizeActionResponse({ roomId, userId, includeSnapshot });
+  return finalizeActionResponse({
+    roomId,
+    userId,
+    includeSnapshot,
+    actionState: await buildActionRealtimeState({
+      activeMatch: context.match,
+      currentUserId: userId,
+      currentPlayer: {
+        ...updatedPlayerState,
+        username: playerState.username,
+        email: playerState.email,
+      },
+      log: createdLog,
+    }),
+  });
 }
 
 async function endTurnForPlayer({ roomId, userId, includeSnapshot = true }) {
@@ -569,7 +646,7 @@ async function endTurnForPlayer({ roomId, userId, includeSnapshot = true }) {
       ? context.match.round + 1
       : context.match.round;
 
-  await Promise.all([
+  const [updatedNextPlayerState, updatedMatchState, createdLog] = await Promise.all([
     nextPlayer
       ? upsertMatchPlayer({
           matchId: context.match.id,
@@ -602,7 +679,31 @@ async function endTurnForPlayer({ roomId, userId, includeSnapshot = true }) {
     }),
   ]);
 
-  return finalizeActionResponse({ roomId, userId, includeSnapshot });
+  const updatedCurrentPlayerState =
+    updatedNextPlayerState && updatedNextPlayerState.user_id === userId
+      ? {
+          ...updatedNextPlayerState,
+          username: currentPlayer.username,
+          email: currentPlayer.email,
+        }
+      : currentPlayer;
+
+  return finalizeActionResponse({
+    roomId,
+    userId,
+    includeSnapshot,
+    actionState: await buildActionRealtimeState({
+      activeMatch:
+        updatedMatchState || {
+          ...context.match,
+          round: nextRound,
+          current_turn_player_id: nextPlayer.user_id,
+        },
+      currentUserId: userId,
+      currentPlayer: updatedCurrentPlayerState,
+      log: createdLog,
+    }),
+  });
 }
 
 async function forfeitMatchByLeavingRoom({ roomId, userId }) {
@@ -780,9 +881,9 @@ function hydrateCards(cardCatalogMap, cardEntries) {
   return hydrated;
 }
 
-async function finalizeActionResponse({ roomId, userId, includeSnapshot }) {
+async function finalizeActionResponse({ roomId, userId, includeSnapshot, actionState = null }) {
   if (!includeSnapshot) {
-    return null;
+    return actionState;
   }
 
   return getMatchSnapshot({ roomId, userId });

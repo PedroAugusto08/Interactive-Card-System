@@ -136,18 +136,32 @@ function createSocketServer(httpServer) {
     socket.on('match:draw', async ({ roomId }, acknowledge) => {
       try {
         const actionStartedAt = performance.now();
-        await matchService.drawCardForPlayer({
+        const actionState = await matchService.drawCardForPlayer({
           roomId: Number(roomId),
           userId: user.id,
           includeSnapshot: false,
         });
         const mutateMs = performance.now() - actionStartedAt;
-        const acknowledgement = await acknowledgeRealtimeState(socket, Number(roomId), acknowledge);
+        const acknowledgeStartedAt = performance.now();
+        const ackMetrics = {
+          buildAckMs: 0,
+          totalMs: 0,
+        };
+        if (typeof acknowledge === 'function') {
+          acknowledge({
+            ok: true,
+            snapshot: actionState?.snapshot || null,
+            log: actionState?.log || null,
+            metrics: ackMetrics,
+          });
+        }
+        ackMetrics.buildAckMs = performance.now() - acknowledgeStartedAt;
+        ackMetrics.totalMs = ackMetrics.buildAckMs;
         logMatchPerf('match:draw', {
           roomId: Number(roomId),
           userId: user.id,
           mutateMs,
-          realtimeMetrics: acknowledgement?.metrics,
+          realtimeMetrics: ackMetrics,
           totalMs: performance.now() - actionStartedAt,
         });
         queueMatchBroadcast(io, Number(roomId), [socket.id]);
@@ -160,19 +174,33 @@ function createSocketServer(httpServer) {
     socket.on('match:playCard', async ({ roomId, cardId }, acknowledge) => {
       try {
         const actionStartedAt = performance.now();
-        await matchService.playCardForPlayer({
+        const actionState = await matchService.playCardForPlayer({
           roomId: Number(roomId),
           userId: user.id,
           cardId,
           includeSnapshot: false,
         });
         const mutateMs = performance.now() - actionStartedAt;
-        const acknowledgement = await acknowledgeRealtimeState(socket, Number(roomId), acknowledge);
+        const acknowledgeStartedAt = performance.now();
+        const ackMetrics = {
+          buildAckMs: 0,
+          totalMs: 0,
+        };
+        if (typeof acknowledge === 'function') {
+          acknowledge({
+            ok: true,
+            snapshot: actionState?.snapshot || null,
+            log: actionState?.log || null,
+            metrics: ackMetrics,
+          });
+        }
+        ackMetrics.buildAckMs = performance.now() - acknowledgeStartedAt;
+        ackMetrics.totalMs = ackMetrics.buildAckMs;
         logMatchPerf('match:playCard', {
           roomId: Number(roomId),
           userId: user.id,
           mutateMs,
-          realtimeMetrics: acknowledgement?.metrics,
+          realtimeMetrics: ackMetrics,
           totalMs: performance.now() - actionStartedAt,
         });
         queueMatchBroadcast(io, Number(roomId), [socket.id]);
@@ -185,19 +213,33 @@ function createSocketServer(httpServer) {
     socket.on('match:discardCard', async ({ roomId, cardId }, acknowledge) => {
       try {
         const actionStartedAt = performance.now();
-        await matchService.discardCardForPlayer({
+        const actionState = await matchService.discardCardForPlayer({
           roomId: Number(roomId),
           userId: user.id,
           cardId,
           includeSnapshot: false,
         });
         const mutateMs = performance.now() - actionStartedAt;
-        const acknowledgement = await acknowledgeRealtimeState(socket, Number(roomId), acknowledge);
+        const acknowledgeStartedAt = performance.now();
+        const ackMetrics = {
+          buildAckMs: 0,
+          totalMs: 0,
+        };
+        if (typeof acknowledge === 'function') {
+          acknowledge({
+            ok: true,
+            snapshot: actionState?.snapshot || null,
+            log: actionState?.log || null,
+            metrics: ackMetrics,
+          });
+        }
+        ackMetrics.buildAckMs = performance.now() - acknowledgeStartedAt;
+        ackMetrics.totalMs = ackMetrics.buildAckMs;
         logMatchPerf('match:discardCard', {
           roomId: Number(roomId),
           userId: user.id,
           mutateMs,
-          realtimeMetrics: acknowledgement?.metrics,
+          realtimeMetrics: ackMetrics,
           totalMs: performance.now() - actionStartedAt,
         });
         queueMatchBroadcast(io, Number(roomId), [socket.id]);
@@ -210,18 +252,32 @@ function createSocketServer(httpServer) {
     socket.on('match:endTurn', async ({ roomId }, acknowledge) => {
       try {
         const actionStartedAt = performance.now();
-        await matchService.endTurnForPlayer({
+        const actionState = await matchService.endTurnForPlayer({
           roomId: Number(roomId),
           userId: user.id,
           includeSnapshot: false,
         });
         const mutateMs = performance.now() - actionStartedAt;
-        const acknowledgement = await acknowledgeRealtimeState(socket, Number(roomId), acknowledge);
+        const acknowledgeStartedAt = performance.now();
+        const ackMetrics = {
+          buildAckMs: 0,
+          totalMs: 0,
+        };
+        if (typeof acknowledge === 'function') {
+          acknowledge({
+            ok: true,
+            snapshot: actionState?.snapshot || null,
+            log: actionState?.log || null,
+            metrics: ackMetrics,
+          });
+        }
+        ackMetrics.buildAckMs = performance.now() - acknowledgeStartedAt;
+        ackMetrics.totalMs = ackMetrics.buildAckMs;
         logMatchPerf('match:endTurn', {
           roomId: Number(roomId),
           userId: user.id,
           mutateMs,
-          realtimeMetrics: acknowledgement?.metrics,
+          realtimeMetrics: ackMetrics,
           totalMs: performance.now() - actionStartedAt,
         });
         queueMatchBroadcast(io, Number(roomId), [socket.id]);
@@ -378,6 +434,7 @@ function logMatchPerf(action, { roomId, userId, mutateMs, realtimeMetrics, total
       `findMatch=${Math.round(realtimeMetrics?.findMatchMs || 0)}ms ` +
       `loadMatchData=${Math.round(realtimeMetrics?.loadMatchDataMs || 0)}ms ` +
       `buildState=${Math.round(realtimeMetrics?.buildSnapshotsMs || 0)}ms ` +
+      `buildAck=${Math.round(realtimeMetrics?.buildAckMs || 0)}ms ` +
       `ackTotal=${Math.round(realtimeMetrics?.totalMs || 0)}ms total=${Math.round(totalMs)}ms`
   );
 }
