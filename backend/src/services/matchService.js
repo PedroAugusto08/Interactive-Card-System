@@ -135,6 +135,53 @@ async function getMatchSnapshotsForUsers({ roomId, userIds = [] }) {
   return new Map(snapshots);
 }
 
+async function getRealtimeMatchStatesForUsers({ roomId, userIds = [] }) {
+  const requesterIds = [...new Set((userIds || []).map((value) => Number(value)).filter(Number.isInteger))];
+  if (!requesterIds.length) {
+    return {
+      latestLog: null,
+      snapshotsByUserId: new Map(),
+    };
+  }
+
+  const match = await findActiveMatchByRoomId(roomId);
+  if (!match) {
+    return {
+      latestLog: null,
+      snapshotsByUserId: new Map(),
+    };
+  }
+
+  const [matchPlayers, latestLogs] = await Promise.all([listMatchPlayers(match.id), listMatchLogs(match.id, 1)]);
+  const latestLog = latestLogs[0]
+    ? {
+        id: latestLogs[0].id,
+        type: latestLogs[0].type,
+        message: latestLogs[0].message,
+        payload: latestLogs[0].payload_json,
+        timestamp: latestLogs[0].created_at,
+      }
+    : null;
+
+  const cardCatalogCache = new Map();
+  const snapshots = await Promise.all(
+    requesterIds.map(async (requesterUserId) => [
+      requesterUserId,
+      await buildRealtimeMatchState({
+        activeMatch: match,
+        matchPlayers,
+        userId: requesterUserId,
+        cardCatalogCache,
+      }),
+    ])
+  );
+
+  return {
+    latestLog,
+    snapshotsByUserId: new Map(snapshots),
+  };
+}
+
 async function loadMatchSnapshotContext({ roomId, userId, skipMembershipCheck = false }) {
   const room = await findRoomById(roomId);
   if (!room) {
@@ -255,6 +302,76 @@ async function buildMatchSnapshot({ room, players, activeMatch, matchPlayers, lo
       payload: item.payload_json,
       timestamp: item.created_at,
     })),
+  };
+}
+
+async function buildRealtimeMatchState({ activeMatch, matchPlayers, userId, cardCatalogCache }) {
+  const matchPlayer = matchPlayers.find((player) => player.user_id === userId) || null;
+  const currentUserState = matchPlayer
+    ? await buildPlayerState({
+        activeMatch,
+        matchPlayer,
+        requesterUserId: userId,
+        cardCatalogCache,
+      })
+    : null;
+
+  return {
+    match: {
+      id: activeMatch.id,
+      status: activeMatch.status,
+      round: activeMatch.round,
+      currentTurnPlayerId: activeMatch.current_turn_player_id,
+      winnerUserId: activeMatch.winner_user_id,
+      startedAt: activeMatch.started_at,
+      endedAt: activeMatch.ended_at,
+    },
+    currentTurnPlayerId: activeMatch.current_turn_player_id,
+    round: activeMatch.round,
+    currentUserState,
+  };
+}
+
+async function buildPlayerState({ activeMatch, matchPlayer, requesterUserId, cardCatalogCache }) {
+  const isRequester = matchPlayer.user_id === requesterUserId;
+  let handCards = [];
+  let discardCards = [];
+  let exileCards = [];
+
+  if (isRequester) {
+    const cardCatalogMap = await getCardCatalogMapForUser(matchPlayer.user_id, cardCatalogCache);
+    [handCards, discardCards, exileCards] = [
+      hydrateCards(cardCatalogMap, matchPlayer.hand_cards_json || []),
+      hydrateCards(cardCatalogMap, matchPlayer.discard_cards_json || []),
+      hydrateCards(cardCatalogMap, matchPlayer.exile_cards_json || []),
+    ];
+  }
+
+  return {
+    userId: matchPlayer.user_id,
+    username: matchPlayer.username,
+    email: matchPlayer.email,
+    turnOrder: matchPlayer.turn_order,
+    health: matchPlayer.health,
+    imo: matchPlayer.imo,
+    maxImo: matchPlayer.max_imo,
+    hasDrawnThisTurn: matchPlayer.has_drawn_this_turn,
+    hasUsedCardActionThisTurn: matchPlayer.has_used_card_action_this_turn,
+    isDefeated: matchPlayer.is_defeated,
+    zones: {
+      deckCount: (matchPlayer.deck_cards_json || []).length,
+      handCount: isRequester ? handCards.length : (matchPlayer.hand_cards_json || []).length,
+      discardCount: isRequester ? discardCards.length : (matchPlayer.discard_cards_json || []).length,
+      exileCount: isRequester ? exileCards.length : (matchPlayer.exile_cards_json || []).length,
+    },
+    handCards: isRequester ? handCards : [],
+    discardCards: isRequester ? discardCards : [],
+    exileCards: isRequester ? exileCards : [],
+    availableActions: buildAvailableActions({
+      activeMatch,
+      matchPlayer,
+      requesterUserId,
+    }),
   };
 }
 
@@ -657,6 +774,7 @@ module.exports = {
   startMatchForRoom,
   getMatchSnapshot,
   getMatchSnapshotsForUsers,
+  getRealtimeMatchStatesForUsers,
   drawCardForPlayer,
   playCardForPlayer,
   discardCardForPlayer,

@@ -30,6 +30,7 @@ export function MatchPage() {
   const logs = useRoomStore((state) => state.logs);
   const setRoomData = useRoomStore((state) => state.setRoomData);
   const setMatchData = useRoomStore((state) => state.setMatchData);
+  const appendMatchLog = useRoomStore((state) => state.appendMatchLog);
   const clearRoom = useRoomStore((state) => state.clearRoom);
 
   const socket = useSocket(token);
@@ -91,6 +92,7 @@ export function MatchPage() {
 
     function handleLog(payload) {
       setSyncMessage(payload.message);
+      appendMatchLog(payload);
     }
 
     socket.on('room:update', handleRoomUpdate);
@@ -102,7 +104,7 @@ export function MatchPage() {
       socket.off('match:sync', handleMatchSync);
       socket.off('match:log', handleLog);
     };
-  }, [setMatchData, setRoomData, socket]);
+  }, [appendMatchLog, setMatchData, setRoomData, socket]);
 
   useEffect(() => {
     if (socket && currentRoom?.id && isSocketConnected) {

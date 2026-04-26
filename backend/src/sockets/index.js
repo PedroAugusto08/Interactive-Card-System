@@ -238,6 +238,7 @@ async function syncSocketMatchState(socket, roomId) {
   const latestLog = matchSnapshot.logs[0];
   if (latestLog) {
     socket.emit('match:log', {
+      id: latestLog.id,
       type: latestLog.type,
       message: latestLog.message,
       timestamp: latestLog.timestamp,
@@ -259,7 +260,7 @@ async function broadcastRoomOnly(io, roomId) {
 async function broadcastMatchOnly(io, roomId) {
   const roomChannel = getRoomChannel(roomId);
   const sockets = await io.in(roomChannel).fetchSockets();
-  const snapshotsByUserId = await matchService.getMatchSnapshotsForUsers({
+  const { latestLog, snapshotsByUserId } = await matchService.getRealtimeMatchStatesForUsers({
     roomId,
     userIds: sockets.map((socket) => socket.data.user.id),
   });
@@ -273,9 +274,9 @@ async function broadcastMatchOnly(io, roomId) {
 
       socket.emit('match:sync', snapshot);
 
-      const latestLog = snapshot.logs[0];
       if (latestLog) {
         socket.emit('match:log', {
+          id: latestLog.id,
           type: latestLog.type,
           message: latestLog.message,
           timestamp: latestLog.timestamp,
