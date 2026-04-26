@@ -135,13 +135,21 @@ function createSocketServer(httpServer) {
 
     socket.on('match:draw', async ({ roomId }, acknowledge) => {
       try {
+        const actionStartedAt = performance.now();
         await matchService.drawCardForPlayer({
           roomId: Number(roomId),
           userId: user.id,
           includeSnapshot: false,
         });
-
-        await acknowledgeRealtimeState(socket, Number(roomId), acknowledge);
+        const mutateMs = performance.now() - actionStartedAt;
+        const acknowledgement = await acknowledgeRealtimeState(socket, Number(roomId), acknowledge);
+        logMatchPerf('match:draw', {
+          roomId: Number(roomId),
+          userId: user.id,
+          mutateMs,
+          realtimeMetrics: acknowledgement?.metrics,
+          totalMs: performance.now() - actionStartedAt,
+        });
         queueMatchBroadcast(io, Number(roomId), [socket.id]);
       } catch (error) {
         acknowledgeSocketError(acknowledge, error.message);
@@ -151,14 +159,22 @@ function createSocketServer(httpServer) {
 
     socket.on('match:playCard', async ({ roomId, cardId }, acknowledge) => {
       try {
+        const actionStartedAt = performance.now();
         await matchService.playCardForPlayer({
           roomId: Number(roomId),
           userId: user.id,
           cardId,
           includeSnapshot: false,
         });
-
-        await acknowledgeRealtimeState(socket, Number(roomId), acknowledge);
+        const mutateMs = performance.now() - actionStartedAt;
+        const acknowledgement = await acknowledgeRealtimeState(socket, Number(roomId), acknowledge);
+        logMatchPerf('match:playCard', {
+          roomId: Number(roomId),
+          userId: user.id,
+          mutateMs,
+          realtimeMetrics: acknowledgement?.metrics,
+          totalMs: performance.now() - actionStartedAt,
+        });
         queueMatchBroadcast(io, Number(roomId), [socket.id]);
       } catch (error) {
         acknowledgeSocketError(acknowledge, error.message);
@@ -168,14 +184,22 @@ function createSocketServer(httpServer) {
 
     socket.on('match:discardCard', async ({ roomId, cardId }, acknowledge) => {
       try {
+        const actionStartedAt = performance.now();
         await matchService.discardCardForPlayer({
           roomId: Number(roomId),
           userId: user.id,
           cardId,
           includeSnapshot: false,
         });
-
-        await acknowledgeRealtimeState(socket, Number(roomId), acknowledge);
+        const mutateMs = performance.now() - actionStartedAt;
+        const acknowledgement = await acknowledgeRealtimeState(socket, Number(roomId), acknowledge);
+        logMatchPerf('match:discardCard', {
+          roomId: Number(roomId),
+          userId: user.id,
+          mutateMs,
+          realtimeMetrics: acknowledgement?.metrics,
+          totalMs: performance.now() - actionStartedAt,
+        });
         queueMatchBroadcast(io, Number(roomId), [socket.id]);
       } catch (error) {
         acknowledgeSocketError(acknowledge, error.message);
@@ -185,13 +209,21 @@ function createSocketServer(httpServer) {
 
     socket.on('match:endTurn', async ({ roomId }, acknowledge) => {
       try {
+        const actionStartedAt = performance.now();
         await matchService.endTurnForPlayer({
           roomId: Number(roomId),
           userId: user.id,
           includeSnapshot: false,
         });
-
-        await acknowledgeRealtimeState(socket, Number(roomId), acknowledge);
+        const mutateMs = performance.now() - actionStartedAt;
+        const acknowledgement = await acknowledgeRealtimeState(socket, Number(roomId), acknowledge);
+        logMatchPerf('match:endTurn', {
+          roomId: Number(roomId),
+          userId: user.id,
+          mutateMs,
+          realtimeMetrics: acknowledgement?.metrics,
+          totalMs: performance.now() - actionStartedAt,
+        });
         queueMatchBroadcast(io, Number(roomId), [socket.id]);
       } catch (error) {
         acknowledgeSocketError(acknowledge, error.message);
@@ -299,7 +331,7 @@ async function broadcastMatchOnly(io, roomId, excludedSocketIds = []) {
 }
 
 async function acknowledgeRealtimeState(socket, roomId, acknowledge) {
-  const { latestLog, snapshotsByUserId } = await matchService.getRealtimeMatchStatesForUsers({
+  const { latestLog, snapshotsByUserId, metrics } = await matchService.getRealtimeMatchStatesForUsers({
     roomId,
     userIds: [socket.data.user.id],
   });
@@ -310,8 +342,15 @@ async function acknowledgeRealtimeState(socket, roomId, acknowledge) {
       ok: true,
       snapshot,
       log: latestLog,
+      metrics,
     });
   }
+
+  return {
+    snapshot,
+    log: latestLog,
+    metrics,
+  };
 }
 
 function acknowledgeSocketError(acknowledge, message) {
@@ -330,6 +369,17 @@ function queueMatchBroadcast(io, roomId, excludedSocketIds = []) {
       console.error('Failed to broadcast match state:', error);
     });
   });
+}
+
+function logMatchPerf(action, { roomId, userId, mutateMs, realtimeMetrics, totalMs }) {
+  // eslint-disable-next-line no-console
+  console.info(
+    `[match perf] action=${action} room=${roomId} user=${userId} mutate=${Math.round(mutateMs)}ms ` +
+      `findMatch=${Math.round(realtimeMetrics?.findMatchMs || 0)}ms ` +
+      `loadMatchData=${Math.round(realtimeMetrics?.loadMatchDataMs || 0)}ms ` +
+      `buildState=${Math.round(realtimeMetrics?.buildSnapshotsMs || 0)}ms ` +
+      `ackTotal=${Math.round(realtimeMetrics?.totalMs || 0)}ms total=${Math.round(totalMs)}ms`
+  );
 }
 
 function emitSocketError(socket, message) {

@@ -136,23 +136,35 @@ async function getMatchSnapshotsForUsers({ roomId, userIds = [] }) {
 }
 
 async function getRealtimeMatchStatesForUsers({ roomId, userIds = [] }) {
+  const startedAt = performance.now();
   const requesterIds = [...new Set((userIds || []).map((value) => Number(value)).filter(Number.isInteger))];
   if (!requesterIds.length) {
     return {
       latestLog: null,
       snapshotsByUserId: new Map(),
+      metrics: {
+        totalMs: 0,
+      },
     };
   }
 
+  const findMatchStartedAt = performance.now();
   const match = await findActiveMatchByRoomId(roomId);
+  const findMatchMs = performance.now() - findMatchStartedAt;
   if (!match) {
     return {
       latestLog: null,
       snapshotsByUserId: new Map(),
+      metrics: {
+        findMatchMs,
+        totalMs: performance.now() - startedAt,
+      },
     };
   }
 
+  const loadMatchDataStartedAt = performance.now();
   const [matchPlayers, latestLogs] = await Promise.all([listMatchPlayers(match.id), listMatchLogs(match.id, 1)]);
+  const loadMatchDataMs = performance.now() - loadMatchDataStartedAt;
   const latestLog = latestLogs[0]
     ? {
         id: latestLogs[0].id,
@@ -164,6 +176,7 @@ async function getRealtimeMatchStatesForUsers({ roomId, userIds = [] }) {
     : null;
 
   const cardCatalogCache = new Map();
+  const buildSnapshotsStartedAt = performance.now();
   const snapshots = await Promise.all(
     requesterIds.map(async (requesterUserId) => [
       requesterUserId,
@@ -175,10 +188,17 @@ async function getRealtimeMatchStatesForUsers({ roomId, userIds = [] }) {
       }),
     ])
   );
+  const buildSnapshotsMs = performance.now() - buildSnapshotsStartedAt;
 
   return {
     latestLog,
     snapshotsByUserId: new Map(snapshots),
+    metrics: {
+      findMatchMs,
+      loadMatchDataMs,
+      buildSnapshotsMs,
+      totalMs: performance.now() - startedAt,
+    },
   };
 }
 

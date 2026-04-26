@@ -32,6 +32,14 @@ function emitSocketAction(socket, action, payload) {
   });
 }
 
+function formatPerfLabel(metrics) {
+  if (!metrics?.totalMs) {
+    return '';
+  }
+
+  return ` (${Math.round(metrics.totalMs)}ms)`;
+}
+
 export function MatchPage() {
   const token = useAuthStore((state) => state.token);
   const user = useAuthStore((state) => state.user);
@@ -192,8 +200,11 @@ export function MatchPage() {
           setMatchData(response.snapshot);
         }
         if (response?.log) {
-          setSyncMessage(response.log.message);
+          setSyncMessage(`${response.log.message}${import.meta.env.DEV ? formatPerfLabel(response.metrics) : ''}`);
           appendMatchLog(response.log);
+        }
+        if (import.meta.env.DEV && response?.metrics) {
+          console.info('[match perf][client]', action, response.metrics);
         }
       } else {
         let snapshot = null;
