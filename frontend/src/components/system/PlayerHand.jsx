@@ -1,5 +1,6 @@
 import { Button } from '../ui/Button';
 import { CardItem } from './CardItem';
+import { resolveCardImageUrl } from '../../utils/cardImages';
 
 export function PlayerHand({
   cards = [],
@@ -44,7 +45,7 @@ export function PlayerHand({
                   </Button>
                 </div>
               }
-              imageSrc={card.imagePath}
+              imageSrc={resolveCardImageUrl(card.imagePath)}
               name={card.name}
               onClick={() => onSelectCard?.(card.instanceId)}
               selected={isSelected}
