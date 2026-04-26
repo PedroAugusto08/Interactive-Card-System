@@ -12,6 +12,7 @@ router.get('/:roomId', asyncHandler(matchController.getMatchSnapshot));
 router.post('/:roomId/start', asyncHandler(matchController.startMatch));
 router.post('/:roomId/draw', asyncHandler(matchController.drawCard));
 router.post('/:roomId/play-card', asyncHandler(matchController.playCard));
+router.post('/:roomId/discard-card', asyncHandler(matchController.discardCard));
 router.post('/:roomId/end-turn', asyncHandler(matchController.endTurn));
 
 module.exports = { matchRoutes: router };

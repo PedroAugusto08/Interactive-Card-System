@@ -89,6 +89,7 @@ async function ensureSchema() {
       imo INTEGER NOT NULL DEFAULT 3,
       max_imo INTEGER NOT NULL DEFAULT 10,
       has_drawn_this_turn BOOLEAN NOT NULL DEFAULT FALSE,
+      has_used_card_action_this_turn BOOLEAN NOT NULL DEFAULT FALSE,
       is_defeated BOOLEAN NOT NULL DEFAULT FALSE,
       deck_cards_json JSONB NOT NULL DEFAULT '[]'::jsonb,
       hand_cards_json JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -96,6 +97,11 @@ async function ensureSchema() {
       exile_cards_json JSONB NOT NULL DEFAULT '[]'::jsonb,
       PRIMARY KEY (match_id, user_id)
     );
+  `);
+
+  await query(`
+    ALTER TABLE match_players
+    ADD COLUMN IF NOT EXISTS has_used_card_action_this_turn BOOLEAN NOT NULL DEFAULT FALSE;
   `);
 
   await query(`

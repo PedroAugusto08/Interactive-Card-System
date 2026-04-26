@@ -22,6 +22,13 @@ export const matchApi = {
       body: { cardId },
     }),
 
+  discardCard: ({ roomId, cardId, token }) =>
+    request(`/match/${roomId}/discard-card`, {
+      method: 'POST',
+      token,
+      body: { cardId },
+    }),
+
   endTurn: ({ roomId, token }) =>
     request(`/match/${roomId}/end-turn`, {
       method: 'POST',

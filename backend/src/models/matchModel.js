@@ -68,6 +68,7 @@ async function upsertMatchPlayer({
   imo = 3,
   maxImo = 10,
   hasDrawnThisTurn = false,
+  hasUsedCardActionThisTurn = false,
   isDefeated = false,
   deckCards = [],
   handCards = [],
@@ -84,13 +85,14 @@ async function upsertMatchPlayer({
         imo,
         max_imo,
         has_drawn_this_turn,
+        has_used_card_action_this_turn,
         is_defeated,
         deck_cards_json,
         hand_cards_json,
         discard_cards_json,
         exile_cards_json
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb)
       ON CONFLICT (match_id, user_id)
       DO UPDATE SET
         turn_order = EXCLUDED.turn_order,
@@ -98,6 +100,7 @@ async function upsertMatchPlayer({
         imo = EXCLUDED.imo,
         max_imo = EXCLUDED.max_imo,
         has_drawn_this_turn = EXCLUDED.has_drawn_this_turn,
+        has_used_card_action_this_turn = EXCLUDED.has_used_card_action_this_turn,
         is_defeated = EXCLUDED.is_defeated,
         deck_cards_json = EXCLUDED.deck_cards_json,
         hand_cards_json = EXCLUDED.hand_cards_json,
@@ -111,6 +114,7 @@ async function upsertMatchPlayer({
         imo,
         max_imo,
         has_drawn_this_turn,
+        has_used_card_action_this_turn,
         is_defeated,
         deck_cards_json,
         hand_cards_json,
@@ -125,6 +129,7 @@ async function upsertMatchPlayer({
       imo,
       maxImo,
       hasDrawnThisTurn,
+      hasUsedCardActionThisTurn,
       isDefeated,
       JSON.stringify(deckCards),
       JSON.stringify(handCards),
@@ -147,6 +152,7 @@ async function listMatchPlayers(matchId) {
         mp.imo,
         mp.max_imo,
         mp.has_drawn_this_turn,
+        mp.has_used_card_action_this_turn,
         mp.is_defeated,
         mp.deck_cards_json,
         mp.hand_cards_json,

@@ -52,6 +52,18 @@ async function playCard(req, res) {
   return res.status(200).json(data);
 }
 
+async function discardCard(req, res) {
+  const { roomId } = roomIdParamSchema.parse(req.params);
+  const payload = playCardSchema.parse(req.body);
+  const data = await matchService.discardCardForPlayer({
+    roomId,
+    userId: req.user.id,
+    cardId: payload.cardId,
+  });
+
+  return res.status(200).json(data);
+}
+
 async function endTurn(req, res) {
   const { roomId } = roomIdParamSchema.parse(req.params);
   const data = await matchService.endTurnForPlayer({
@@ -67,5 +79,6 @@ module.exports = {
   startMatch,
   drawCard,
   playCard,
+  discardCard,
   endTurn,
 };

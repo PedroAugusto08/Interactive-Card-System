@@ -7,8 +7,10 @@ export function PlayerHand({
   selectedCardId = null,
   isSubmitting = false,
   canPlay = false,
+  canDiscard = false,
   onSelectCard,
   onPlayCard,
+  onDiscardCard,
 }) {
   if (!cards.length) {
     return <div className="empty-state">Sem cartas na mão no momento.</div>;
@@ -42,6 +44,15 @@ export function PlayerHand({
                     size="sm"
                   >
                     Jogar
+                  </Button>
+
+                  <Button
+                    disabled={!canDiscard || isSubmitting}
+                    onClick={() => onDiscardCard?.(card.instanceId)}
+                    size="sm"
+                    variant="secondary"
+                  >
+                    Descartar
                   </Button>
                 </div>
               }

@@ -156,6 +156,20 @@ function createSocketServer(httpServer) {
       }
     });
 
+    socket.on('match:discardCard', async ({ roomId, cardId }) => {
+      try {
+        await matchService.discardCardForPlayer({
+          roomId: Number(roomId),
+          userId: user.id,
+          cardId,
+        });
+
+        await broadcastRoomState(io, Number(roomId));
+      } catch (error) {
+        emitSocketError(socket, error.message);
+      }
+    });
+
     socket.on('match:endTurn', async ({ roomId }) => {
       try {
         await matchService.endTurnForPlayer({

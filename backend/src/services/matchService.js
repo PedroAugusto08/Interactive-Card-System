@@ -82,6 +82,7 @@ async function startMatchForRoom({ roomId, userId }) {
       imo: INITIAL_IMO,
       maxImo: MAX_IMO,
       hasDrawnThisTurn: false,
+      hasUsedCardActionThisTurn: false,
       isDefeated: false,
       deckCards: shuffledDeck,
       handCards,
@@ -150,6 +151,7 @@ async function getMatchSnapshot({ roomId, userId }) {
         imo: player.imo,
         maxImo: player.max_imo,
         hasDrawnThisTurn: player.has_drawn_this_turn,
+        hasUsedCardActionThisTurn: player.has_used_card_action_this_turn,
         isDefeated: player.is_defeated,
         zones: {
           deckCount: (player.deck_cards_json || []).length,
@@ -205,6 +207,10 @@ async function drawCardForPlayer({ roomId, userId }) {
     throw new AppError('Voce ja comprou uma carta neste turno.', 409);
   }
 
+  if (!playerState.has_used_card_action_this_turn) {
+    throw new AppError('Voce precisa jogar ou descartar uma carta antes de comprar.', 409);
+  }
+
   if (!(playerState.deck_cards_json || []).length) {
     throw new AppError('Nao ha mais cartas no deck para comprar.', 409);
   }
@@ -221,6 +227,7 @@ async function drawCardForPlayer({ roomId, userId }) {
     imo: playerState.imo,
     maxImo: playerState.max_imo,
     hasDrawnThisTurn: true,
+    hasUsedCardActionThisTurn: playerState.has_used_card_action_this_turn,
     isDefeated: playerState.is_defeated,
     deckCards,
     handCards,
@@ -241,6 +248,15 @@ async function drawCardForPlayer({ roomId, userId }) {
 async function playCardForPlayer({ roomId, userId, cardId }) {
   const context = await requireActiveTurnContext({ roomId, userId });
   const playerState = context.currentPlayer;
+
+  if (playerState.has_used_card_action_this_turn) {
+    throw new AppError('Voce ja usou sua acao de carta neste turno.', 409);
+  }
+
+  if (playerState.has_drawn_this_turn) {
+    throw new AppError('Voce nao pode jogar cartas depois de comprar neste turno.', 409);
+  }
+
   const handCards = [...playerState.hand_cards_json];
   const cardIndex = handCards.findIndex((entry) => entry.instanceId === cardId);
 
@@ -260,7 +276,7 @@ async function playCardForPlayer({ roomId, userId, cardId }) {
   }
 
   const nextImo = playerState.imo - imoCost;
-  const discardCards = [...playerState.discard_cards_json, playedCard];
+  const deckCards = [...playerState.deck_cards_json, playedCard];
 
   await upsertMatchPlayer({
     matchId: context.match.id,
@@ -270,10 +286,11 @@ async function playCardForPlayer({ roomId, userId, cardId }) {
     imo: nextImo,
     maxImo: playerState.max_imo,
     hasDrawnThisTurn: playerState.has_drawn_this_turn,
+    hasUsedCardActionThisTurn: true,
     isDefeated: playerState.is_defeated,
-    deckCards: playerState.deck_cards_json,
+    deckCards,
     handCards,
-    discardCards,
+    discardCards: playerState.discard_cards_json,
     exileCards: playerState.exile_cards_json,
   });
 
@@ -285,6 +302,62 @@ async function playCardForPlayer({ roomId, userId, cardId }) {
       userId,
       cardId: playedCard.cardId,
       imoCost,
+    },
+  });
+
+  return getMatchSnapshot({ roomId, userId });
+}
+
+async function discardCardForPlayer({ roomId, userId, cardId }) {
+  const context = await requireActiveTurnContext({ roomId, userId });
+  const playerState = context.currentPlayer;
+
+  if (playerState.has_used_card_action_this_turn) {
+    throw new AppError('Voce ja usou sua acao de carta neste turno.', 409);
+  }
+
+  if (playerState.has_drawn_this_turn) {
+    throw new AppError('Voce nao pode descartar cartas depois de comprar neste turno.', 409);
+  }
+
+  const handCards = [...playerState.hand_cards_json];
+  const cardIndex = handCards.findIndex((entry) => entry.instanceId === cardId);
+
+  if (cardIndex < 0) {
+    throw new AppError('Carta nao encontrada na sua mao.', 404);
+  }
+
+  const [discardedCard] = handCards.splice(cardIndex, 1);
+  const resolvedCard = await resolveCardById({ ownerId: userId, cardId: discardedCard.cardId });
+  if (!resolvedCard) {
+    throw new AppError('Carta descartada nao encontrada no catalogo.', 404);
+  }
+
+  const exileCards = [...playerState.exile_cards_json, discardedCard];
+
+  await upsertMatchPlayer({
+    matchId: context.match.id,
+    userId,
+    turnOrder: playerState.turn_order,
+    health: playerState.health,
+    imo: playerState.imo,
+    maxImo: playerState.max_imo,
+    hasDrawnThisTurn: playerState.has_drawn_this_turn,
+    hasUsedCardActionThisTurn: true,
+    isDefeated: playerState.is_defeated,
+    deckCards: playerState.deck_cards_json,
+    handCards,
+    discardCards: playerState.discard_cards_json,
+    exileCards,
+  });
+
+  await addMatchLog({
+    matchId: context.match.id,
+    type: 'MATCH_DISCARD_CARD',
+    message: `${playerState.username} descartou ${resolvedCard.name}.`,
+    payload: {
+      userId,
+      cardId: discardedCard.cardId,
     },
   });
 
@@ -311,6 +384,8 @@ async function endTurnForPlayer({ roomId, userId }) {
       imo: player.user_id === nextPlayer.user_id ? Math.min(player.max_imo, player.imo + 1) : player.imo,
       maxImo: player.max_imo,
       hasDrawnThisTurn: player.user_id === nextPlayer.user_id ? false : player.has_drawn_this_turn,
+      hasUsedCardActionThisTurn:
+        player.user_id === nextPlayer.user_id ? false : player.has_used_card_action_this_turn,
       isDefeated: player.is_defeated,
       deckCards: player.deck_cards_json,
       handCards: player.hand_cards_json,
@@ -357,6 +432,7 @@ async function forfeitMatchByLeavingRoom({ roomId, userId }) {
     imo: leavingPlayer.imo,
     maxImo: leavingPlayer.max_imo,
     hasDrawnThisTurn: leavingPlayer.has_drawn_this_turn,
+    hasUsedCardActionThisTurn: leavingPlayer.has_used_card_action_this_turn,
     isDefeated: true,
     deckCards: leavingPlayer.deck_cards_json,
     handCards: leavingPlayer.hand_cards_json,
@@ -444,8 +520,14 @@ function buildAvailableActions({ activeMatch, matchPlayer, requesterUserId }) {
     return [];
   }
 
-  const actions = ['playCard', 'endTurn'];
-  if (!matchPlayer.has_drawn_this_turn) {
+  const actions = ['endTurn'];
+
+  if (!matchPlayer.has_used_card_action_this_turn && !matchPlayer.has_drawn_this_turn) {
+    actions.unshift('discardCard');
+    actions.unshift('playCard');
+  }
+
+  if (matchPlayer.has_used_card_action_this_turn && !matchPlayer.has_drawn_this_turn) {
     actions.unshift('drawCard');
   }
 
@@ -498,6 +580,7 @@ module.exports = {
   getMatchSnapshot,
   drawCardForPlayer,
   playCardForPlayer,
+  discardCardForPlayer,
   endTurnForPlayer,
   forfeitMatchByLeavingRoom,
 };

@@ -9,6 +9,7 @@ import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
+import { Modal } from '../components/ui/Modal';
 import { matchApi } from '../api/matchApi';
 import { roomApi } from '../api/roomApi';
 import { useSocket } from '../hooks/useSocket';
@@ -36,6 +37,7 @@ export function MatchPage() {
   const [localError, setLocalError] = useState('');
   const [syncMessage, setSyncMessage] = useState('');
   const [selectedHandCardId, setSelectedHandCardId] = useState(null);
+  const [isEndTurnConfirmOpen, setIsEndTurnConfirmOpen] = useState(false);
 
   const isSocketConnected = Boolean(socket?.connected);
   const activeTurnPlayerId = currentMatch?.currentTurnPlayerId;
@@ -179,6 +181,12 @@ export function MatchPage() {
             token,
             cardId: payload.cardId,
           });
+        } else if (action === 'match:discardCard') {
+          snapshot = await matchApi.discardCard({
+            roomId: currentRoom.id,
+            token,
+            cardId: payload.cardId,
+          });
         } else if (action === 'match:endTurn') {
           snapshot = await matchApi.endTurn({ roomId: currentRoom.id, token });
         }
@@ -207,6 +215,7 @@ export function MatchPage() {
   };
   const handCards = currentUserState?.handCards || [];
   const availableActions = currentUserState?.availableActions || [];
+  const hasDrawnThisTurn = Boolean(currentUserState?.hasDrawnThisTurn);
   const connectionState = !socket ? 'offline' : isSocketConnected ? 'connected' : 'reconnecting';
   const connectionLabel =
     connectionState === 'connected'
@@ -214,6 +223,20 @@ export function MatchPage() {
       : connectionState === 'reconnecting'
         ? 'Reconectando...'
         : 'Desconectado';
+
+  function handleEndTurnClick() {
+    if (!hasDrawnThisTurn) {
+      setIsEndTurnConfirmOpen(true);
+      return;
+    }
+
+    handleAction('match:endTurn');
+  }
+
+  function handleConfirmEndTurn() {
+    setIsEndTurnConfirmOpen(false);
+    handleAction('match:endTurn');
+  }
 
   return (
     <section className="match-shell">
@@ -332,7 +355,7 @@ export function MatchPage() {
 
                 <Button
                   disabled={isSubmitting || !currentRoom || !availableActions.includes('endTurn')}
-                  onClick={() => handleAction('match:endTurn')}
+                  onClick={handleEndTurnClick}
                   variant="primary"
                 >
                   Encerrar turno
@@ -342,8 +365,10 @@ export function MatchPage() {
           >
             <PlayerHand
               cards={handCards}
+              canDiscard={availableActions.includes('discardCard')}
               canPlay={availableActions.includes('playCard')}
               isSubmitting={isSubmitting}
+              onDiscardCard={(cardId) => handleAction('match:discardCard', { cardId })}
               onPlayCard={(cardId) => handleAction('match:playCard', { cardId })}
               onSelectCard={setSelectedHandCardId}
               selectedCardId={selectedHandCardId}
@@ -363,6 +388,19 @@ export function MatchPage() {
           </Card>
         </aside>
       </div>
+
+      <Modal
+        cancelLabel="Continuar turno"
+        confirmLabel="Encerrar assim mesmo"
+        description="Voce ainda nao comprou nenhuma carta neste turno. Tem certeza que quer encerrar?"
+        isLoading={isSubmitting}
+        onClose={() => setIsEndTurnConfirmOpen(false)}
+        onConfirm={handleConfirmEndTurn}
+        open={isEndTurnConfirmOpen}
+        title="Confirmar encerramento"
+      >
+        <p className="muted-text">Se quiser seguir a sequencia completa do turno, jogue ou descarte uma carta e depois compre.</p>
+      </Modal>
     </section>
   );
 }
