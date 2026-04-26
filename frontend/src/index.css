@@ -1026,6 +1026,7 @@ ul {
 .game-card,
 .game-card__meta,
 .zone-container,
+.zone-container__trigger,
 .zone-container__body,
 .player-card,
 .action-log-item {
@@ -1124,6 +1125,19 @@ ul {
   transition: transform 220ms ease, box-shadow 220ms ease, border-color 220ms ease, background 220ms ease;
 }
 
+.zone-container__trigger {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.zone-container__trigger--clickable {
+  cursor: pointer;
+}
+
 .zone-container:hover {
   transform: translateY(-3px);
 }
@@ -1159,6 +1173,31 @@ ul {
 
 .zone-container--accent:hover {
   box-shadow: 0 0 28px rgba(245, 197, 66, 0.12);
+}
+
+.zone-preview-strip,
+.exile-modal-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.zone-preview-strip {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.zone-preview-strip__image {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.24);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.exile-modal-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  margin-top: 8px;
 }
 
 .action-log-item {

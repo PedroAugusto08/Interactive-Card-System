@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { ActionLogItem } from '../components/system/ActionLogItem';
+import { CardItem } from '../components/system/CardItem';
 import { PlayerCard } from '../components/system/PlayerCard';
 import { PlayerHand } from '../components/system/PlayerHand';
 import { TurnBanner } from '../components/system/TurnBanner';
@@ -15,6 +16,7 @@ import { roomApi } from '../api/roomApi';
 import { useSocket } from '../hooks/useSocket';
 import { useAuthStore } from '../stores/authStore';
 import { useRoomStore } from '../stores/roomStore';
+import { resolveCardImageUrl } from '../utils/cardImages';
 import { formatErrorMessage } from '../utils/formatError';
 
 export function MatchPage() {
@@ -38,6 +40,7 @@ export function MatchPage() {
   const [syncMessage, setSyncMessage] = useState('');
   const [selectedHandCardId, setSelectedHandCardId] = useState(null);
   const [isEndTurnConfirmOpen, setIsEndTurnConfirmOpen] = useState(false);
+  const [isExileModalOpen, setIsExileModalOpen] = useState(false);
 
   const isSocketConnected = Boolean(socket?.connected);
   const activeTurnPlayerId = currentMatch?.currentTurnPlayerId;
@@ -214,6 +217,7 @@ export function MatchPage() {
     exileCount: 0,
   };
   const handCards = currentUserState?.handCards || [];
+  const exileCards = currentUserState?.exileCards || [];
   const availableActions = currentUserState?.availableActions || [];
   const hasDrawnThisTurn = Boolean(currentUserState?.hasDrawnThisTurn);
   const connectionState = !socket ? 'offline' : isSocketConnected ? 'connected' : 'reconnecting';
@@ -264,7 +268,7 @@ export function MatchPage() {
           </div>
 
           <form className="match-join-form" onSubmit={handleJoinRoom}>
-            <Input onChange={(event) => setRoomCode(event.target.value)} placeholder="Código da sala" required value={roomCode} />
+            <Input onChange={(event) => setRoomCode(event.target.value)} placeholder="Codigo da sala" required value={roomCode} />
 
             <div className="row-wrap">
               <Button loading={isSubmitting} type="submit" variant="secondary">
@@ -326,23 +330,29 @@ export function MatchPage() {
                 </div>
 
                 <div className="status-item">
-                  <span className="status-label">Cartas na mão</span>
+                  <span className="status-label">Cartas na mao</span>
                   <span className="status-value">{currentZones.handCount}</span>
                 </div>
               </div>
 
               <div className="zones-grid">
                 <ZoneContainer count={currentZones.deckCount} description="Fonte principal de compra." title="Deck" tone="primary" />
-                <ZoneContainer count={currentZones.discardCount} description="Cartas descartadas." title="Descarte" tone="secondary" />
-                <ZoneContainer count={currentZones.exileCount} description="Cartas exiladas." title="Exílio" tone="accent" />
+                <ZoneContainer
+                  count={currentZones.exileCount}
+                  description="Cartas exiladas."
+                  onClick={() => setIsExileModalOpen(true)}
+                  previewCards={exileCards}
+                  title="Exilio"
+                  tone="accent"
+                />
               </div>
             </div>
           </Card>
 
           <Card
             className="player-hand-panel"
-            description="Sua mão é o foco da mesa: selecione e jogue suas cartas daqui."
-            title="Sua mão"
+            description="Sua mao e o foco da mesa: selecione e jogue suas cartas daqui."
+            title="Sua mao"
             actions={
               <div className="match-action-bar">
                 <Button
@@ -377,7 +387,7 @@ export function MatchPage() {
         </main>
 
         <aside className="match-right-column">
-          <Card className="match-side-panel" description="Feed dos eventos mais recentes." title="Log de ações">
+          <Card className="match-side-panel" description="Feed dos eventos mais recentes." title="Log de acoes">
             <div className="log-list">
               {logs.length ? (
                 logs.map((item, index) => <ActionLogItem item={item} key={`${item.id || 'log'}-${index}`} />)
@@ -400,6 +410,34 @@ export function MatchPage() {
         title="Confirmar encerramento"
       >
         <p className="muted-text">Se quiser seguir a sequencia completa do turno, jogue ou descarte uma carta e depois compre.</p>
+      </Modal>
+
+      <Modal
+        cancelLabel="Fechar"
+        confirmLabel="Fechar"
+        description="Todas as cartas atualmente exiladas pelo seu jogador."
+        onClose={() => setIsExileModalOpen(false)}
+        onConfirm={() => setIsExileModalOpen(false)}
+        open={isExileModalOpen}
+        title="Exilio"
+      >
+        {exileCards.length ? (
+          <div className="exile-modal-grid">
+            {exileCards.map((card) => (
+              <CardItem
+                category={card.category}
+                cost={card.category === 'imo' ? card.imoCost || 0 : undefined}
+                costLabel="Custo Imo"
+                description={card.effect}
+                imageSrc={resolveCardImageUrl(card.imagePath)}
+                key={card.instanceId}
+                name={card.name}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state">Nenhuma carta exilada no momento.</div>
+        )}
       </Modal>
     </section>
   );
