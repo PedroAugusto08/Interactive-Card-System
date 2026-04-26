@@ -15,7 +15,7 @@ const {
   listMatchLogs,
 } = require('../models/matchModel');
 const { AppError } = require('../utils/AppError');
-const { getResolvedDeckForUser, resolveCardById } = require('./deckService');
+const { getDeckCatalog, getResolvedDeckForUser, resolveCardById } = require('./deckService');
 
 const INITIAL_HEALTH = 10;
 const INITIAL_IMO = 3;
@@ -108,19 +108,70 @@ async function startMatchForRoom({ roomId, userId, includeSnapshot = true }) {
 }
 
 async function getMatchSnapshot({ roomId, userId }) {
+  const context = await loadMatchSnapshotContext({ roomId, userId });
+  return buildMatchSnapshot({
+    ...context,
+    userId,
+  });
+}
+
+async function getMatchSnapshotsForUsers({ roomId, userIds = [] }) {
+  const requesterIds = [...new Set((userIds || []).map((value) => Number(value)).filter(Number.isInteger))];
+  if (!requesterIds.length) {
+    return new Map();
+  }
+
+  const context = await loadMatchSnapshotContext({ roomId, userId: requesterIds[0], skipMembershipCheck: true });
+  const snapshots = await Promise.all(
+    requesterIds.map(async (requesterUserId) => [
+      requesterUserId,
+      await buildMatchSnapshot({
+        ...context,
+        userId: requesterUserId,
+      }),
+    ])
+  );
+
+  return new Map(snapshots);
+}
+
+async function loadMatchSnapshotContext({ roomId, userId, skipMembershipCheck = false }) {
   const room = await findRoomById(roomId);
   if (!room) {
     throw new AppError('Sala nao encontrada.', 404);
   }
 
-  const belongsToRoom = await isPlayerInRoom({ roomId, userId });
-  if (!belongsToRoom) {
-    throw new AppError('Voce nao pertence a esta sala.', 403);
+  if (!skipMembershipCheck) {
+    const belongsToRoom = await isPlayerInRoom({ roomId, userId });
+    if (!belongsToRoom) {
+      throw new AppError('Voce nao pertence a esta sala.', 403);
+    }
   }
 
-  const players = await listRoomPlayers(roomId);
-  const activeMatch = await findActiveMatchByRoomId(roomId);
+  const [players, activeMatch] = await Promise.all([listRoomPlayers(roomId), findActiveMatchByRoomId(roomId)]);
 
+  if (!activeMatch) {
+    return {
+      room,
+      players,
+      activeMatch: null,
+      matchPlayers: [],
+      logs: [],
+    };
+  }
+
+  const [matchPlayers, logs] = await Promise.all([listMatchPlayers(activeMatch.id), listMatchLogs(activeMatch.id)]);
+
+  return {
+    room,
+    players,
+    activeMatch,
+    matchPlayers,
+    logs,
+  };
+}
+
+async function buildMatchSnapshot({ room, players, activeMatch, matchPlayers, logs, userId }) {
   if (!activeMatch) {
     return {
       room,
@@ -133,9 +184,7 @@ async function getMatchSnapshot({ roomId, userId }) {
     };
   }
 
-  const matchPlayers = await listMatchPlayers(activeMatch.id);
-  const logs = await listMatchLogs(activeMatch.id);
-
+  const cardCatalogCache = new Map();
   const hydratedPlayers = await Promise.all(
     matchPlayers.map(async (player) => {
       const isRequester = player.user_id === userId;
@@ -144,11 +193,12 @@ async function getMatchSnapshot({ roomId, userId }) {
       let exileCards = [];
 
       if (isRequester) {
-        [handCards, discardCards, exileCards] = await Promise.all([
-          hydrateCardsForUser(player.user_id, player.hand_cards_json || []),
-          hydrateCardsForUser(player.user_id, player.discard_cards_json || []),
-          hydrateCardsForUser(player.user_id, player.exile_cards_json || []),
-        ]);
+        const cardCatalogMap = await getCardCatalogMapForUser(player.user_id, cardCatalogCache);
+        [handCards, discardCards, exileCards] = [
+          hydrateCards(cardCatalogMap, player.hand_cards_json || []),
+          hydrateCards(cardCatalogMap, player.discard_cards_json || []),
+          hydrateCards(cardCatalogMap, player.exile_cards_json || []),
+        ];
       }
 
       return {
@@ -566,11 +616,22 @@ function shuffleCards(cards) {
   }));
 }
 
-async function hydrateCardsForUser(ownerId, cardEntries) {
+async function getCardCatalogMapForUser(ownerId, cache) {
+  if (cache.has(ownerId)) {
+    return cache.get(ownerId);
+  }
+
+  const catalog = await getDeckCatalog(ownerId);
+  const map = new Map(catalog.map((card) => [card.id, card]));
+  cache.set(ownerId, map);
+  return map;
+}
+
+function hydrateCards(cardCatalogMap, cardEntries) {
   const hydrated = [];
 
   for (const entry of cardEntries || []) {
-    const baseCard = await resolveCardById({ ownerId, cardId: entry.cardId });
+    const baseCard = cardCatalogMap.get(entry.cardId);
     if (!baseCard) {
       continue;
     }
@@ -595,6 +656,7 @@ async function finalizeActionResponse({ roomId, userId, includeSnapshot }) {
 module.exports = {
   startMatchForRoom,
   getMatchSnapshot,
+  getMatchSnapshotsForUsers,
   drawCardForPlayer,
   playCardForPlayer,
   discardCardForPlayer,

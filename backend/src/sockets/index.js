@@ -259,7 +259,30 @@ async function broadcastRoomOnly(io, roomId) {
 async function broadcastMatchOnly(io, roomId) {
   const roomChannel = getRoomChannel(roomId);
   const sockets = await io.in(roomChannel).fetchSockets();
-  await Promise.all(sockets.map((socket) => syncSocketMatchState(socket, roomId)));
+  const snapshotsByUserId = await matchService.getMatchSnapshotsForUsers({
+    roomId,
+    userIds: sockets.map((socket) => socket.data.user.id),
+  });
+
+  await Promise.all(
+    sockets.map(async (socket) => {
+      const snapshot = snapshotsByUserId.get(socket.data.user.id);
+      if (!snapshot) {
+        return;
+      }
+
+      socket.emit('match:sync', snapshot);
+
+      const latestLog = snapshot.logs[0];
+      if (latestLog) {
+        socket.emit('match:log', {
+          type: latestLog.type,
+          message: latestLog.message,
+          timestamp: latestLog.timestamp,
+        });
+      }
+    })
+  );
 }
 
 function emitSocketError(socket, message) {
