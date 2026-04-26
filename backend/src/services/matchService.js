@@ -11,6 +11,7 @@ const {
   updateMatchState,
   upsertMatchPlayer,
   listMatchPlayers,
+  findMatchPlayer,
   addMatchLog,
   listMatchLogs,
 } = require('../models/matchModel');
@@ -396,7 +397,7 @@ async function buildPlayerState({ activeMatch, matchPlayer, requesterUserId, car
 }
 
 async function drawCardForPlayer({ roomId, userId, includeSnapshot = true }) {
-  const context = await requireActiveTurnContext({ roomId, userId });
+  const context = await requireActiveTurnContext({ roomId, userId, includeAllPlayers: false });
   const playerState = context.currentPlayer;
 
   if (playerState.has_drawn_this_turn) {
@@ -442,7 +443,7 @@ async function drawCardForPlayer({ roomId, userId, includeSnapshot = true }) {
 }
 
 async function playCardForPlayer({ roomId, userId, cardId, includeSnapshot = true }) {
-  const context = await requireActiveTurnContext({ roomId, userId });
+  const context = await requireActiveTurnContext({ roomId, userId, includeAllPlayers: false });
   const playerState = context.currentPlayer;
 
   if (playerState.has_used_card_action_this_turn) {
@@ -505,7 +506,7 @@ async function playCardForPlayer({ roomId, userId, cardId, includeSnapshot = tru
 }
 
 async function discardCardForPlayer({ roomId, userId, cardId, includeSnapshot = true }) {
-  const context = await requireActiveTurnContext({ roomId, userId });
+  const context = await requireActiveTurnContext({ roomId, userId, includeAllPlayers: false });
   const playerState = context.currentPlayer;
 
   if (playerState.has_used_card_action_this_turn) {
@@ -561,7 +562,7 @@ async function discardCardForPlayer({ roomId, userId, cardId, includeSnapshot = 
 }
 
 async function endTurnForPlayer({ roomId, userId, includeSnapshot = true }) {
-  const context = await requireActiveTurnContext({ roomId, userId });
+  const context = await requireActiveTurnContext({ roomId, userId, includeAllPlayers: true });
   const currentPlayer = context.currentPlayer;
   const activePlayers = context.matchPlayers.filter((player) => !player.is_defeated);
 
@@ -571,22 +572,21 @@ async function endTurnForPlayer({ roomId, userId, includeSnapshot = true }) {
       ? context.match.round + 1
       : context.match.round;
 
-  for (const player of context.matchPlayers) {
+  if (nextPlayer) {
     await upsertMatchPlayer({
       matchId: context.match.id,
-      userId: player.user_id,
-      turnOrder: player.turn_order,
-      health: player.health,
-      imo: player.user_id === nextPlayer.user_id ? Math.min(player.max_imo, player.imo + 1) : player.imo,
-      maxImo: player.max_imo,
-      hasDrawnThisTurn: player.user_id === nextPlayer.user_id ? false : player.has_drawn_this_turn,
-      hasUsedCardActionThisTurn:
-        player.user_id === nextPlayer.user_id ? false : player.has_used_card_action_this_turn,
-      isDefeated: player.is_defeated,
-      deckCards: player.deck_cards_json,
-      handCards: player.hand_cards_json,
-      discardCards: player.discard_cards_json,
-      exileCards: player.exile_cards_json,
+      userId: nextPlayer.user_id,
+      turnOrder: nextPlayer.turn_order,
+      health: nextPlayer.health,
+      imo: Math.min(nextPlayer.max_imo, nextPlayer.imo + 1),
+      maxImo: nextPlayer.max_imo,
+      hasDrawnThisTurn: false,
+      hasUsedCardActionThisTurn: false,
+      isDefeated: nextPlayer.is_defeated,
+      deckCards: nextPlayer.deck_cards_json,
+      handCards: nextPlayer.hand_cards_json,
+      discardCards: nextPlayer.discard_cards_json,
+      exileCards: nextPlayer.exile_cards_json,
     });
   }
 
@@ -664,26 +664,26 @@ async function forfeitMatchByLeavingRoom({ roomId, userId }) {
   return match.id;
 }
 
-async function requireActiveTurnContext({ roomId, userId }) {
-  const room = await findRoomById(roomId);
+async function requireActiveTurnContext({ roomId, userId, includeAllPlayers = false }) {
+  const [room, match] = await Promise.all([findRoomById(roomId), findActiveMatchByRoomId(roomId)]);
   if (!room) {
     throw new AppError('Sala nao encontrada.', 404);
   }
-
-  const belongsToRoom = await isPlayerInRoom({ roomId, userId });
-  if (!belongsToRoom) {
-    throw new AppError('Voce nao pertence a esta sala.', 403);
-  }
-
-  const match = await findActiveMatchByRoomId(roomId);
   if (!match) {
     throw new AppError('Nao existe partida ativa para esta sala.', 409);
   }
 
-  const matchPlayers = await listMatchPlayers(match.id);
-  const currentPlayer = matchPlayers.find((player) => player.user_id === userId);
+  const [currentPlayer, matchPlayers] = await Promise.all([
+    findMatchPlayer({ matchId: match.id, userId }),
+    includeAllPlayers ? listMatchPlayers(match.id) : Promise.resolve(null),
+  ]);
 
   if (!currentPlayer) {
+    const belongsToRoom = await isPlayerInRoom({ roomId, userId });
+    if (!belongsToRoom) {
+      throw new AppError('Voce nao pertence a esta sala.', 403);
+    }
+
     throw new AppError('Jogador nao encontrado na partida.', 404);
   }
 
@@ -698,7 +698,7 @@ async function requireActiveTurnContext({ roomId, userId }) {
   return {
     room,
     match,
-    matchPlayers,
+    matchPlayers: matchPlayers || [currentPlayer],
     currentPlayer,
   };
 }

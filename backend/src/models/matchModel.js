@@ -171,6 +171,36 @@ async function listMatchPlayers(matchId) {
   return result.rows;
 }
 
+async function findMatchPlayer({ matchId, userId }) {
+  const result = await query(
+    `
+      SELECT
+        mp.match_id,
+        mp.user_id,
+        mp.turn_order,
+        mp.health,
+        mp.imo,
+        mp.max_imo,
+        mp.has_drawn_this_turn,
+        mp.has_used_card_action_this_turn,
+        mp.is_defeated,
+        mp.deck_cards_json,
+        mp.hand_cards_json,
+        mp.discard_cards_json,
+        mp.exile_cards_json,
+        u.username,
+        u.email
+      FROM match_players mp
+      INNER JOIN users u ON u.id = mp.user_id
+      WHERE mp.match_id = $1 AND mp.user_id = $2
+      LIMIT 1;
+    `,
+    [matchId, userId]
+  );
+
+  return result.rows[0] || null;
+}
+
 async function addMatchLog({ matchId, type, message, payload = {} }) {
   const result = await query(
     `
@@ -206,6 +236,7 @@ module.exports = {
   updateMatchState,
   upsertMatchPlayer,
   listMatchPlayers,
+  findMatchPlayer,
   addMatchLog,
   listMatchLogs,
 };
