@@ -62,7 +62,7 @@ function createSocketServer(httpServer) {
         socket.data.currentRoomId = room.id;
 
         await syncSocketRoomState(socket, room.id);
-        await broadcastRoomState(io, room.id);
+        await broadcastRoomOnly(io, room.id);
       } catch (error) {
         emitSocketError(socket, error.message);
       }
@@ -80,7 +80,8 @@ function createSocketServer(httpServer) {
         socket.data.currentRoomId = null;
         socket.emit('room:update', data);
 
-        await broadcastRoomState(io, targetRoomId);
+        await broadcastRoomOnly(io, targetRoomId);
+        await broadcastMatchOnly(io, targetRoomId);
       } catch (error) {
         emitSocketError(socket, error.message);
       }
@@ -94,8 +95,8 @@ function createSocketServer(httpServer) {
           deckId: Number(deckId),
         });
 
-        await syncSocketRoomState(socket, Number(roomId));
-        await broadcastRoomState(io, Number(roomId));
+        await syncSocketRoomOnly(socket, Number(roomId));
+        await broadcastRoomOnly(io, Number(roomId));
       } catch (error) {
         emitSocketError(socket, error.message);
       }
@@ -109,8 +110,8 @@ function createSocketServer(httpServer) {
           isReady: Boolean(isReady),
         });
 
-        await syncSocketRoomState(socket, Number(roomId));
-        await broadcastRoomState(io, Number(roomId));
+        await syncSocketRoomOnly(socket, Number(roomId));
+        await broadcastRoomOnly(io, Number(roomId));
       } catch (error) {
         emitSocketError(socket, error.message);
       }
@@ -138,7 +139,7 @@ function createSocketServer(httpServer) {
           includeSnapshot: false,
         });
 
-        await broadcastRoomState(io, Number(roomId));
+        await broadcastMatchOnly(io, Number(roomId));
       } catch (error) {
         emitSocketError(socket, error.message);
       }
@@ -153,7 +154,7 @@ function createSocketServer(httpServer) {
           includeSnapshot: false,
         });
 
-        await broadcastRoomState(io, Number(roomId));
+        await broadcastMatchOnly(io, Number(roomId));
       } catch (error) {
         emitSocketError(socket, error.message);
       }
@@ -168,7 +169,7 @@ function createSocketServer(httpServer) {
           includeSnapshot: false,
         });
 
-        await broadcastRoomState(io, Number(roomId));
+        await broadcastMatchOnly(io, Number(roomId));
       } catch (error) {
         emitSocketError(socket, error.message);
       }
@@ -182,7 +183,7 @@ function createSocketServer(httpServer) {
           includeSnapshot: false,
         });
 
-        await broadcastRoomState(io, Number(roomId));
+        await broadcastMatchOnly(io, Number(roomId));
       } catch (error) {
         emitSocketError(socket, error.message);
       }
@@ -205,12 +206,27 @@ async function syncSocketRoomState(socket, roomId) {
     return;
   }
 
+  await syncSocketRoomOnly(socket, roomId);
+  await syncSocketMatchState(socket, roomId);
+}
+
+async function syncSocketRoomOnly(socket, roomId) {
+  if (!roomId) {
+    return;
+  }
+
   const roomData = await roomService.getRoomPlayers({
     roomId,
     userId: socket.data.user.id,
   });
 
   socket.emit('room:update', roomData);
+}
+
+async function syncSocketMatchState(socket, roomId) {
+  if (!roomId) {
+    return;
+  }
 
   const matchSnapshot = await matchService.getMatchSnapshot({
     roomId,
@@ -230,9 +246,20 @@ async function syncSocketRoomState(socket, roomId) {
 }
 
 async function broadcastRoomState(io, roomId) {
+  await broadcastRoomOnly(io, roomId);
+  await broadcastMatchOnly(io, roomId);
+}
+
+async function broadcastRoomOnly(io, roomId) {
   const roomChannel = getRoomChannel(roomId);
   const sockets = await io.in(roomChannel).fetchSockets();
-  await Promise.all(sockets.map((socket) => syncSocketRoomState(socket, roomId)));
+  await Promise.all(sockets.map((socket) => syncSocketRoomOnly(socket, roomId)));
+}
+
+async function broadcastMatchOnly(io, roomId) {
+  const roomChannel = getRoomChannel(roomId);
+  const sockets = await io.in(roomChannel).fetchSockets();
+  await Promise.all(sockets.map((socket) => syncSocketMatchState(socket, roomId)));
 }
 
 function emitSocketError(socket, message) {
