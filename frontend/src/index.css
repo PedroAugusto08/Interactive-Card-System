@@ -522,13 +522,11 @@ ul {
 }
 
 .player-hand__slot {
-  transform: translateY(var(--hand-lift, 0)) rotate(var(--hand-rotate, 0deg));
-  transform-origin: center bottom;
   transition: transform 220ms ease;
 }
 
 .player-hand__slot:hover {
-  transform: translateY(calc(var(--hand-lift, 0) - 8px)) rotate(var(--hand-rotate, 0deg));
+  transform: translateY(-8px);
 }
 
 .player-hand__card {

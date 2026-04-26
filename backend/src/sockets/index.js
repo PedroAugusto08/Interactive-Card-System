@@ -121,6 +121,7 @@ function createSocketServer(httpServer) {
         await matchService.startMatchForRoom({
           roomId: Number(roomId),
           userId: user.id,
+          includeSnapshot: false,
         });
 
         await broadcastRoomState(io, Number(roomId));
@@ -134,6 +135,7 @@ function createSocketServer(httpServer) {
         await matchService.drawCardForPlayer({
           roomId: Number(roomId),
           userId: user.id,
+          includeSnapshot: false,
         });
 
         await broadcastRoomState(io, Number(roomId));
@@ -148,6 +150,7 @@ function createSocketServer(httpServer) {
           roomId: Number(roomId),
           userId: user.id,
           cardId,
+          includeSnapshot: false,
         });
 
         await broadcastRoomState(io, Number(roomId));
@@ -162,6 +165,7 @@ function createSocketServer(httpServer) {
           roomId: Number(roomId),
           userId: user.id,
           cardId,
+          includeSnapshot: false,
         });
 
         await broadcastRoomState(io, Number(roomId));
@@ -175,6 +179,7 @@ function createSocketServer(httpServer) {
         await matchService.endTurnForPlayer({
           roomId: Number(roomId),
           userId: user.id,
+          includeSnapshot: false,
         });
 
         await broadcastRoomState(io, Number(roomId));
@@ -214,20 +219,12 @@ async function syncSocketRoomState(socket, roomId) {
 
   socket.emit('match:sync', matchSnapshot);
 
-  if (matchSnapshot.match) {
-    socket.emit('match:updateState', {
-      roomId,
-      currentTurnPlayerId: matchSnapshot.currentTurnPlayerId,
-      round: matchSnapshot.round,
-      players: matchSnapshot.playerStates,
-    });
-  }
-
-  for (const logItem of matchSnapshot.logs.slice().reverse()) {
+  const latestLog = matchSnapshot.logs[0];
+  if (latestLog) {
     socket.emit('match:log', {
-      type: logItem.type,
-      message: logItem.message,
-      timestamp: logItem.timestamp,
+      type: latestLog.type,
+      message: latestLog.message,
+      timestamp: latestLog.timestamp,
     });
   }
 }

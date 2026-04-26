@@ -22,14 +22,7 @@ export function PlayerHand({
         const isSelected = selectedCardId === card.instanceId;
 
         return (
-          <div
-            className="player-hand__slot"
-            key={card.instanceId}
-            style={{
-              '--hand-rotate': `${(index - (cards.length - 1) / 2) * 2.4}deg`,
-              '--hand-lift': `${Math.abs(index - (cards.length - 1) / 2) * 4}px`,
-            }}
-          >
+          <div className="player-hand__slot" key={card.instanceId}>
             <CardItem
               category={card.category}
               className="player-hand__card"

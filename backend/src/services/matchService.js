@@ -22,7 +22,7 @@ const INITIAL_IMO = 3;
 const MAX_IMO = 10;
 const INITIAL_HAND_SIZE = 5;
 
-async function startMatchForRoom({ roomId, userId }) {
+async function startMatchForRoom({ roomId, userId, includeSnapshot = true }) {
   const room = await findRoomById(roomId);
   if (!room) {
     throw new AppError('Sala nao encontrada.', 404);
@@ -104,7 +104,7 @@ async function startMatchForRoom({ roomId, userId }) {
     payload: { roomId: room.id },
   });
 
-  return getMatchSnapshot({ roomId, userId });
+  return finalizeActionResponse({ roomId, userId, includeSnapshot });
 }
 
 async function getMatchSnapshot({ roomId, userId }) {
@@ -138,9 +138,18 @@ async function getMatchSnapshot({ roomId, userId }) {
 
   const hydratedPlayers = await Promise.all(
     matchPlayers.map(async (player) => {
-      const handCards = await hydrateCardsForUser(player.user_id, player.hand_cards_json || []);
-      const discardCards = await hydrateCardsForUser(player.user_id, player.discard_cards_json || []);
-      const exileCards = await hydrateCardsForUser(player.user_id, player.exile_cards_json || []);
+      const isRequester = player.user_id === userId;
+      let handCards = [];
+      let discardCards = [];
+      let exileCards = [];
+
+      if (isRequester) {
+        [handCards, discardCards, exileCards] = await Promise.all([
+          hydrateCardsForUser(player.user_id, player.hand_cards_json || []),
+          hydrateCardsForUser(player.user_id, player.discard_cards_json || []),
+          hydrateCardsForUser(player.user_id, player.exile_cards_json || []),
+        ]);
+      }
 
       return {
         userId: player.user_id,
@@ -155,13 +164,13 @@ async function getMatchSnapshot({ roomId, userId }) {
         isDefeated: player.is_defeated,
         zones: {
           deckCount: (player.deck_cards_json || []).length,
-          handCount: handCards.length,
-          discardCount: discardCards.length,
-          exileCount: exileCards.length,
+          handCount: isRequester ? handCards.length : (player.hand_cards_json || []).length,
+          discardCount: isRequester ? discardCards.length : (player.discard_cards_json || []).length,
+          exileCount: isRequester ? exileCards.length : (player.exile_cards_json || []).length,
         },
-        handCards: player.user_id === userId ? handCards : [],
-        discardCards: player.user_id === userId ? discardCards : [],
-        exileCards: player.user_id === userId ? exileCards : [],
+        handCards: isRequester ? handCards : [],
+        discardCards: isRequester ? discardCards : [],
+        exileCards: isRequester ? exileCards : [],
         availableActions: buildAvailableActions({
           activeMatch,
           matchPlayer: player,
@@ -199,7 +208,7 @@ async function getMatchSnapshot({ roomId, userId }) {
   };
 }
 
-async function drawCardForPlayer({ roomId, userId }) {
+async function drawCardForPlayer({ roomId, userId, includeSnapshot = true }) {
   const context = await requireActiveTurnContext({ roomId, userId });
   const playerState = context.currentPlayer;
 
@@ -242,10 +251,10 @@ async function drawCardForPlayer({ roomId, userId }) {
     payload: { userId, cardId: nextCard.cardId },
   });
 
-  return getMatchSnapshot({ roomId, userId });
+  return finalizeActionResponse({ roomId, userId, includeSnapshot });
 }
 
-async function playCardForPlayer({ roomId, userId, cardId }) {
+async function playCardForPlayer({ roomId, userId, cardId, includeSnapshot = true }) {
   const context = await requireActiveTurnContext({ roomId, userId });
   const playerState = context.currentPlayer;
 
@@ -305,10 +314,10 @@ async function playCardForPlayer({ roomId, userId, cardId }) {
     },
   });
 
-  return getMatchSnapshot({ roomId, userId });
+  return finalizeActionResponse({ roomId, userId, includeSnapshot });
 }
 
-async function discardCardForPlayer({ roomId, userId, cardId }) {
+async function discardCardForPlayer({ roomId, userId, cardId, includeSnapshot = true }) {
   const context = await requireActiveTurnContext({ roomId, userId });
   const playerState = context.currentPlayer;
 
@@ -361,10 +370,10 @@ async function discardCardForPlayer({ roomId, userId, cardId }) {
     },
   });
 
-  return getMatchSnapshot({ roomId, userId });
+  return finalizeActionResponse({ roomId, userId, includeSnapshot });
 }
 
-async function endTurnForPlayer({ roomId, userId }) {
+async function endTurnForPlayer({ roomId, userId, includeSnapshot = true }) {
   const context = await requireActiveTurnContext({ roomId, userId });
   const currentPlayer = context.currentPlayer;
   const activePlayers = context.matchPlayers.filter((player) => !player.is_defeated);
@@ -409,7 +418,7 @@ async function endTurnForPlayer({ roomId, userId }) {
     payload: { userId },
   });
 
-  return getMatchSnapshot({ roomId, userId });
+  return finalizeActionResponse({ roomId, userId, includeSnapshot });
 }
 
 async function forfeitMatchByLeavingRoom({ roomId, userId }) {
@@ -573,6 +582,14 @@ async function hydrateCardsForUser(ownerId, cardEntries) {
   }
 
   return hydrated;
+}
+
+async function finalizeActionResponse({ roomId, userId, includeSnapshot }) {
+  if (!includeSnapshot) {
+    return null;
+  }
+
+  return getMatchSnapshot({ roomId, userId });
 }
 
 module.exports = {
