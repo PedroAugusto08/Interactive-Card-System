@@ -40,9 +40,11 @@ export function Modal({
           {children}
 
           <div className="ui-modal__footer">
-            <Button variant="secondary" onClick={onClose}>
-              {cancelLabel}
-            </Button>
+            {cancelLabel ? (
+              <Button variant="secondary" onClick={onClose}>
+                {cancelLabel}
+              </Button>
+            ) : null}
             <Button loading={isLoading} onClick={onConfirm}>
               {confirmLabel}
             </Button>

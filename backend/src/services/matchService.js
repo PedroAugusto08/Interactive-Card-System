@@ -433,10 +433,6 @@ async function drawCardForPlayer({ roomId, userId, includeSnapshot = true }) {
     throw new AppError('Voce ja comprou uma carta neste turno.', 409);
   }
 
-  if (!playerState.has_used_card_action_this_turn) {
-    throw new AppError('Voce precisa jogar ou descartar uma carta antes de comprar.', 409);
-  }
-
   if (!(playerState.deck_cards_json || []).length) {
     throw new AppError('Nao ha mais cartas no deck para comprar.', 409);
   }
@@ -492,10 +488,6 @@ async function playCardForPlayer({ roomId, userId, cardId, includeSnapshot = tru
 
   if (playerState.has_used_card_action_this_turn) {
     throw new AppError('Voce ja usou sua acao de carta neste turno.', 409);
-  }
-
-  if (playerState.has_drawn_this_turn) {
-    throw new AppError('Voce nao pode jogar cartas depois de comprar neste turno.', 409);
   }
 
   const handCards = [...playerState.hand_cards_json];
@@ -570,10 +562,6 @@ async function discardCardForPlayer({ roomId, userId, cardId, includeSnapshot = 
 
   if (playerState.has_used_card_action_this_turn) {
     throw new AppError('Voce ja usou sua acao de carta neste turno.', 409);
-  }
-
-  if (playerState.has_drawn_this_turn) {
-    throw new AppError('Voce nao pode descartar cartas depois de comprar neste turno.', 409);
   }
 
   const handCards = [...playerState.hand_cards_json];
@@ -817,12 +805,12 @@ function buildAvailableActions({ activeMatch, matchPlayer, requesterUserId }) {
 
   const actions = ['endTurn'];
 
-  if (!matchPlayer.has_used_card_action_this_turn && !matchPlayer.has_drawn_this_turn) {
+  if (!matchPlayer.has_used_card_action_this_turn) {
     actions.unshift('discardCard');
     actions.unshift('playCard');
   }
 
-  if (matchPlayer.has_used_card_action_this_turn && !matchPlayer.has_drawn_this_turn) {
+  if (!matchPlayer.has_drawn_this_turn) {
     actions.unshift('drawCard');
   }
 

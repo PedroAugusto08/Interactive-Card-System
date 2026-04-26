@@ -446,7 +446,7 @@ export function MatchPage() {
       </Modal>
 
       <Modal
-        cancelLabel="Fechar"
+        cancelLabel={null}
         confirmLabel="Fechar"
         description="Todas as cartas atualmente exiladas pelo seu jogador."
         onClose={() => setIsExileModalOpen(false)}
