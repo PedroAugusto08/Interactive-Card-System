@@ -19,6 +19,19 @@ import { useRoomStore } from '../stores/roomStore';
 import { resolveCardImageUrl } from '../utils/cardImages';
 import { formatErrorMessage } from '../utils/formatError';
 
+function emitSocketAction(socket, action, payload) {
+  return new Promise((resolve, reject) => {
+    socket.emit(action, payload, (response) => {
+      if (!response?.ok) {
+        reject(new Error(response?.error || 'Falha ao sincronizar a partida.'));
+        return;
+      }
+
+      resolve(response);
+    });
+  });
+}
+
 export function MatchPage() {
   const token = useAuthStore((state) => state.token);
   const user = useAuthStore((state) => state.user);
@@ -171,10 +184,17 @@ export function MatchPage() {
 
     try {
       if (isSocketConnected) {
-        socket.emit(action, {
+        const response = await emitSocketAction(socket, action, {
           roomId: currentRoom.id,
           ...payload,
         });
+        if (response?.snapshot) {
+          setMatchData(response.snapshot);
+        }
+        if (response?.log) {
+          setSyncMessage(response.log.message);
+          appendMatchLog(response.log);
+        }
       } else {
         let snapshot = null;
 

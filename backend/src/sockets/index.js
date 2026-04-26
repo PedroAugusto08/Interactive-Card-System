@@ -117,7 +117,7 @@ function createSocketServer(httpServer) {
       }
     });
 
-    socket.on('match:start', async ({ roomId }) => {
+    socket.on('match:start', async ({ roomId }, acknowledge) => {
       try {
         await matchService.startMatchForRoom({
           roomId: Number(roomId),
@@ -125,13 +125,15 @@ function createSocketServer(httpServer) {
           includeSnapshot: false,
         });
 
+        await acknowledgeRealtimeState(socket, Number(roomId), acknowledge);
         await broadcastRoomState(io, Number(roomId));
       } catch (error) {
+        acknowledgeSocketError(acknowledge, error.message);
         emitSocketError(socket, error.message);
       }
     });
 
-    socket.on('match:draw', async ({ roomId }) => {
+    socket.on('match:draw', async ({ roomId }, acknowledge) => {
       try {
         await matchService.drawCardForPlayer({
           roomId: Number(roomId),
@@ -139,13 +141,15 @@ function createSocketServer(httpServer) {
           includeSnapshot: false,
         });
 
-        await broadcastMatchOnly(io, Number(roomId));
+        await acknowledgeRealtimeState(socket, Number(roomId), acknowledge);
+        queueMatchBroadcast(io, Number(roomId), [socket.id]);
       } catch (error) {
+        acknowledgeSocketError(acknowledge, error.message);
         emitSocketError(socket, error.message);
       }
     });
 
-    socket.on('match:playCard', async ({ roomId, cardId }) => {
+    socket.on('match:playCard', async ({ roomId, cardId }, acknowledge) => {
       try {
         await matchService.playCardForPlayer({
           roomId: Number(roomId),
@@ -154,13 +158,15 @@ function createSocketServer(httpServer) {
           includeSnapshot: false,
         });
 
-        await broadcastMatchOnly(io, Number(roomId));
+        await acknowledgeRealtimeState(socket, Number(roomId), acknowledge);
+        queueMatchBroadcast(io, Number(roomId), [socket.id]);
       } catch (error) {
+        acknowledgeSocketError(acknowledge, error.message);
         emitSocketError(socket, error.message);
       }
     });
 
-    socket.on('match:discardCard', async ({ roomId, cardId }) => {
+    socket.on('match:discardCard', async ({ roomId, cardId }, acknowledge) => {
       try {
         await matchService.discardCardForPlayer({
           roomId: Number(roomId),
@@ -169,13 +175,15 @@ function createSocketServer(httpServer) {
           includeSnapshot: false,
         });
 
-        await broadcastMatchOnly(io, Number(roomId));
+        await acknowledgeRealtimeState(socket, Number(roomId), acknowledge);
+        queueMatchBroadcast(io, Number(roomId), [socket.id]);
       } catch (error) {
+        acknowledgeSocketError(acknowledge, error.message);
         emitSocketError(socket, error.message);
       }
     });
 
-    socket.on('match:endTurn', async ({ roomId }) => {
+    socket.on('match:endTurn', async ({ roomId }, acknowledge) => {
       try {
         await matchService.endTurnForPlayer({
           roomId: Number(roomId),
@@ -183,8 +191,10 @@ function createSocketServer(httpServer) {
           includeSnapshot: false,
         });
 
-        await broadcastMatchOnly(io, Number(roomId));
+        await acknowledgeRealtimeState(socket, Number(roomId), acknowledge);
+        queueMatchBroadcast(io, Number(roomId), [socket.id]);
       } catch (error) {
+        acknowledgeSocketError(acknowledge, error.message);
         emitSocketError(socket, error.message);
       }
     });
@@ -257,9 +267,11 @@ async function broadcastRoomOnly(io, roomId) {
   await Promise.all(sockets.map((socket) => syncSocketRoomOnly(socket, roomId)));
 }
 
-async function broadcastMatchOnly(io, roomId) {
+async function broadcastMatchOnly(io, roomId, excludedSocketIds = []) {
   const roomChannel = getRoomChannel(roomId);
-  const sockets = await io.in(roomChannel).fetchSockets();
+  const sockets = (await io.in(roomChannel).fetchSockets()).filter(
+    (socket) => !excludedSocketIds.includes(socket.id)
+  );
   const { latestLog, snapshotsByUserId } = await matchService.getRealtimeMatchStatesForUsers({
     roomId,
     userIds: sockets.map((socket) => socket.data.user.id),
@@ -284,6 +296,40 @@ async function broadcastMatchOnly(io, roomId) {
       }
     })
   );
+}
+
+async function acknowledgeRealtimeState(socket, roomId, acknowledge) {
+  const { latestLog, snapshotsByUserId } = await matchService.getRealtimeMatchStatesForUsers({
+    roomId,
+    userIds: [socket.data.user.id],
+  });
+  const snapshot = snapshotsByUserId.get(socket.data.user.id) || null;
+
+  if (typeof acknowledge === 'function') {
+    acknowledge({
+      ok: true,
+      snapshot,
+      log: latestLog,
+    });
+  }
+}
+
+function acknowledgeSocketError(acknowledge, message) {
+  if (typeof acknowledge === 'function') {
+    acknowledge({
+      ok: false,
+      error: message,
+    });
+  }
+}
+
+function queueMatchBroadcast(io, roomId, excludedSocketIds = []) {
+  setImmediate(() => {
+    broadcastMatchOnly(io, roomId, excludedSocketIds).catch((error) => {
+      // eslint-disable-next-line no-console
+      console.error('Failed to broadcast match state:', error);
+    });
+  });
 }
 
 function emitSocketError(socket, message) {
