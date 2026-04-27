@@ -23,7 +23,6 @@ export function PlayerCard({ player, isActiveTurn = false, isCurrentUser = false
 
         <div className="stack-gap" style={{ gap: '4px' }}>
           <span>{player.username}</span>
-          <span className="muted-text compact">{player.email || 'Sem e-mail visível'}</span>
         </div>
       </div>
 

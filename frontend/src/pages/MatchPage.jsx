@@ -9,7 +9,6 @@ import { ZoneContainer } from '../components/system/ZoneContainer';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
-import { Input } from '../components/ui/Input';
 import { Modal } from '../components/ui/Modal';
 import { matchApi } from '../api/matchApi';
 import { roomApi } from '../api/roomApi';
@@ -93,7 +92,6 @@ export function MatchPage() {
 
   const socket = useSocket(token);
 
-  const [roomCode, setRoomCode] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [localError, setLocalError] = useState('');
   const [syncMessage, setSyncMessage] = useState('');
@@ -171,36 +169,6 @@ export function MatchPage() {
       socket.emit('match:sync', { roomId: currentRoom.id });
     }
   }, [currentRoom?.code, currentRoom?.id, isSocketConnected, socket]);
-
-  async function handleJoinRoom(event) {
-    event.preventDefault();
-    const code = roomCode.trim().toUpperCase();
-    if (!code) {
-      return;
-    }
-
-    setIsSubmitting(true);
-    setLocalError('');
-
-    try {
-      const roomData = await roomApi.joinRoom({ code, token });
-      setRoomData(roomData);
-
-      if (isSocketConnected) {
-        socket.emit('room:join', { code });
-      } else {
-        const snapshot = await matchApi.getSnapshot({ roomId: roomData.room.id, token });
-        setMatchData({
-          ...snapshot,
-          matchPlayers: snapshot.playerStates || [],
-        });
-      }
-    } catch (error) {
-      setLocalError(formatErrorMessage(error));
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
 
   async function handleLeaveRoom() {
     if (!currentRoom?.id) {
@@ -434,25 +402,40 @@ export function MatchPage() {
 
         <div className="match-header__utility">
           <div className="match-header__stats">
-            <div className="status-item">
-              <span className="status-label">Round</span>
-              <span className="status-value">{currentMatch?.round ?? '-'}</span>
-            </div>
-          </div>
+            <div className="match-header__round-row">
+              <div className="status-item">
+                <span className="status-label">Rodada</span>
+                <span className="status-value">{currentMatch?.round ?? '-'}</span>
+              </div>
 
-          <form className="match-join-form" onSubmit={handleJoinRoom}>
-            <Input onChange={(event) => setRoomCode(event.target.value)} placeholder="Codigo da sala" required value={roomCode} />
+              <div className="match-header__player-chips">
+                {players.length ? (
+                  players.map((player) => (
+                    <span
+                      className={[
+                        'match-header__player-chip',
+                        player.user_id === activeTurnPlayerId ? 'match-header__player-chip--active' : '',
+                        player.user_id === user?.id ? 'match-header__player-chip--current' : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
+                      key={`${player.room_id}-${player.user_id}`}
+                    >
+                      {player.username}
+                    </span>
+                  ))
+                ) : (
+                  <span className="muted-text compact">Sem jogadores sincronizados.</span>
+                )}
+              </div>
+            </div>
 
             <div className="row-wrap">
-              <Button loading={isSubmitting} type="submit" variant="secondary">
-                Entrar na sala
-              </Button>
-
               <Button disabled={isSubmitting || !currentRoom} onClick={handleLeaveRoom} type="button" variant="secondary">
                 Sair da sala
               </Button>
             </div>
-          </form>
+          </div>
         </div>
       </div>
 
@@ -464,28 +447,6 @@ export function MatchPage() {
       ) : null}
 
       <div className="match-grid">
-        <aside className="match-left-column">
-          <Card className="match-side-panel" description="Jogadores ativos na mesa." title="Jogadores">
-            <div className="match-player-list">
-              {players.length ? (
-                players.map((player) => (
-                  <PlayerCard
-                    isActiveTurn={player.user_id === activeTurnPlayerId}
-                    isCurrentUser={player.user_id === user?.id}
-                    key={`${player.room_id}-${player.user_id}`}
-                    player={{
-                      ...player,
-                      is_ready: player.is_ready,
-                    }}
-                  />
-                ))
-              ) : (
-                <div className="empty-state">Sem jogadores sincronizados.</div>
-              )}
-            </div>
-          </Card>
-        </aside>
-
         <main className="match-main-column">
           <Card className="match-board-card" description="Zonas do jogador organizadas como tabuleiro." title="Seu campo">
             <div className="match-board">

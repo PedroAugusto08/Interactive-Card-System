@@ -380,7 +380,7 @@ ul {
 }
 
 .match-grid {
-  grid-template-columns: 280px minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr) 320px;
   align-items: start;
   gap: 20px;
 }
@@ -444,9 +444,41 @@ ul {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.match-join-form {
+.match-header__player-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.match-header__round-row {
   display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
   gap: 14px;
+}
+
+.match-header__player-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.match-header__player-chip--active {
+  border-color: rgba(245, 197, 66, 0.35);
+  background: rgba(245, 197, 66, 0.12);
+  color: #f8df8f;
+}
+
+.match-header__player-chip--current {
+  border-color: rgba(124, 92, 255, 0.35);
 }
 
 .match-action-bar {
@@ -513,6 +545,10 @@ ul {
 
 .match-player-list {
   gap: 14px;
+}
+
+.match-header__players {
+  margin-top: 4px;
 }
 
 .player-hand {
@@ -1494,11 +1530,7 @@ ul {
 
 @media (max-width: 1200px) {
   .match-grid {
-    grid-template-columns: 240px minmax(0, 1fr);
-  }
-
-  .match-right-column {
-    grid-column: span 2;
+    grid-template-columns: 1fr;
   }
 
   .match-header__utility {
