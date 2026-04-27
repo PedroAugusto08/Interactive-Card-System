@@ -504,6 +504,13 @@ async function playCardForPlayer({
 
   let pairedPlay = null;
   if (pairedCardId) {
+    if (!primaryPlay.resolvedCard.canPlayTogether) {
+      throw new AppError(
+        `A carta ${primaryPlay.resolvedCard.name} nao permite ser jogada junto com outra carta.`,
+        409
+      );
+    }
+
     if (pairedCardId === cardId) {
       throw new AppError('A carta jogada junto precisa ser diferente da carta principal.', 400);
     }
@@ -515,10 +522,6 @@ async function playCardForPlayer({
       notFoundMessage: 'Carta jogada junto nao encontrada na sua mao.',
       unresolvedMessage: 'Carta jogada junto nao encontrada no catalogo.',
     });
-
-    if (!pairedPlay.resolvedCard.canPlayTogether) {
-      throw new AppError(`A carta ${pairedPlay.resolvedCard.name} nao pode ser jogada junto com outra.`, 409);
-    }
   }
 
   const totalImoCost =

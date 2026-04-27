@@ -65,7 +65,7 @@ function getTargetOptions(players, currentUserId, targetScope) {
 }
 
 function getPlayableTogetherCandidates(cards, primaryCardId) {
-  return (cards || []).filter((card) => card.instanceId !== primaryCardId && card.canPlayTogether);
+  return (cards || []).filter((card) => card.instanceId !== primaryCardId);
 }
 
 function buildActionFeedback(logMessage, notice, metrics) {
@@ -327,7 +327,10 @@ export function MatchPage() {
 
     const automation = getCardActionAutomation(targetCard, action);
     const targetOptions = getTargetOptions(players, user?.id, automation?.targetScope);
-    const pairedCandidates = action === 'match:playCard' ? getPlayableTogetherCandidates(handCards, cardId) : [];
+    const pairedCandidates =
+      action === 'match:playCard' && targetCard.canPlayTogether
+        ? getPlayableTogetherCandidates(handCards, cardId)
+        : [];
     const requiresTarget = Boolean(automation?.targetScope);
     const requiresExileSelection = automation?.selection === 'own-exile-card' && exileCards.length > 0;
     const allowsPairedCard = action === 'match:playCard' && pairedCandidates.length > 0;
