@@ -188,6 +188,30 @@ export function MatchPage() {
     }
   }
 
+  async function handleRefreshMatch() {
+    if (!currentRoom?.id) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    setLocalError('');
+
+    try {
+      const response = await roomApi.listPlayers({ roomId: currentRoom.id, token });
+      setRoomData(response);
+
+      const snapshot = await matchApi.getSnapshot({ roomId: currentRoom.id, token });
+      setMatchData({
+        ...snapshot,
+        matchPlayers: snapshot.playerStates || [],
+      });
+    } catch (error) {
+      setLocalError(formatErrorMessage(error));
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   async function handleAction(action, payload = {}) {
     if (!currentRoom?.id) {
       return;
@@ -430,9 +454,13 @@ export function MatchPage() {
               </div>
             </div>
 
-            <div className="row-wrap">
+            <div className="match-header__actions">
               <Button disabled={isSubmitting || !currentRoom} onClick={handleLeaveRoom} type="button" variant="secondary">
                 Sair da sala
+              </Button>
+
+              <Button disabled={isSubmitting || !currentRoom} onClick={handleRefreshMatch} type="button" variant="secondary">
+                Atualizar
               </Button>
             </div>
           </div>

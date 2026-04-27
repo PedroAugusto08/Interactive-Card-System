@@ -458,6 +458,17 @@ ul {
   gap: 14px;
 }
 
+.match-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: nowrap;
+}
+
+.match-header__actions .ui-button {
+  white-space: nowrap;
+}
+
 .match-header__player-chip {
   display: inline-flex;
   align-items: center;
