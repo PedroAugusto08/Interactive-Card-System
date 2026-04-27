@@ -64,6 +64,10 @@ function getTargetOptions(players, currentUserId, targetScope) {
   return [];
 }
 
+function getPlayableTogetherCandidates(cards, primaryCardId) {
+  return (cards || []).filter((card) => card.instanceId !== primaryCardId && card.canPlayTogether);
+}
+
 function buildActionFeedback(logMessage, notice, metrics) {
   const text = [logMessage, notice].filter(Boolean).join(' ');
   if (!text) {
@@ -323,10 +327,12 @@ export function MatchPage() {
 
     const automation = getCardActionAutomation(targetCard, action);
     const targetOptions = getTargetOptions(players, user?.id, automation?.targetScope);
+    const pairedCandidates = action === 'match:playCard' ? getPlayableTogetherCandidates(handCards, cardId) : [];
     const requiresTarget = Boolean(automation?.targetScope);
     const requiresExileSelection = automation?.selection === 'own-exile-card' && exileCards.length > 0;
+    const allowsPairedCard = action === 'match:playCard' && pairedCandidates.length > 0;
 
-    if (!requiresTarget && !requiresExileSelection) {
+    if (!requiresTarget && !requiresExileSelection && !allowsPairedCard) {
       handleAction(action, { cardId });
       return;
     }
@@ -339,6 +345,11 @@ export function MatchPage() {
       automation,
       targetUserId: targetOptions[0]?.user_id || null,
       selectedExileCardId: requiresExileSelection ? exileCards[0]?.instanceId || null : null,
+      pairedCardId: null,
+      pairedCardName: '',
+      pairedAutomation: null,
+      pairedTargetUserId: null,
+      pairedSelectedExileCardId: null,
     });
   }
 
@@ -354,6 +365,13 @@ export function MatchPage() {
     const requiresTarget = Boolean(pendingCardAction.automation?.targetScope);
     const requiresExileSelection =
       pendingCardAction.automation?.selection === 'own-exile-card' && exileCards.length > 0;
+    const requiresPairedTarget =
+      Boolean(pendingCardAction.pairedCardId) &&
+      Boolean(pendingCardAction.pairedAutomation?.targetScope);
+    const requiresPairedExileSelection =
+      Boolean(pendingCardAction.pairedCardId) &&
+      pendingCardAction.pairedAutomation?.selection === 'own-exile-card' &&
+      exileCards.length > 0;
 
     if (requiresTarget && !pendingCardAction.targetUserId) {
       setLocalError('Selecione um alvo para essa carta.');
@@ -365,10 +383,23 @@ export function MatchPage() {
       return;
     }
 
+    if (requiresPairedTarget && !pendingCardAction.pairedTargetUserId) {
+      setLocalError('Selecione um alvo para a carta jogada junto.');
+      return;
+    }
+
+    if (requiresPairedExileSelection && !pendingCardAction.pairedSelectedExileCardId) {
+      setLocalError('Selecione uma carta do seu exilio para a carta jogada junto.');
+      return;
+    }
+
     const payload = {
       cardId: pendingCardAction.cardId,
       targetUserId: pendingCardAction.targetUserId || undefined,
       selectedExileCardId: pendingCardAction.selectedExileCardId || undefined,
+      pairedCardId: pendingCardAction.pairedCardId || undefined,
+      pairedTargetUserId: pendingCardAction.pairedTargetUserId || undefined,
+      pairedSelectedExileCardId: pendingCardAction.pairedSelectedExileCardId || undefined,
     };
 
     closePendingCardAction();
@@ -376,6 +407,8 @@ export function MatchPage() {
   }
 
   const pendingTargetOptions = getTargetOptions(players, user?.id, pendingCardAction?.automation?.targetScope);
+  const pendingPairedTargetOptions = getTargetOptions(players, user?.id, pendingCardAction?.pairedAutomation?.targetScope);
+  const pendingPairedCandidates = getPlayableTogetherCandidates(handCards, pendingCardAction?.cardId);
 
   return (
     <section className="match-shell">
@@ -557,6 +590,60 @@ export function MatchPage() {
         open={Boolean(pendingCardAction)}
         title={pendingCardAction ? `${pendingCardAction.cardName}: resolver efeito` : 'Resolver efeito'}
       >
+        {pendingCardAction?.action === 'match:playCard' && pendingPairedCandidates.length ? (
+          <div className="row-wrap">
+            <Button
+              onClick={() =>
+                setPendingCardAction((current) =>
+                  current
+                    ? {
+                        ...current,
+                        pairedCardId: null,
+                        pairedCardName: '',
+                        pairedAutomation: null,
+                        pairedTargetUserId: null,
+                        pairedSelectedExileCardId: null,
+                      }
+                    : current
+                )
+              }
+              type="button"
+              variant={!pendingCardAction.pairedCardId ? 'primary' : 'secondary'}
+            >
+              Sem carta extra
+            </Button>
+
+            {pendingPairedCandidates.map((card) => (
+              <Button
+                key={card.instanceId}
+                onClick={() => {
+                  const pairedAutomation = getCardActionAutomation(card, 'match:playCard');
+                  const pairedTargetOptions = getTargetOptions(players, user?.id, pairedAutomation?.targetScope);
+                  const pairedNeedsExile =
+                    pairedAutomation?.selection === 'own-exile-card' && exileCards.length > 0;
+
+                  setPendingCardAction((current) =>
+                    current
+                      ? {
+                          ...current,
+                          pairedCardId: card.instanceId,
+                          pairedCardName: card.name,
+                          pairedAutomation,
+                          pairedTargetUserId: pairedTargetOptions[0]?.user_id || null,
+                          pairedSelectedExileCardId: pairedNeedsExile ? exileCards[0]?.instanceId || null : null,
+                        }
+                      : current
+                  );
+                }}
+                type="button"
+                variant={pendingCardAction.pairedCardId === card.instanceId ? 'primary' : 'secondary'}
+              >
+                Jogar junto: {card.name}
+              </Button>
+            ))}
+          </div>
+        ) : null}
+
         {pendingCardAction?.automation?.targetScope ? (
           <div className="row-wrap">
             {pendingTargetOptions.length ? (
@@ -624,6 +711,76 @@ export function MatchPage() {
             </div>
           ) : (
             <p className="muted-text">Seu exilio esta vazio; o efeito sera resolvido sem recuperar carta.</p>
+          )
+        ) : null}
+
+        {pendingCardAction?.pairedAutomation?.targetScope ? (
+          <div className="row-wrap">
+            {pendingPairedTargetOptions.length ? (
+              pendingPairedTargetOptions.map((player) => (
+                <Button
+                  key={`paired-target-${player.user_id}`}
+                  onClick={() =>
+                    setPendingCardAction((current) =>
+                      current
+                        ? {
+                            ...current,
+                            pairedTargetUserId: player.user_id,
+                          }
+                        : current
+                    )
+                  }
+                  type="button"
+                  variant={pendingCardAction.pairedTargetUserId === player.user_id ? 'primary' : 'secondary'}
+                >
+                  {pendingCardAction.pairedCardName}: {player.username}
+                </Button>
+              ))
+            ) : (
+              <p className="muted-text">Nenhum alvo disponivel para a carta jogada junto.</p>
+            )}
+          </div>
+        ) : null}
+
+        {pendingCardAction?.pairedAutomation?.selection === 'own-exile-card' ? (
+          exileCards.length ? (
+            <div className="exile-modal-grid">
+              {exileCards.map((card) => (
+                <CardItem
+                  category={card.category}
+                  cost={card.category === 'imo' ? card.imoCost || 0 : undefined}
+                  costLabel="Custo Imo"
+                  description={card.effect}
+                  footer={
+                    <div className="row-wrap">
+                      <Button
+                        onClick={() =>
+                          setPendingCardAction((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  pairedSelectedExileCardId: card.instanceId,
+                                }
+                              : current
+                          )
+                        }
+                        size="sm"
+                        type="button"
+                        variant={pendingCardAction.pairedSelectedExileCardId === card.instanceId ? 'primary' : 'secondary'}
+                      >
+                        {pendingCardAction.pairedSelectedExileCardId === card.instanceId ? 'Selecionada' : 'Selecionar'}
+                      </Button>
+                    </div>
+                  }
+                  imageSrc={resolveCardImageUrl(card.imagePath)}
+                  key={`paired-exile-${card.instanceId}`}
+                  name={`${pendingCardAction.pairedCardName}: ${card.name}`}
+                  selected={pendingCardAction.pairedSelectedExileCardId === card.instanceId}
+                />
+              ))}
+            </div>
+          ) : (
+            <p className="muted-text">Seu exilio esta vazio; a carta jogada junto nao podera recuperar carta.</p>
           )
         ) : null}
       </Modal>

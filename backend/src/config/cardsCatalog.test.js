@@ -14,8 +14,10 @@ test('getCardById resolves official card with imoCost metadata', () => {
 
 test('official cards expose structured automation metadata when needed', () => {
   const visualizar = getCardById('visualizar');
+  const movimento = getCardById('movimento');
   const maldicao = getCardById('maldicao');
 
+  assert.equal(movimento.canPlayTogether, true);
   assert.equal(visualizar.playAutomation.targetScope, 'selected-player');
   assert.equal(visualizar.discardAutomation.effects[0].type, 'moveTopDeckToExile');
   assert.equal(maldicao.canDiscard, false);
@@ -42,6 +44,7 @@ test('mapImoCardRecordToCatalogCard maps persisted imo cards to catalog shape', 
     imagePath: 'data:image/png;base64,abc',
     isCustom: true,
     canDiscard: true,
+    canPlayTogether: false,
     playAutomation: null,
     discardAutomation: null,
   });

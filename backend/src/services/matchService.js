@@ -479,6 +479,9 @@ async function playCardForPlayer({
   cardId,
   targetUserId = null,
   selectedExileCardId = null,
+  pairedCardId = null,
+  pairedTargetUserId = null,
+  pairedSelectedExileCardId = null,
   includeSnapshot = true,
 }) {
   const context = await requireActiveTurnContext({ roomId, userId, includeAllPlayers: true });
@@ -491,39 +494,75 @@ async function playCardForPlayer({
   const playerStatesByUserId = createMutableMatchPlayerMap(context.matchPlayers);
   const actingPlayerState = playerStatesByUserId.get(userId);
   const handCards = [...actingPlayerState.hand_cards_json];
-  const cardIndex = handCards.findIndex((entry) => entry.instanceId === cardId);
+  const primaryPlay = await consumeCardFromHand({
+    ownerId: userId,
+    handCards,
+    instanceId: cardId,
+    notFoundMessage: 'Carta nao encontrada na sua mao.',
+    unresolvedMessage: 'Carta jogada nao encontrada no catalogo.',
+  });
 
-  if (cardIndex < 0) {
-    throw new AppError('Carta nao encontrada na sua mao.', 404);
+  let pairedPlay = null;
+  if (pairedCardId) {
+    if (pairedCardId === cardId) {
+      throw new AppError('A carta jogada junto precisa ser diferente da carta principal.', 400);
+    }
+
+    pairedPlay = await consumeCardFromHand({
+      ownerId: userId,
+      handCards,
+      instanceId: pairedCardId,
+      notFoundMessage: 'Carta jogada junto nao encontrada na sua mao.',
+      unresolvedMessage: 'Carta jogada junto nao encontrada no catalogo.',
+    });
+
+    if (!pairedPlay.resolvedCard.canPlayTogether) {
+      throw new AppError(`A carta ${pairedPlay.resolvedCard.name} nao pode ser jogada junto com outra.`, 409);
+    }
   }
 
-  const [playedCard] = handCards.splice(cardIndex, 1);
-  const resolvedCard = await resolveCardById({ ownerId: userId, cardId: playedCard.cardId });
-  if (!resolvedCard) {
-    throw new AppError('Carta jogada nao encontrada no catalogo.', 404);
-  }
-
-  const imoCost = Number(resolvedCard.imoCost || 0);
-  if (actingPlayerState.imo < imoCost) {
+  const totalImoCost =
+    Number(primaryPlay.resolvedCard.imoCost || 0) + Number(pairedPlay?.resolvedCard.imoCost || 0);
+  if (actingPlayerState.imo < totalImoCost) {
     throw new AppError('Imo insuficiente para jogar esta carta.', 409);
   }
 
-  actingPlayerState.imo -= imoCost;
+  actingPlayerState.imo -= totalImoCost;
   actingPlayerState.has_used_card_action_this_turn = true;
   actingPlayerState.hand_cards_json = handCards;
-  actingPlayerState.deck_cards_json = [...actingPlayerState.deck_cards_json, playedCard];
+  actingPlayerState.deck_cards_json = [...actingPlayerState.deck_cards_json, primaryPlay.cardEntry];
 
-  const notice = await applyCardAutomation({
-    phase: 'play',
-    ownerId: userId,
-    card: resolvedCard,
-    currentCard: playedCard,
-    actingPlayerState,
-    playerStatesByUserId,
-    targetUserId,
-    selectedExileCardId,
-  });
+  const notices = [];
+  notices.push(
+    await applyCardAutomation({
+      phase: 'play',
+      ownerId: userId,
+      card: primaryPlay.resolvedCard,
+      currentCard: primaryPlay.cardEntry,
+      actingPlayerState,
+      playerStatesByUserId,
+      targetUserId,
+      selectedExileCardId,
+    })
+  );
 
+  if (pairedPlay) {
+    actingPlayerState.deck_cards_json = [...actingPlayerState.deck_cards_json, pairedPlay.cardEntry];
+    notices.push(
+      await applyCardAutomation({
+        phase: 'play',
+        ownerId: userId,
+        card: pairedPlay.resolvedCard,
+        currentCard: pairedPlay.cardEntry,
+        actingPlayerState,
+        playerStatesByUserId,
+        targetUserId: pairedTargetUserId,
+        selectedExileCardId: pairedSelectedExileCardId,
+      })
+    );
+  }
+
+  const notice = notices.filter(Boolean).join(' ');
   const updatedPlayerStatesByUserId = await persistMatchPlayerStates({
     matchId: context.match.id,
     playerStatesByUserId,
@@ -533,12 +572,16 @@ async function playCardForPlayer({
   const createdLog = await addMatchLog({
     matchId: context.match.id,
     type: 'MATCH_PLAY_CARD',
-    message: `${originalPlayerState.username} jogou ${resolvedCard.name}.`,
+    message: pairedPlay
+      ? `${originalPlayerState.username} jogou ${primaryPlay.resolvedCard.name} junto com ${pairedPlay.resolvedCard.name}.`
+      : `${originalPlayerState.username} jogou ${primaryPlay.resolvedCard.name}.`,
     payload: {
       userId,
-      cardId: playedCard.cardId,
-      imoCost,
+      cardId: primaryPlay.cardEntry.cardId,
+      imoCost: totalImoCost,
       targetUserId: targetUserId || null,
+      pairedCardId: pairedPlay?.cardEntry.cardId || null,
+      pairedTargetUserId: pairedTargetUserId || null,
     },
   });
 
@@ -806,6 +849,24 @@ async function persistMatchPlayerStates({ matchId, playerStatesByUserId, origina
   );
 
   return new Map(persistedEntries);
+}
+
+async function consumeCardFromHand({ ownerId, handCards, instanceId, notFoundMessage, unresolvedMessage }) {
+  const cardIndex = handCards.findIndex((entry) => entry.instanceId === instanceId);
+  if (cardIndex < 0) {
+    throw new AppError(notFoundMessage, 404);
+  }
+
+  const [cardEntry] = handCards.splice(cardIndex, 1);
+  const resolvedCard = await resolveCardById({ ownerId, cardId: cardEntry.cardId });
+  if (!resolvedCard) {
+    throw new AppError(unresolvedMessage, 404);
+  }
+
+  return {
+    cardEntry,
+    resolvedCard,
+  };
 }
 
 async function applyCardAutomation({

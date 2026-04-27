@@ -10,6 +10,9 @@ const cardActionSchema = z.object({
   cardId: z.string().trim().min(1),
   targetUserId: z.coerce.number().int().positive().optional(),
   selectedExileCardId: z.string().trim().min(1).optional(),
+  pairedCardId: z.string().trim().min(1).optional(),
+  pairedTargetUserId: z.coerce.number().int().positive().optional(),
+  pairedSelectedExileCardId: z.string().trim().min(1).optional(),
 });
 
 async function getMatchSnapshot(req, res) {
@@ -51,6 +54,9 @@ async function playCard(req, res) {
     cardId: payload.cardId,
     targetUserId: payload.targetUserId,
     selectedExileCardId: payload.selectedExileCardId,
+    pairedCardId: payload.pairedCardId,
+    pairedTargetUserId: payload.pairedTargetUserId,
+    pairedSelectedExileCardId: payload.pairedSelectedExileCardId,
   });
 
   return res.status(200).json(data);

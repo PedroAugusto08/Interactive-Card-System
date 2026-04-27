@@ -18,6 +18,7 @@ const DECK_RULES = {
 function defineCard(card) {
   return {
     canDiscard: true,
+    canPlayTogether: false,
     playAutomation: null,
     discardAutomation: null,
     ...card,
@@ -80,6 +81,7 @@ const CARD_CATALOG = [
     effect:
       'Esta carta pode ser jogada junto a outra carta. Ao jogar, o personagem se movimenta em ate 1 metro em alguma direcao. Ao descartar esta carta, o jogador recupera +1d3 em Carne.',
     imagePath: '/cartas/4.png',
+    canPlayTogether: true,
   }),
   defineCard({
     id: 'concentrar',
@@ -137,6 +139,7 @@ const CARD_CATALOG = [
     effect:
       'Pode ser jogada junto com outra carta. Ao jogar, visualiza (podendo revelar) o topo do baralho de um alvo selecionado. Ao descartar, exila a carta do topo do seu baralho.',
     imagePath: '/cartas/8.png',
+    canPlayTogether: true,
     playAutomation: {
       targetScope: 'selected-player',
       effects: [
@@ -164,6 +167,7 @@ const CARD_CATALOG = [
     effect:
       'Pode ser jogada junto com outra carta. Ao jogar, cause 1d6 de Dano em Imo no alvo selecionado. Ao descartar, retorna a carta do topo do exilio para seu baralho.',
     imagePath: '/cartas/9.png',
+    canPlayTogether: true,
     discardAutomation: {
       effects: [
         {
@@ -183,6 +187,7 @@ const CARD_CATALOG = [
     effect:
       'Pode ser jogada junto com outra carta. Ao jogar, exile a carta no topo do baralho do alvo. Ao descartar, retorna a carta do topo do exilio de um alvo aliado para seu baralho.',
     imagePath: '/cartas/10.png',
+    canPlayTogether: true,
     playAutomation: {
       targetScope: 'selected-player',
       effects: [
@@ -296,6 +301,7 @@ function mapImoCardRecordToCatalogCard(record) {
     imagePath: record.image_path,
     isCustom: true,
     canDiscard: true,
+    canPlayTogether: false,
     playAutomation: null,
     discardAutomation: null,
   };

@@ -171,7 +171,9 @@ function createSocketServer(httpServer) {
       }
     });
 
-    socket.on('match:playCard', async ({ roomId, cardId, targetUserId, selectedExileCardId }, acknowledge) => {
+    socket.on(
+      'match:playCard',
+      async ({ roomId, cardId, targetUserId, selectedExileCardId, pairedCardId, pairedTargetUserId, pairedSelectedExileCardId }, acknowledge) => {
       try {
         const actionStartedAt = performance.now();
         const actionState = await matchService.playCardForPlayer({
@@ -180,6 +182,9 @@ function createSocketServer(httpServer) {
           cardId,
           targetUserId: targetUserId ? Number(targetUserId) : undefined,
           selectedExileCardId,
+          pairedCardId,
+          pairedTargetUserId: pairedTargetUserId ? Number(pairedTargetUserId) : undefined,
+          pairedSelectedExileCardId,
           includeSnapshot: false,
         });
         const mutateMs = performance.now() - actionStartedAt;
