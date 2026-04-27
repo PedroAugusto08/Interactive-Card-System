@@ -18,7 +18,7 @@ export function PlayerHand({
 
   return (
     <div className="player-hand">
-      {cards.map((card, index) => {
+      {cards.map((card) => {
         const isSelected = selectedCardId === card.instanceId;
 
         return (
@@ -40,7 +40,7 @@ export function PlayerHand({
                   </Button>
 
                   <Button
-                    disabled={!canDiscard || isSubmitting}
+                    disabled={!canDiscard || isSubmitting || card.canDiscard === false}
                     onClick={() => onDiscardCard?.(card.instanceId)}
                     size="sm"
                     variant="secondary"

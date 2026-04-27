@@ -6,8 +6,10 @@ const roomIdParamSchema = z.object({
   roomId: z.coerce.number().int().positive(),
 });
 
-const playCardSchema = z.object({
+const cardActionSchema = z.object({
   cardId: z.string().trim().min(1),
+  targetUserId: z.coerce.number().int().positive().optional(),
+  selectedExileCardId: z.string().trim().min(1).optional(),
 });
 
 async function getMatchSnapshot(req, res) {
@@ -42,11 +44,13 @@ async function drawCard(req, res) {
 
 async function playCard(req, res) {
   const { roomId } = roomIdParamSchema.parse(req.params);
-  const payload = playCardSchema.parse(req.body);
+  const payload = cardActionSchema.parse(req.body);
   const data = await matchService.playCardForPlayer({
     roomId,
     userId: req.user.id,
     cardId: payload.cardId,
+    targetUserId: payload.targetUserId,
+    selectedExileCardId: payload.selectedExileCardId,
   });
 
   return res.status(200).json(data);
@@ -54,11 +58,13 @@ async function playCard(req, res) {
 
 async function discardCard(req, res) {
   const { roomId } = roomIdParamSchema.parse(req.params);
-  const payload = playCardSchema.parse(req.body);
+  const payload = cardActionSchema.parse(req.body);
   const data = await matchService.discardCardForPlayer({
     roomId,
     userId: req.user.id,
     cardId: payload.cardId,
+    targetUserId: payload.targetUserId,
+    selectedExileCardId: payload.selectedExileCardId,
   });
 
   return res.status(200).json(data);

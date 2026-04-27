@@ -171,13 +171,15 @@ function createSocketServer(httpServer) {
       }
     });
 
-    socket.on('match:playCard', async ({ roomId, cardId }, acknowledge) => {
+    socket.on('match:playCard', async ({ roomId, cardId, targetUserId, selectedExileCardId }, acknowledge) => {
       try {
         const actionStartedAt = performance.now();
         const actionState = await matchService.playCardForPlayer({
           roomId: Number(roomId),
           userId: user.id,
           cardId,
+          targetUserId: targetUserId ? Number(targetUserId) : undefined,
+          selectedExileCardId,
           includeSnapshot: false,
         });
         const mutateMs = performance.now() - actionStartedAt;
@@ -191,6 +193,7 @@ function createSocketServer(httpServer) {
             ok: true,
             snapshot: actionState?.snapshot || null,
             log: actionState?.log || null,
+            notice: actionState?.notice || '',
             metrics: ackMetrics,
           });
         }
@@ -210,13 +213,15 @@ function createSocketServer(httpServer) {
       }
     });
 
-    socket.on('match:discardCard', async ({ roomId, cardId }, acknowledge) => {
+    socket.on('match:discardCard', async ({ roomId, cardId, targetUserId, selectedExileCardId }, acknowledge) => {
       try {
         const actionStartedAt = performance.now();
         const actionState = await matchService.discardCardForPlayer({
           roomId: Number(roomId),
           userId: user.id,
           cardId,
+          targetUserId: targetUserId ? Number(targetUserId) : undefined,
+          selectedExileCardId,
           includeSnapshot: false,
         });
         const mutateMs = performance.now() - actionStartedAt;
@@ -230,6 +235,7 @@ function createSocketServer(httpServer) {
             ok: true,
             snapshot: actionState?.snapshot || null,
             log: actionState?.log || null,
+            notice: actionState?.notice || '',
             metrics: ackMetrics,
           });
         }

@@ -81,7 +81,6 @@ async function startMatchForRoom({ roomId, userId, includeSnapshot = true }) {
       isDefeated: false,
       deckCards: shuffledDeck,
       handCards,
-      discardCards: [],
       exileCards: [],
     });
   }
@@ -251,14 +250,12 @@ async function buildMatchSnapshot({ room, players, activeMatch, matchPlayers, lo
     matchPlayers.map(async (player) => {
       const isRequester = player.user_id === userId;
       let handCards = [];
-      let discardCards = [];
       let exileCards = [];
 
       if (isRequester) {
         const cardCatalogMap = await getCardCatalogMapForUser(player.user_id, cardCatalogCache);
-        [handCards, discardCards, exileCards] = [
+        [handCards, exileCards] = [
           hydrateCards(cardCatalogMap, player.hand_cards_json || []),
-          hydrateCards(cardCatalogMap, player.discard_cards_json || []),
           hydrateCards(cardCatalogMap, player.exile_cards_json || []),
         ];
       }
@@ -277,11 +274,9 @@ async function buildMatchSnapshot({ room, players, activeMatch, matchPlayers, lo
         zones: {
           deckCount: (player.deck_cards_json || []).length,
           handCount: isRequester ? handCards.length : (player.hand_cards_json || []).length,
-          discardCount: isRequester ? discardCards.length : (player.discard_cards_json || []).length,
           exileCount: isRequester ? exileCards.length : (player.exile_cards_json || []).length,
         },
         handCards: isRequester ? handCards : [],
-        discardCards: isRequester ? discardCards : [],
         exileCards: isRequester ? exileCards : [],
         availableActions: buildAvailableActions({
           activeMatch,
@@ -350,14 +345,12 @@ async function buildRealtimeMatchState({ activeMatch, matchPlayers, userId, card
 async function buildPlayerState({ activeMatch, matchPlayer, requesterUserId, cardCatalogCache }) {
   const isRequester = matchPlayer.user_id === requesterUserId;
   let handCards = [];
-  let discardCards = [];
   let exileCards = [];
 
   if (isRequester) {
     const cardCatalogMap = await getCardCatalogMapForUser(matchPlayer.user_id, cardCatalogCache);
-    [handCards, discardCards, exileCards] = [
+    [handCards, exileCards] = [
       hydrateCards(cardCatalogMap, matchPlayer.hand_cards_json || []),
-      hydrateCards(cardCatalogMap, matchPlayer.discard_cards_json || []),
       hydrateCards(cardCatalogMap, matchPlayer.exile_cards_json || []),
     ];
   }
@@ -376,11 +369,9 @@ async function buildPlayerState({ activeMatch, matchPlayer, requesterUserId, car
     zones: {
       deckCount: (matchPlayer.deck_cards_json || []).length,
       handCount: isRequester ? handCards.length : (matchPlayer.hand_cards_json || []).length,
-      discardCount: isRequester ? discardCards.length : (matchPlayer.discard_cards_json || []).length,
       exileCount: isRequester ? exileCards.length : (matchPlayer.exile_cards_json || []).length,
     },
     handCards: isRequester ? handCards : [],
-    discardCards: isRequester ? discardCards : [],
     exileCards: isRequester ? exileCards : [],
     availableActions: buildAvailableActions({
       activeMatch,
@@ -390,7 +381,7 @@ async function buildPlayerState({ activeMatch, matchPlayer, requesterUserId, car
   };
 }
 
-async function buildActionRealtimeState({ activeMatch, currentUserId, currentPlayer, log }) {
+async function buildActionRealtimeState({ activeMatch, currentUserId, currentPlayer, log, notice = '' }) {
   const currentUserState = await buildPlayerState({
     activeMatch,
     matchPlayer: currentPlayer,
@@ -413,6 +404,7 @@ async function buildActionRealtimeState({ activeMatch, currentUserId, currentPla
       round: activeMatch.round,
       currentUserState,
     },
+    notice,
     log: log
       ? {
           id: log.id,
@@ -454,7 +446,6 @@ async function drawCardForPlayer({ roomId, userId, includeSnapshot = true }) {
       isDefeated: playerState.is_defeated,
       deckCards,
       handCards,
-      discardCards: playerState.discard_cards_json,
       exileCards: playerState.exile_cards_json,
     }),
     addMatchLog({
@@ -482,15 +473,24 @@ async function drawCardForPlayer({ roomId, userId, includeSnapshot = true }) {
   });
 }
 
-async function playCardForPlayer({ roomId, userId, cardId, includeSnapshot = true }) {
-  const context = await requireActiveTurnContext({ roomId, userId, includeAllPlayers: false });
-  const playerState = context.currentPlayer;
+async function playCardForPlayer({
+  roomId,
+  userId,
+  cardId,
+  targetUserId = null,
+  selectedExileCardId = null,
+  includeSnapshot = true,
+}) {
+  const context = await requireActiveTurnContext({ roomId, userId, includeAllPlayers: true });
+  const originalPlayerState = context.currentPlayer;
 
-  if (playerState.has_used_card_action_this_turn) {
+  if (originalPlayerState.has_used_card_action_this_turn) {
     throw new AppError('Voce ja usou sua acao de carta neste turno.', 409);
   }
 
-  const handCards = [...playerState.hand_cards_json];
+  const playerStatesByUserId = createMutableMatchPlayerMap(context.matchPlayers);
+  const actingPlayerState = playerStatesByUserId.get(userId);
+  const handCards = [...actingPlayerState.hand_cards_json];
   const cardIndex = handCards.findIndex((entry) => entry.instanceId === cardId);
 
   if (cardIndex < 0) {
@@ -504,40 +504,43 @@ async function playCardForPlayer({ roomId, userId, cardId, includeSnapshot = tru
   }
 
   const imoCost = Number(resolvedCard.imoCost || 0);
-  if (playerState.imo < imoCost) {
+  if (actingPlayerState.imo < imoCost) {
     throw new AppError('Imo insuficiente para jogar esta carta.', 409);
   }
 
-  const nextImo = playerState.imo - imoCost;
-  const deckCards = [...playerState.deck_cards_json, playedCard];
+  actingPlayerState.imo -= imoCost;
+  actingPlayerState.has_used_card_action_this_turn = true;
+  actingPlayerState.hand_cards_json = handCards;
+  actingPlayerState.deck_cards_json = [...actingPlayerState.deck_cards_json, playedCard];
 
-  const [updatedPlayerState, createdLog] = await Promise.all([
-    upsertMatchPlayer({
-      matchId: context.match.id,
+  const notice = await applyCardAutomation({
+    phase: 'play',
+    ownerId: userId,
+    card: resolvedCard,
+    currentCard: playedCard,
+    actingPlayerState,
+    playerStatesByUserId,
+    targetUserId,
+    selectedExileCardId,
+  });
+
+  const updatedPlayerStatesByUserId = await persistMatchPlayerStates({
+    matchId: context.match.id,
+    playerStatesByUserId,
+    originalPlayers: context.matchPlayers,
+  });
+
+  const createdLog = await addMatchLog({
+    matchId: context.match.id,
+    type: 'MATCH_PLAY_CARD',
+    message: `${originalPlayerState.username} jogou ${resolvedCard.name}.`,
+    payload: {
       userId,
-      turnOrder: playerState.turn_order,
-      health: playerState.health,
-      imo: nextImo,
-      maxImo: playerState.max_imo,
-      hasDrawnThisTurn: playerState.has_drawn_this_turn,
-      hasUsedCardActionThisTurn: true,
-      isDefeated: playerState.is_defeated,
-      deckCards,
-      handCards,
-      discardCards: playerState.discard_cards_json,
-      exileCards: playerState.exile_cards_json,
-    }),
-    addMatchLog({
-      matchId: context.match.id,
-      type: 'MATCH_PLAY_CARD',
-      message: `${playerState.username} jogou ${resolvedCard.name}.`,
-      payload: {
-        userId,
-        cardId: playedCard.cardId,
-        imoCost,
-      },
-    }),
-  ]);
+      cardId: playedCard.cardId,
+      imoCost,
+      targetUserId: targetUserId || null,
+    },
+  });
 
   return finalizeActionResponse({
     roomId,
@@ -546,25 +549,31 @@ async function playCardForPlayer({ roomId, userId, cardId, includeSnapshot = tru
     actionState: await buildActionRealtimeState({
       activeMatch: context.match,
       currentUserId: userId,
-      currentPlayer: {
-        ...updatedPlayerState,
-        username: playerState.username,
-        email: playerState.email,
-      },
+      currentPlayer: updatedPlayerStatesByUserId.get(userId),
       log: createdLog,
+      notice,
     }),
   });
 }
 
-async function discardCardForPlayer({ roomId, userId, cardId, includeSnapshot = true }) {
-  const context = await requireActiveTurnContext({ roomId, userId, includeAllPlayers: false });
-  const playerState = context.currentPlayer;
+async function discardCardForPlayer({
+  roomId,
+  userId,
+  cardId,
+  targetUserId = null,
+  selectedExileCardId = null,
+  includeSnapshot = true,
+}) {
+  const context = await requireActiveTurnContext({ roomId, userId, includeAllPlayers: true });
+  const originalPlayerState = context.currentPlayer;
 
-  if (playerState.has_used_card_action_this_turn) {
+  if (originalPlayerState.has_used_card_action_this_turn) {
     throw new AppError('Voce ja usou sua acao de carta neste turno.', 409);
   }
 
-  const handCards = [...playerState.hand_cards_json];
+  const playerStatesByUserId = createMutableMatchPlayerMap(context.matchPlayers);
+  const actingPlayerState = playerStatesByUserId.get(userId);
+  const handCards = [...actingPlayerState.hand_cards_json];
   const cardIndex = handCards.findIndex((entry) => entry.instanceId === cardId);
 
   if (cardIndex < 0) {
@@ -577,34 +586,41 @@ async function discardCardForPlayer({ roomId, userId, cardId, includeSnapshot = 
     throw new AppError('Carta descartada nao encontrada no catalogo.', 404);
   }
 
-  const exileCards = [...playerState.exile_cards_json, discardedCard];
+  if (resolvedCard.canDiscard === false) {
+    throw new AppError(`A carta ${resolvedCard.name} nao pode ser descartada.`, 409);
+  }
 
-  const [updatedPlayerState, createdLog] = await Promise.all([
-    upsertMatchPlayer({
-      matchId: context.match.id,
+  actingPlayerState.has_used_card_action_this_turn = true;
+  actingPlayerState.hand_cards_json = handCards;
+  actingPlayerState.exile_cards_json = [discardedCard, ...actingPlayerState.exile_cards_json];
+
+  const notice = await applyCardAutomation({
+    phase: 'discard',
+    ownerId: userId,
+    card: resolvedCard,
+    currentCard: discardedCard,
+    actingPlayerState,
+    playerStatesByUserId,
+    targetUserId,
+    selectedExileCardId,
+  });
+
+  const updatedPlayerStatesByUserId = await persistMatchPlayerStates({
+    matchId: context.match.id,
+    playerStatesByUserId,
+    originalPlayers: context.matchPlayers,
+  });
+
+  const createdLog = await addMatchLog({
+    matchId: context.match.id,
+    type: 'MATCH_DISCARD_CARD',
+    message: `${originalPlayerState.username} descartou ${resolvedCard.name}.`,
+    payload: {
       userId,
-      turnOrder: playerState.turn_order,
-      health: playerState.health,
-      imo: playerState.imo,
-      maxImo: playerState.max_imo,
-      hasDrawnThisTurn: playerState.has_drawn_this_turn,
-      hasUsedCardActionThisTurn: true,
-      isDefeated: playerState.is_defeated,
-      deckCards: playerState.deck_cards_json,
-      handCards,
-      discardCards: playerState.discard_cards_json,
-      exileCards,
-    }),
-    addMatchLog({
-      matchId: context.match.id,
-      type: 'MATCH_DISCARD_CARD',
-      message: `${playerState.username} descartou ${resolvedCard.name}.`,
-      payload: {
-        userId,
-        cardId: discardedCard.cardId,
-      },
-    }),
-  ]);
+      cardId: discardedCard.cardId,
+      targetUserId: targetUserId || null,
+    },
+  });
 
   return finalizeActionResponse({
     roomId,
@@ -613,12 +629,9 @@ async function discardCardForPlayer({ roomId, userId, cardId, includeSnapshot = 
     actionState: await buildActionRealtimeState({
       activeMatch: context.match,
       currentUserId: userId,
-      currentPlayer: {
-        ...updatedPlayerState,
-        username: playerState.username,
-        email: playerState.email,
-      },
+      currentPlayer: updatedPlayerStatesByUserId.get(userId),
       log: createdLog,
+      notice,
     }),
   });
 }
@@ -648,7 +661,6 @@ async function endTurnForPlayer({ roomId, userId, includeSnapshot = true }) {
           isDefeated: nextPlayer.is_defeated,
           deckCards: nextPlayer.deck_cards_json,
           handCards: nextPlayer.hand_cards_json,
-          discardCards: nextPlayer.discard_cards_json,
           exileCards: nextPlayer.exile_cards_json,
         })
       : Promise.resolve(null),
@@ -718,7 +730,6 @@ async function forfeitMatchByLeavingRoom({ roomId, userId }) {
     isDefeated: true,
     deckCards: leavingPlayer.deck_cards_json,
     handCards: leavingPlayer.hand_cards_json,
-    discardCards: leavingPlayer.discard_cards_json,
     exileCards: leavingPlayer.exile_cards_json,
   });
 
@@ -748,6 +759,263 @@ async function forfeitMatchByLeavingRoom({ roomId, userId }) {
   }
 
   return match.id;
+}
+
+function createMutableMatchPlayerMap(matchPlayers) {
+  return new Map(matchPlayers.map((player) => [player.user_id, cloneMatchPlayerState(player)]));
+}
+
+function cloneMatchPlayerState(player) {
+  return {
+    ...player,
+    deck_cards_json: [...(player.deck_cards_json || [])],
+    hand_cards_json: [...(player.hand_cards_json || [])],
+    exile_cards_json: [...(player.exile_cards_json || [])],
+  };
+}
+
+async function persistMatchPlayerStates({ matchId, playerStatesByUserId, originalPlayers }) {
+  const originalsByUserId = new Map(originalPlayers.map((player) => [player.user_id, player]));
+  const persistedEntries = await Promise.all(
+    [...playerStatesByUserId.values()].map(async (playerState) => {
+      const updatedPlayer = await upsertMatchPlayer({
+        matchId,
+        userId: playerState.user_id,
+        turnOrder: playerState.turn_order,
+        health: playerState.health,
+        imo: playerState.imo,
+        maxImo: playerState.max_imo,
+        hasDrawnThisTurn: playerState.has_drawn_this_turn,
+        hasUsedCardActionThisTurn: playerState.has_used_card_action_this_turn,
+        isDefeated: playerState.is_defeated,
+        deckCards: playerState.deck_cards_json,
+        handCards: playerState.hand_cards_json,
+        exileCards: playerState.exile_cards_json,
+      });
+
+      const originalPlayer = originalsByUserId.get(playerState.user_id);
+      return [
+        playerState.user_id,
+        {
+          ...updatedPlayer,
+          username: originalPlayer?.username || playerState.username,
+          email: originalPlayer?.email || playerState.email,
+        },
+      ];
+    })
+  );
+
+  return new Map(persistedEntries);
+}
+
+async function applyCardAutomation({
+  phase,
+  ownerId,
+  card,
+  currentCard,
+  actingPlayerState,
+  playerStatesByUserId,
+  targetUserId,
+  selectedExileCardId,
+}) {
+  const automation = phase === 'play' ? card.playAutomation : card.discardAutomation;
+  if (!automation?.effects?.length) {
+    return '';
+  }
+
+  const selectedTargetState = resolveAutomationTarget({
+    automation,
+    actingPlayerState,
+    playerStatesByUserId,
+    targetUserId,
+  });
+  const notices = [];
+
+  for (const effect of automation.effects) {
+    if (effect.type === 'gainCatalogCardToHand') {
+      const generatedCard = await createGeneratedCardEntry({
+        ownerId,
+        cardId: effect.cardId,
+      });
+
+      actingPlayerState.hand_cards_json = [...actingPlayerState.hand_cards_json, generatedCard];
+      notices.push(`Efeito resolvido: ${generatedCard.cardId} foi gerada na sua mao.`);
+      continue;
+    }
+
+    if (effect.type === 'moveSelectedExileCardToHand') {
+      const excludedInstanceIds = new Set(
+        effect.excludeCurrentCard && currentCard?.instanceId ? [currentCard.instanceId] : []
+      );
+      const selectableCards = actingPlayerState.exile_cards_json.filter(
+        (entry) => !excludedInstanceIds.has(entry.instanceId)
+      );
+
+      if (!selectableCards.length) {
+        notices.push('Efeito sem alvo valido: nao havia carta exilada disponivel para recuperar.');
+        continue;
+      }
+
+      if (!selectedExileCardId) {
+        throw new AppError('Escolha uma carta do seu exilio para recuperar.', 400);
+      }
+
+      const exileIndex = actingPlayerState.exile_cards_json.findIndex(
+        (entry) => entry.instanceId === selectedExileCardId && !excludedInstanceIds.has(entry.instanceId)
+      );
+
+      if (exileIndex < 0) {
+        throw new AppError('A carta selecionada nao esta disponivel no seu exilio.', 400);
+      }
+
+      const [recoveredCard] = actingPlayerState.exile_cards_json.splice(exileIndex, 1);
+      actingPlayerState.hand_cards_json = [...actingPlayerState.hand_cards_json, recoveredCard];
+      notices.push('Efeito resolvido: uma carta do seu exilio voltou para a sua mao.');
+      continue;
+    }
+
+    if (effect.type === 'drawTopDeckToHand') {
+      const targetState = resolveEffectTargetState({
+        effect,
+        actingPlayerState,
+        selectedTargetState,
+      });
+
+      if (!targetState.deck_cards_json.length) {
+        notices.push(`Efeito sem alvo valido: o deck de ${targetState.username} estava vazio.`);
+        continue;
+      }
+
+      const [drawnCard] = targetState.deck_cards_json.splice(0, 1);
+      targetState.hand_cards_json = [...targetState.hand_cards_json, drawnCard];
+      notices.push(`Efeito resolvido: ${targetState.username} comprou uma carta.`);
+      continue;
+    }
+
+    if (effect.type === 'moveTopDeckToExile') {
+      const targetState = resolveEffectTargetState({
+        effect,
+        actingPlayerState,
+        selectedTargetState,
+      });
+
+      if (!targetState.deck_cards_json.length) {
+        notices.push(`Efeito sem alvo valido: o deck de ${targetState.username} estava vazio.`);
+        continue;
+      }
+
+      const [exiledCard] = targetState.deck_cards_json.splice(0, 1);
+      targetState.exile_cards_json = [exiledCard, ...targetState.exile_cards_json];
+      notices.push(`Efeito resolvido: o topo do deck de ${targetState.username} foi para o exilio.`);
+      continue;
+    }
+
+    if (effect.type === 'moveTopExileToDeck') {
+      const targetState = resolveEffectTargetState({
+        effect,
+        actingPlayerState,
+        selectedTargetState,
+      });
+
+      if (!targetState.exile_cards_json.length) {
+        notices.push(`Efeito sem alvo valido: o exilio de ${targetState.username} estava vazio.`);
+        continue;
+      }
+
+      const [returnedCard] = targetState.exile_cards_json.splice(0, 1);
+      targetState.deck_cards_json = effect.shuffleIntoDeck
+        ? shuffleCardEntries([...targetState.deck_cards_json, returnedCard])
+        : [returnedCard, ...targetState.deck_cards_json];
+      notices.push(`Efeito resolvido: uma carta do exilio de ${targetState.username} voltou para o deck.`);
+      continue;
+    }
+
+    if (effect.type === 'revealTopDeck') {
+      const targetState = resolveEffectTargetState({
+        effect,
+        actingPlayerState,
+        selectedTargetState,
+      });
+
+      if (!targetState.deck_cards_json.length) {
+        notices.push(`O deck de ${targetState.username} estava vazio.`);
+        continue;
+      }
+
+      const revealedCard = await resolveCardById({
+        ownerId: targetState.user_id,
+        cardId: targetState.deck_cards_json[0].cardId,
+      });
+
+      notices.push(
+        revealedCard
+          ? `Topo do deck de ${targetState.username}: ${revealedCard.name}.`
+          : `Topo do deck de ${targetState.username}: carta desconhecida.`
+      );
+    }
+  }
+
+  return notices.filter(Boolean).join(' ');
+}
+
+function resolveAutomationTarget({ automation, actingPlayerState, playerStatesByUserId, targetUserId }) {
+  if (!automation?.targetScope) {
+    return null;
+  }
+
+  const normalizedTargetUserId = Number(targetUserId);
+  if (!Number.isInteger(normalizedTargetUserId)) {
+    throw new AppError('Esta carta exige a selecao de um alvo valido.', 400);
+  }
+
+  const targetState = playerStatesByUserId.get(normalizedTargetUserId);
+  if (!targetState) {
+    throw new AppError('O alvo selecionado nao esta disponivel na partida.', 404);
+  }
+
+  if (automation.targetScope === 'other-player' && targetState.user_id === actingPlayerState.user_id) {
+    throw new AppError('Esta carta exige outro jogador como alvo.', 400);
+  }
+
+  return targetState;
+}
+
+function resolveEffectTargetState({ effect, actingPlayerState, selectedTargetState }) {
+  if (effect.target === 'self' || !effect.target) {
+    return actingPlayerState;
+  }
+
+  if (!selectedTargetState) {
+    throw new AppError('O efeito da carta exige um alvo selecionado.', 400);
+  }
+
+  return selectedTargetState;
+}
+
+async function createGeneratedCardEntry({ ownerId, cardId }) {
+  const generatedCard = await resolveCardById({ ownerId, cardId });
+  if (!generatedCard) {
+    throw new AppError(`Carta ${cardId} nao encontrada no catalogo.`, 404);
+  }
+
+  return {
+    cardId: generatedCard.id,
+    instanceId: createCardInstanceId(generatedCard.id),
+  };
+}
+
+function createCardInstanceId(cardId) {
+  return `${cardId}::generated::${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function shuffleCardEntries(cards) {
+  const entries = [...cards];
+  for (let index = entries.length - 1; index > 0; index -= 1) {
+    const randomIndex = Math.floor(Math.random() * (index + 1));
+    [entries[index], entries[randomIndex]] = [entries[randomIndex], entries[index]];
+  }
+
+  return entries;
 }
 
 async function requireActiveTurnContext({ roomId, userId, includeAllPlayers = false }) {
@@ -874,7 +1142,15 @@ async function finalizeActionResponse({ roomId, userId, includeSnapshot, actionS
     return actionState;
   }
 
-  return getMatchSnapshot({ roomId, userId });
+  const snapshot = await getMatchSnapshot({ roomId, userId });
+  if (!actionState?.notice) {
+    return snapshot;
+  }
+
+  return {
+    ...snapshot,
+    actionNotice: actionState.notice,
+  };
 }
 
 module.exports = {

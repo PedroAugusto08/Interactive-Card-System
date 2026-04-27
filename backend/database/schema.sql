@@ -74,7 +74,6 @@ CREATE TABLE IF NOT EXISTS match_players (
   is_defeated BOOLEAN NOT NULL DEFAULT FALSE,
   deck_cards_json JSONB NOT NULL DEFAULT '[]'::jsonb,
   hand_cards_json JSONB NOT NULL DEFAULT '[]'::jsonb,
-  discard_cards_json JSONB NOT NULL DEFAULT '[]'::jsonb,
   exile_cards_json JSONB NOT NULL DEFAULT '[]'::jsonb,
   PRIMARY KEY (match_id, user_id)
 );

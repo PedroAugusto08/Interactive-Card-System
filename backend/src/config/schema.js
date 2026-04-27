@@ -93,7 +93,6 @@ async function ensureSchema() {
       is_defeated BOOLEAN NOT NULL DEFAULT FALSE,
       deck_cards_json JSONB NOT NULL DEFAULT '[]'::jsonb,
       hand_cards_json JSONB NOT NULL DEFAULT '[]'::jsonb,
-      discard_cards_json JSONB NOT NULL DEFAULT '[]'::jsonb,
       exile_cards_json JSONB NOT NULL DEFAULT '[]'::jsonb,
       PRIMARY KEY (match_id, user_id)
     );
@@ -102,6 +101,11 @@ async function ensureSchema() {
   await query(`
     ALTER TABLE match_players
     ADD COLUMN IF NOT EXISTS has_used_card_action_this_turn BOOLEAN NOT NULL DEFAULT FALSE;
+  `);
+
+  await query(`
+    ALTER TABLE match_players
+    DROP COLUMN IF EXISTS discard_cards_json;
   `);
 
   await query(`

@@ -40,6 +40,39 @@ function formatPerfLabel(metrics) {
   return ` (${Math.round(metrics.totalMs)}ms)`;
 }
 
+function getCardActionAutomation(card, action) {
+  if (!card) {
+    return null;
+  }
+
+  return action === 'match:playCard' ? card.playAutomation || null : card.discardAutomation || null;
+}
+
+function getTargetOptions(players, currentUserId, targetScope) {
+  if (!Array.isArray(players)) {
+    return [];
+  }
+
+  if (targetScope === 'other-player') {
+    return players.filter((player) => player.user_id !== currentUserId);
+  }
+
+  if (targetScope === 'selected-player') {
+    return players;
+  }
+
+  return [];
+}
+
+function buildActionFeedback(logMessage, notice, metrics) {
+  const text = [logMessage, notice].filter(Boolean).join(' ');
+  if (!text) {
+    return '';
+  }
+
+  return `${text}${import.meta.env.DEV ? formatPerfLabel(metrics) : ''}`;
+}
+
 export function MatchPage() {
   const token = useAuthStore((state) => state.token);
   const user = useAuthStore((state) => state.user);
@@ -63,6 +96,7 @@ export function MatchPage() {
   const [selectedHandCardId, setSelectedHandCardId] = useState(null);
   const [isEndTurnConfirmOpen, setIsEndTurnConfirmOpen] = useState(false);
   const [isExileModalOpen, setIsExileModalOpen] = useState(false);
+  const [pendingCardAction, setPendingCardAction] = useState(null);
 
   const isSocketConnected = Boolean(socket?.connected);
   const activeTurnPlayerId = currentMatch?.currentTurnPlayerId;
@@ -200,8 +234,10 @@ export function MatchPage() {
           setMatchData(response.snapshot);
         }
         if (response?.log) {
-          setSyncMessage(`${response.log.message}${import.meta.env.DEV ? formatPerfLabel(response.metrics) : ''}`);
+          setSyncMessage(buildActionFeedback(response.log.message, response.notice, response.metrics));
           appendMatchLog(response.log);
+        } else if (response?.notice) {
+          setSyncMessage(buildActionFeedback('', response.notice, response.metrics));
         }
         if (import.meta.env.DEV && response?.metrics) {
           console.info('[match perf][client]', action, response.metrics);
@@ -216,12 +252,16 @@ export function MatchPage() {
             roomId: currentRoom.id,
             token,
             cardId: payload.cardId,
+            targetUserId: payload.targetUserId,
+            selectedExileCardId: payload.selectedExileCardId,
           });
         } else if (action === 'match:discardCard') {
           snapshot = await matchApi.discardCard({
             roomId: currentRoom.id,
             token,
             cardId: payload.cardId,
+            targetUserId: payload.targetUserId,
+            selectedExileCardId: payload.selectedExileCardId,
           });
         } else if (action === 'match:endTurn') {
           snapshot = await matchApi.endTurn({ roomId: currentRoom.id, token });
@@ -232,6 +272,7 @@ export function MatchPage() {
             ...snapshot,
             matchPlayers: snapshot.playerStates || [],
           });
+          setSyncMessage(snapshot.actionNotice || '');
         }
       }
     } catch (error) {
@@ -246,7 +287,6 @@ export function MatchPage() {
   const currentZones = currentUserState?.zones || {
     deckCount: 0,
     handCount: 0,
-    discardCount: 0,
     exileCount: 0,
   };
   const handCards = currentUserState?.handCards || [];
@@ -274,6 +314,68 @@ export function MatchPage() {
     setIsEndTurnConfirmOpen(false);
     handleAction('match:endTurn');
   }
+
+  function openCardAction(action, cardId) {
+    const targetCard = handCards.find((card) => card.instanceId === cardId);
+    if (!targetCard) {
+      return;
+    }
+
+    const automation = getCardActionAutomation(targetCard, action);
+    const targetOptions = getTargetOptions(players, user?.id, automation?.targetScope);
+    const requiresTarget = Boolean(automation?.targetScope);
+    const requiresExileSelection = automation?.selection === 'own-exile-card' && exileCards.length > 0;
+
+    if (!requiresTarget && !requiresExileSelection) {
+      handleAction(action, { cardId });
+      return;
+    }
+
+    setLocalError('');
+    setPendingCardAction({
+      action,
+      cardId,
+      cardName: targetCard.name,
+      automation,
+      targetUserId: targetOptions[0]?.user_id || null,
+      selectedExileCardId: requiresExileSelection ? exileCards[0]?.instanceId || null : null,
+    });
+  }
+
+  function closePendingCardAction() {
+    setPendingCardAction(null);
+  }
+
+  async function handleConfirmPendingCardAction() {
+    if (!pendingCardAction) {
+      return;
+    }
+
+    const requiresTarget = Boolean(pendingCardAction.automation?.targetScope);
+    const requiresExileSelection =
+      pendingCardAction.automation?.selection === 'own-exile-card' && exileCards.length > 0;
+
+    if (requiresTarget && !pendingCardAction.targetUserId) {
+      setLocalError('Selecione um alvo para essa carta.');
+      return;
+    }
+
+    if (requiresExileSelection && !pendingCardAction.selectedExileCardId) {
+      setLocalError('Selecione uma carta do seu exilio.');
+      return;
+    }
+
+    const payload = {
+      cardId: pendingCardAction.cardId,
+      targetUserId: pendingCardAction.targetUserId || undefined,
+      selectedExileCardId: pendingCardAction.selectedExileCardId || undefined,
+    };
+
+    closePendingCardAction();
+    await handleAction(pendingCardAction.action, payload);
+  }
+
+  const pendingTargetOptions = getTargetOptions(players, user?.id, pendingCardAction?.automation?.targetScope);
 
   return (
     <section className="match-shell">
@@ -411,8 +513,8 @@ export function MatchPage() {
               canDiscard={availableActions.includes('discardCard')}
               canPlay={availableActions.includes('playCard')}
               isSubmitting={isSubmitting}
-              onDiscardCard={(cardId) => handleAction('match:discardCard', { cardId })}
-              onPlayCard={(cardId) => handleAction('match:playCard', { cardId })}
+              onDiscardCard={(cardId) => openCardAction('match:discardCard', cardId)}
+              onPlayCard={(cardId) => openCardAction('match:playCard', cardId)}
               onSelectCard={setSelectedHandCardId}
               selectedCardId={selectedHandCardId}
             />
@@ -443,6 +545,87 @@ export function MatchPage() {
         title="Confirmar encerramento"
       >
         <p className="muted-text">Se quiser seguir a sequencia completa do turno, jogue ou descarte uma carta e depois compre.</p>
+      </Modal>
+
+      <Modal
+        cancelLabel="Cancelar"
+        confirmLabel={pendingCardAction?.action === 'match:discardCard' ? 'Descartar carta' : 'Jogar carta'}
+        description="Escolha os parametros necessarios para resolver o efeito automatizado."
+        isLoading={isSubmitting}
+        onClose={closePendingCardAction}
+        onConfirm={handleConfirmPendingCardAction}
+        open={Boolean(pendingCardAction)}
+        title={pendingCardAction ? `${pendingCardAction.cardName}: resolver efeito` : 'Resolver efeito'}
+      >
+        {pendingCardAction?.automation?.targetScope ? (
+          <div className="row-wrap">
+            {pendingTargetOptions.length ? (
+              pendingTargetOptions.map((player) => (
+                <Button
+                  key={player.user_id}
+                  onClick={() =>
+                    setPendingCardAction((current) =>
+                      current
+                        ? {
+                            ...current,
+                            targetUserId: player.user_id,
+                          }
+                        : current
+                    )
+                  }
+                  type="button"
+                  variant={pendingCardAction.targetUserId === player.user_id ? 'primary' : 'secondary'}
+                >
+                  {player.username}
+                </Button>
+              ))
+            ) : (
+              <p className="muted-text">Nenhum alvo disponivel para essa carta.</p>
+            )}
+          </div>
+        ) : null}
+
+        {pendingCardAction?.automation?.selection === 'own-exile-card' ? (
+          exileCards.length ? (
+            <div className="exile-modal-grid">
+              {exileCards.map((card) => (
+                <CardItem
+                  category={card.category}
+                  cost={card.category === 'imo' ? card.imoCost || 0 : undefined}
+                  costLabel="Custo Imo"
+                  description={card.effect}
+                  footer={
+                    <div className="row-wrap">
+                      <Button
+                        onClick={() =>
+                          setPendingCardAction((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  selectedExileCardId: card.instanceId,
+                                }
+                              : current
+                          )
+                        }
+                        size="sm"
+                        type="button"
+                        variant={pendingCardAction.selectedExileCardId === card.instanceId ? 'primary' : 'secondary'}
+                      >
+                        {pendingCardAction.selectedExileCardId === card.instanceId ? 'Selecionada' : 'Selecionar'}
+                      </Button>
+                    </div>
+                  }
+                  imageSrc={resolveCardImageUrl(card.imagePath)}
+                  key={card.instanceId}
+                  name={card.name}
+                  selected={pendingCardAction.selectedExileCardId === card.instanceId}
+                />
+              ))}
+            </div>
+          ) : (
+            <p className="muted-text">Seu exilio esta vazio; o efeito sera resolvido sem recuperar carta.</p>
+          )
+        ) : null}
       </Modal>
 
       <Modal

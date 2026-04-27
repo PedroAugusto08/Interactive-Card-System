@@ -12,6 +12,15 @@ test('getCardById resolves official card with imoCost metadata', () => {
   assert.equal(card.maxCopies, 3);
 });
 
+test('official cards expose structured automation metadata when needed', () => {
+  const visualizar = getCardById('visualizar');
+  const maldicao = getCardById('maldicao');
+
+  assert.equal(visualizar.playAutomation.targetScope, 'selected-player');
+  assert.equal(visualizar.discardAutomation.effects[0].type, 'moveTopDeckToExile');
+  assert.equal(maldicao.canDiscard, false);
+});
+
 test('mapImoCardRecordToCatalogCard maps persisted imo cards to catalog shape', () => {
   const card = mapImoCardRecordToCatalogCard({
     id: 7,
@@ -32,5 +41,8 @@ test('mapImoCardRecordToCatalogCard maps persisted imo cards to catalog shape', 
     effect: 'Carta personalizada de teste.',
     imagePath: 'data:image/png;base64,abc',
     isCustom: true,
+    canDiscard: true,
+    playAutomation: null,
+    discardAutomation: null,
   });
 });
