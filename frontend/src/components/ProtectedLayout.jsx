@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate, useOutlet } from 'react-router-dom';
 
 import { useAuthStore } from '../stores/authStore';
 import { Button } from './ui/Button';
@@ -8,6 +8,8 @@ import { Input } from './ui/Input';
 // Layout principal das telas privadas com menu superior.
 export function ProtectedLayout() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const outlet = useOutlet();
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
   const updateUser = useAuthStore((state) => state.updateUser);
@@ -16,11 +18,18 @@ export function ProtectedLayout() {
   const [username, setUsername] = useState(user?.username || '');
   const [email, setEmail] = useState(user?.email || '');
   const [password, setPassword] = useState('');
+  const [displayedOutlet, setDisplayedOutlet] = useState(outlet);
+  const [displayedPath, setDisplayedPath] = useState(location.pathname);
+  const [pageTransitionStage, setPageTransitionStage] = useState('enter');
 
   useEffect(() => {
-    setUsername(user?.username || '');
-    setEmail(user?.email || '');
-    setPassword('');
+    const timeoutId = window.setTimeout(() => {
+      setUsername(user?.username || '');
+      setEmail(user?.email || '');
+      setPassword('');
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
   }, [user?.email, user?.username]);
 
   useEffect(() => {
@@ -38,6 +47,27 @@ export function ProtectedLayout() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isProfileOpen]);
+
+  useEffect(() => {
+    if (location.pathname === displayedPath) {
+      return undefined;
+    }
+
+    const exitTimeoutId = window.setTimeout(() => {
+      setPageTransitionStage('exit');
+    }, 0);
+
+    const swapTimeoutId = window.setTimeout(() => {
+      setDisplayedOutlet(outlet);
+      setDisplayedPath(location.pathname);
+      setPageTransitionStage('enter');
+    }, 150);
+
+    return () => {
+      window.clearTimeout(exitTimeoutId);
+      window.clearTimeout(swapTimeoutId);
+    };
+  }, [displayedPath, location.pathname, outlet]);
 
   function handleLogout() {
     logout();
@@ -193,7 +223,9 @@ export function ProtectedLayout() {
       </aside>
 
       <main className="page-area">
-        <Outlet />
+        <div className={['page-transition', `page-transition--${pageTransitionStage}`].join(' ')}>
+          {displayedOutlet}
+        </div>
       </main>
     </div>
   );
