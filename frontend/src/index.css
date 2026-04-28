@@ -350,6 +350,10 @@ ul {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
+.profile-trigger__avatar--image {
+  object-fit: cover;
+}
+
 .profile-overlay {
   position: fixed;
   inset: 0;
@@ -391,7 +395,9 @@ ul {
 .profile-sidebar__section,
 .profile-form__actions,
 .profile-identity-card,
-.profile-identity-card__copy {
+.profile-identity-card__copy,
+.profile-photo-card,
+.profile-photo-card__copy {
   display: grid;
 }
 
@@ -448,6 +454,10 @@ ul {
   box-shadow: 0 0 30px rgba(124, 92, 255, 0.12);
 }
 
+.profile-identity-card__avatar--image {
+  object-fit: cover;
+}
+
 .profile-identity-card__copy {
   gap: 6px;
   min-width: 0;
@@ -492,6 +502,47 @@ ul {
   border-radius: 16px;
   min-height: 48px;
   padding-inline: 16px;
+}
+
+.profile-photo-card {
+  gap: 14px;
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0)),
+    rgba(255, 255, 255, 0.03);
+}
+
+.profile-photo-card__preview {
+  width: 96px;
+  height: 96px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 24px;
+  border: 1px solid rgba(124, 92, 255, 0.18);
+  background:
+    radial-gradient(circle at 30% 30%, rgba(124, 92, 255, 0.28), transparent 58%),
+    linear-gradient(135deg, rgba(124, 92, 255, 0.14), rgba(79, 140, 255, 0.12));
+  box-shadow: 0 0 30px rgba(124, 92, 255, 0.08);
+}
+
+.profile-photo-card__image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.profile-photo-card__fallback {
+  color: var(--text-primary);
+  font-family: 'Poppins', 'Inter', sans-serif;
+  font-size: 1.7rem;
+  font-weight: 800;
+}
+
+.profile-photo-card__copy {
+  gap: 6px;
 }
 
 .profile-form {
@@ -2930,6 +2981,11 @@ ul {
     width: min(380px, 100%);
   }
 
+  .profile-photo-card__preview {
+    width: 88px;
+    height: 88px;
+  }
+
   .match-right-column {
     grid-column: auto;
   }
@@ -3027,6 +3083,10 @@ ul {
   .topbar-nav-link {
     flex: 1 1 0;
     text-align: center;
+  }
+
+  .profile-form__actions {
+    grid-template-columns: 1fr;
   }
 
   .deck-row-card {

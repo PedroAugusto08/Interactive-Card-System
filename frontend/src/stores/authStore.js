@@ -6,17 +6,32 @@ import { STORAGE_KEYS } from '../utils/storageKeys';
 // Store de autenticacao com persistencia local.
 export const useAuthStore = create(
   persist(
-    (set) => ({
+    (set, get) => ({
       token: null,
       user: null,
       isAuthenticated: false,
 
       // Salva sessao autenticada.
       setAuth: (token, user) =>
-        set({
-          token,
-          user,
-          isAuthenticated: true,
+        set(() => {
+          const previousUser = get().user;
+          const isSameUser =
+            previousUser &&
+            user &&
+            ((previousUser.id && user.id && previousUser.id === user.id) ||
+              (previousUser.email && user.email && previousUser.email === user.email));
+
+          return {
+            token,
+            user:
+              isSameUser && previousUser?.profileImage && !user?.profileImage
+                ? {
+                    ...user,
+                    profileImage: previousUser.profileImage,
+                  }
+                : user,
+            isAuthenticated: true,
+          };
         }),
 
       // Atualiza parcialmente os dados do usuario na sessao local.

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate, useOutlet } from 'react-router-dom';
 
 import { useAuthStore } from '../stores/authStore';
@@ -22,6 +22,7 @@ export function ProtectedLayout() {
   const [displayedPath, setDisplayedPath] = useState(location.pathname);
   const [pageTransitionStage, setPageTransitionStage] = useState('enter');
   const userInitial = (user?.username || user?.email || 'J').trim().charAt(0).toUpperCase();
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -89,6 +90,35 @@ export function ProtectedLayout() {
   function closeProfileSidebar() {
     setIsProfileOpen(false);
     setActiveSection('');
+  }
+
+  function handleOpenPhotoPicker() {
+    fileInputRef.current?.click();
+  }
+
+  function handleProfileImageChange(event) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      event.target.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        updateUser({ profileImage: reader.result });
+      }
+    };
+    reader.readAsDataURL(file);
+    event.target.value = '';
+  }
+
+  function handleRemoveProfileImage() {
+    updateUser({ profileImage: '' });
   }
 
   function handleUsernameSubmit(event) {
@@ -169,9 +199,17 @@ export function ProtectedLayout() {
             onClick={toggleProfileSidebar}
             type="button"
           >
-            <span aria-hidden="true" className="profile-trigger__avatar">
-              {userInitial}
-            </span>
+            {user?.profileImage ? (
+              <img
+                alt={`Foto de perfil de ${user?.username || 'Jogador'}`}
+                className="profile-trigger__avatar profile-trigger__avatar--image"
+                src={user.profileImage}
+              />
+            ) : (
+              <span aria-hidden="true" className="profile-trigger__avatar">
+                {userInitial}
+              </span>
+            )}
           </button>
         </div>
       </header>
@@ -188,7 +226,15 @@ export function ProtectedLayout() {
       <aside className={['profile-sidebar', isProfileOpen ? 'is-open' : ''].join(' ')} id="profile-sidebar">
         <div className="profile-sidebar__header">
           <div className="profile-identity-card">
-            <div className="profile-identity-card__avatar">{userInitial}</div>
+            {user?.profileImage ? (
+              <img
+                alt={`Foto de perfil de ${user?.username || 'Jogador'}`}
+                className="profile-identity-card__avatar profile-identity-card__avatar--image"
+                src={user.profileImage}
+              />
+            ) : (
+              <div className="profile-identity-card__avatar">{userInitial}</div>
+            )}
             <div className="profile-identity-card__copy">
               <strong className="profile-identity-card__name">{user?.username || 'Jogador'}</strong>
               <span className="profile-identity-card__email">{user?.email || 'Sem login cadastrado'}</span>
@@ -208,6 +254,61 @@ export function ProtectedLayout() {
           <span className="profile-section-label">Conta</span>
 
           <div className="profile-sidebar__actions">
+            <input
+              accept="image/*"
+              className="sr-only"
+              onChange={handleProfileImageChange}
+              ref={fileInputRef}
+              type="file"
+            />
+
+            <Button
+              className="profile-action"
+              onClick={() => setActiveSection(activeSection === 'photo' ? '' : 'photo')}
+              type="button"
+              variant="secondary"
+            >
+              Alterar foto de perfil
+            </Button>
+
+            {activeSection === 'photo' ? (
+              <div className="profile-photo-card">
+                <div className="profile-photo-card__preview">
+                  {user?.profileImage ? (
+                    <img
+                      alt={`Preview da foto de perfil de ${user?.username || 'Jogador'}`}
+                      className="profile-photo-card__image"
+                      src={user.profileImage}
+                    />
+                  ) : (
+                    <span className="profile-photo-card__fallback">{userInitial}</span>
+                  )}
+                </div>
+
+                <div className="profile-photo-card__copy">
+                  <strong>Foto de perfil</strong>
+                  <span className="muted-text compact">
+                    Use uma imagem quadrada para um resultado mais elegante.
+                  </span>
+                </div>
+
+                <div className="profile-form__actions">
+                  <Button onClick={handleOpenPhotoPicker} type="button" variant="secondary">
+                    {user?.profileImage ? 'Trocar foto' : 'Enviar foto'}
+                  </Button>
+                  {user?.profileImage ? (
+                    <Button onClick={handleRemoveProfileImage} type="button" variant="secondary">
+                      Remover
+                    </Button>
+                  ) : (
+                    <Button onClick={() => setActiveSection('')} type="button" variant="secondary">
+                      Cancelar
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ) : null}
+
             <Button
               className="profile-action"
               onClick={() => setActiveSection(activeSection === 'username' ? '' : 'username')}
