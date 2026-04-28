@@ -21,6 +21,7 @@ export function ProtectedLayout() {
   const [displayedOutlet, setDisplayedOutlet] = useState(outlet);
   const [displayedPath, setDisplayedPath] = useState(location.pathname);
   const [pageTransitionStage, setPageTransitionStage] = useState('enter');
+  const userInitial = (user?.username || user?.email || 'J').trim().charAt(0).toUpperCase();
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -120,24 +121,56 @@ export function ProtectedLayout() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <nav className="menu-links">
-          <NavLink to="/lobby">Lobby</NavLink>
-          <NavLink to="/decks">Decks</NavLink>
-          <NavLink to="/match">Partida</NavLink>
-        </nav>
+        <div className="topbar-left">
+          <div className="topbar-brand" aria-label="Acedia Deck">
+            <span aria-hidden="true" className="topbar-brand__mark">
+              <span className="topbar-brand__mark-core" />
+            </span>
+            <div className="topbar-brand__copy">
+              <strong className="topbar-brand__name">Acedia</strong>
+              <span className="topbar-brand__subtitle">Deck System</span>
+            </div>
+          </div>
+
+          <nav className="menu-links">
+            <NavLink
+              className={({ isActive }) =>
+                ['topbar-nav-link', isActive ? 'active' : ''].filter(Boolean).join(' ')
+              }
+              to="/lobby"
+            >
+              Lobby
+            </NavLink>
+            <NavLink
+              className={({ isActive }) =>
+                ['topbar-nav-link', isActive ? 'active' : ''].filter(Boolean).join(' ')
+              }
+              to="/decks"
+            >
+              Decks
+            </NavLink>
+            <NavLink
+              className={({ isActive }) =>
+                ['topbar-nav-link', isActive ? 'active' : ''].filter(Boolean).join(' ')
+              }
+              to="/match"
+            >
+              Partida
+            </NavLink>
+          </nav>
+        </div>
 
         <div className="topbar-right">
           <button
             aria-controls="profile-sidebar"
             aria-expanded={isProfileOpen}
-            aria-label="Abrir menu do usuário"
+            aria-label="Abrir menu do usuario"
             className="profile-trigger"
             onClick={toggleProfileSidebar}
             type="button"
           >
-            <span aria-hidden="true" className="profile-trigger__icon">
-              <span className="profile-trigger__head" />
-              <span className="profile-trigger__body" />
+            <span aria-hidden="true" className="profile-trigger__avatar">
+              {userInitial}
             </span>
           </button>
         </div>
@@ -145,7 +178,7 @@ export function ProtectedLayout() {
 
       {isProfileOpen ? (
         <button
-          aria-label="Fechar menu do usuário"
+          aria-label="Fechar menu do usuario"
           className="profile-overlay"
           onClick={closeProfileSidebar}
           type="button"
@@ -154,71 +187,98 @@ export function ProtectedLayout() {
 
       <aside className={['profile-sidebar', isProfileOpen ? 'is-open' : ''].join(' ')} id="profile-sidebar">
         <div className="profile-sidebar__header">
-          <div className="stack-gap" style={{ gap: '6px' }}>
-            <p className="welcome-text">Bem-vindo, {user?.username || 'Jogador'}!</p>
-            <span className="muted-text compact">{user?.email || 'Sem login cadastrado'}</span>
+          <div className="profile-identity-card">
+            <div className="profile-identity-card__avatar">{userInitial}</div>
+            <div className="profile-identity-card__copy">
+              <strong className="profile-identity-card__name">{user?.username || 'Jogador'}</strong>
+              <span className="profile-identity-card__email">{user?.email || 'Sem login cadastrado'}</span>
+              <span className="profile-identity-card__status">
+                <span aria-hidden="true" className="profile-identity-card__status-dot" />
+                Online
+              </span>
+            </div>
           </div>
 
-          <button aria-label="Fechar menu do usuário" className="profile-close" onClick={closeProfileSidebar} type="button">
-            X
+          <button aria-label="Fechar menu do usuario" className="profile-close" onClick={closeProfileSidebar} type="button">
+            ×
           </button>
         </div>
 
-        <div className="profile-sidebar__actions">
-          <Button
-            className="profile-action"
-            onClick={() => setActiveSection(activeSection === 'username' ? '' : 'username')}
-            variant="secondary"
-          >
-            Alterar nome de usuário
-          </Button>
+        <div className="profile-sidebar__section">
+          <span className="profile-section-label">Conta</span>
 
-          {activeSection === 'username' ? (
-            <form className="profile-form" onSubmit={handleUsernameSubmit}>
-              <Input
-                label="Novo nome"
-                onChange={(event) => setUsername(event.target.value)}
-                placeholder="Digite o nome de usuário"
-                value={username}
-              />
+          <div className="profile-sidebar__actions">
+            <Button
+              className="profile-action"
+              onClick={() => setActiveSection(activeSection === 'username' ? '' : 'username')}
+              variant="secondary"
+            >
+              Alterar nome de usuario
+            </Button>
 
-              <Button type="submit">Salvar nome</Button>
-            </form>
-          ) : null}
+            {activeSection === 'username' ? (
+              <form className="profile-form profile-form--compact" onSubmit={handleUsernameSubmit}>
+                <Input
+                  label="Nome de usuario"
+                  onChange={(event) => setUsername(event.target.value)}
+                  placeholder="Digite o nome de usuario"
+                  value={username}
+                />
 
-          <Button
-            className="profile-action"
-            onClick={() => setActiveSection(activeSection === 'email' ? '' : 'email')}
-            variant="secondary"
-          >
-            Alterar login
-          </Button>
+                <div className="profile-form__actions">
+                  <Button onClick={() => setActiveSection('')} type="button" variant="secondary">
+                    Cancelar
+                  </Button>
+                  <Button type="submit">Salvar</Button>
+                </div>
+              </form>
+            ) : null}
 
-          {activeSection === 'email' ? (
-            <form className="profile-form" onSubmit={handleEmailSubmit}>
-              <Input
-                label="Novo login"
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="Digite o login"
-                type="email"
-                value={email}
-              />
+            <Button
+              className="profile-action"
+              onClick={() => setActiveSection(activeSection === 'email' ? '' : 'email')}
+              variant="secondary"
+            >
+              Alterar login
+            </Button>
 
-              <Input
-                label="Nova senha"
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="Digite a nova senha"
-                type="password"
-                value={password}
-              />
+            {activeSection === 'email' ? (
+              <form className="profile-form" onSubmit={handleEmailSubmit}>
+                <Input
+                  label="Novo login"
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="Digite o login"
+                  type="email"
+                  value={email}
+                />
 
-              <Button type="submit">Salvar login e senha</Button>
-            </form>
-          ) : null}
+                <Input
+                  label="Nova senha"
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="Digite a nova senha"
+                  type="password"
+                  value={password}
+                />
 
-          <Button className="profile-action" onClick={handleLogout} variant="danger">
-            Sair
-          </Button>
+                <div className="profile-form__actions">
+                  <Button onClick={() => setActiveSection('')} type="button" variant="secondary">
+                    Cancelar
+                  </Button>
+                  <Button type="submit">Salvar</Button>
+                </div>
+              </form>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="profile-sidebar__section">
+          <span className="profile-section-label">Sessao</span>
+
+          <div className="profile-sidebar__actions">
+            <Button className="profile-action" onClick={handleLogout} variant="danger">
+              Sair
+            </Button>
+          </div>
         </div>
       </aside>
 
