@@ -347,6 +347,156 @@ function describeAutomationPhase(automation, catalogMap) {
   return 'resolve um efeito automatico';
 }
 
+function EffectToggleButton({ title, description, active, onClick }) {
+  return (
+    <button
+      aria-pressed={active}
+      className={['imo-toggle-button', active ? 'is-active' : ''].join(' ')}
+      onClick={onClick}
+      type="button"
+    >
+      <div className="imo-toggle-button__top">
+        <strong>{title}</strong>
+        <Badge tone={active ? 'primary' : 'secondary'}>{active ? 'Ativo' : 'Inativo'}</Badge>
+      </div>
+      <span>{description}</span>
+    </button>
+  );
+}
+
+function EffectDropdown({ templates, selectedTemplateId, onSelect }) {
+  const selectedTemplate = templates.find((template) => template.id === selectedTemplateId) || null;
+
+  return (
+    <details className="imo-effect-dropdown">
+      <summary className="imo-effect-dropdown__trigger">
+        <div className="stack-gap" style={{ gap: '2px' }}>
+          <span className="status-label">Selecionar efeito</span>
+          <strong>{selectedTemplate?.label || 'Escolha um efeito'}</strong>
+        </div>
+        <span aria-hidden="true" className="imo-effect-dropdown__caret">
+          v
+        </span>
+      </summary>
+
+      <div className="imo-effect-dropdown__menu" role="listbox">
+        {templates.map((template) => {
+          const isSelected = template.id === selectedTemplateId;
+
+          return (
+            <button
+              aria-pressed={isSelected}
+              className={['imo-effect-dropdown__option', isSelected ? 'is-selected' : ''].join(' ')}
+              key={template.id}
+              onClick={(event) => {
+                onSelect(template.id);
+                event.currentTarget.closest('details')?.removeAttribute('open');
+              }}
+              type="button"
+            >
+              <span>{template.label}</span>
+              {isSelected ? <Badge tone="primary">Escolhido</Badge> : null}
+            </button>
+          );
+        })}
+      </div>
+    </details>
+  );
+}
+
+function GeneratedCardDropdown({ cards, selectedCardId, onSelect }) {
+  const selectedCard = cards.find((card) => card.id === selectedCardId) || null;
+
+  return (
+    <details className="imo-effect-dropdown imo-generated-dropdown">
+      <summary className="imo-effect-dropdown__trigger">
+        <div className="stack-gap" style={{ gap: '2px' }}>
+          <span className="status-label">Selecionar carta</span>
+          <strong>{selectedCard?.name || 'Escolha uma carta'}</strong>
+        </div>
+        <span aria-hidden="true" className="imo-effect-dropdown__caret">
+          v
+        </span>
+      </summary>
+
+      <div className="imo-effect-dropdown__menu" role="listbox">
+        {cards.map((card) => {
+          const isSelected = card.id === selectedCardId;
+
+          return (
+            <button
+              aria-pressed={isSelected}
+              className={['imo-effect-dropdown__option', isSelected ? 'is-selected' : ''].join(' ')}
+              key={card.id}
+              onClick={(event) => {
+                onSelect(card.id);
+                event.currentTarget.closest('details')?.removeAttribute('open');
+              }}
+              type="button"
+            >
+              <div className="imo-generated-dropdown__meta stack-gap" style={{ gap: '6px' }}>
+                <span>{card.name}</span>
+                <div className="row-wrap">
+                  <Badge tone="secondary">{CATEGORY_LABEL[card.category] || 'Carta'}</Badge>
+                  {card.category === 'imo' ? (
+                    <Badge tone="accent">Imo {card.imoCost || 0}</Badge>
+                  ) : null}
+                </div>
+              </div>
+              {isSelected ? <Badge tone="primary">Escolhida</Badge> : null}
+            </button>
+          );
+        })}
+      </div>
+    </details>
+  );
+}
+
+function AutomationPhaseCard({
+  title,
+  description,
+  templates,
+  selectedTemplateId,
+  onSelectTemplate,
+  disabled = false,
+  disabledMessage = '',
+  children = null,
+}) {
+  const selectedTemplate = templates.find((template) => template.id === selectedTemplateId) || null;
+
+  return (
+    <section className={['imo-phase-card', disabled ? 'is-disabled' : ''].join(' ')}>
+      <div className="imo-phase-card__header">
+        <div className="stack-gap" style={{ gap: '4px' }}>
+          <h4>{title}</h4>
+          <p>{description}</p>
+        </div>
+        {selectedTemplate && !disabled ? <Badge tone="secondary">{selectedTemplate.label}</Badge> : null}
+      </div>
+
+      {disabled ? (
+        <div className="imo-phase-card__locked">
+          <Badge tone="danger">Bloqueado</Badge>
+          <p>{disabledMessage}</p>
+        </div>
+      ) : (
+        <>
+          <EffectDropdown
+            onSelect={onSelectTemplate}
+            selectedTemplateId={selectedTemplateId}
+            templates={templates}
+          />
+          <div className="imo-phase-card__selection">
+            <span className="status-label">Efeito selecionado</span>
+            <p>{selectedTemplate?.description || 'Escolha um efeito para continuar.'}</p>
+          </div>
+          {children}
+        </>
+      )}
+    </section>
+  );
+}
+
 function DeckMetricCard({ metric }) {
   return (
     <article className={['deck-metric-card', `is-${metric.state}`].join(' ')}>
@@ -1106,127 +1256,122 @@ export function DecksPage() {
                                 <div className="imo-automation-builder">
                                   <div className="imo-automation-builder__header">
                                     <div className="stack-gap" style={{ gap: '4px' }}>
-                                      <strong>Automacao opcional</strong>
+                                      <strong>Automacao da carta</strong>
                                       <span className="muted-text compact">
-                                        O texto da carta continua livre, mas aqui voce escolhe o que o sistema vai resolver sozinho.
+                                        Monte os efeitos automatizados da carta sem mexer no texto livre dela.
                                       </span>
                                     </div>
 
                                     <div className="imo-automation-builder__toggles">
-                                      <button
-                                        className={['deck-toggle-chip', imoCanDiscard ? 'is-active' : ''].join(' ')}
+                                      <EffectToggleButton
+                                        active={!imoCanDiscard}
+                                        description="Quando ativo, a fase de descarte fica bloqueada e a carta nunca vai para o exilio por descarte."
                                         onClick={() => handleImoFlagToggle('canDiscard')}
-                                        type="button"
-                                      >
-                                        {imoCanDiscard ? 'Pode descartar' : 'Nao descarta'}
-                                      </button>
-                                      <button
-                                        className={[
-                                          'deck-toggle-chip',
-                                          imoCanPlayTogether ? 'is-active' : '',
-                                        ].join(' ')}
+                                        title="Nao descarta"
+                                      />
+                                      <EffectToggleButton
+                                        active={imoCanPlayTogether}
+                                        description="Quando ativo, esta carta permite ser jogada junto com outra carta da mao."
                                         onClick={() => handleImoFlagToggle('canPlayTogether')}
-                                        type="button"
-                                      >
-                                        {imoCanPlayTogether ? 'Permite jogar junto' : 'Sem combo'}
-                                      </button>
+                                        title={imoCanPlayTogether ? 'Permite combo' : 'Sem combo'}
+                                      />
                                     </div>
                                   </div>
 
                                   <div className="imo-automation-grid">
-                                    <div className="imo-automation-phase">
-                                      <label className="ui-input">
-                                        <span className="ui-input__label">Ao jogar</span>
-                                        <select
-                                          className="ui-input__field"
-                                          onChange={(event) =>
-                                            handleImoAutomationTemplateChange('play', event.target.value)
-                                          }
-                                          value={imoPlayTemplateId}
-                                        >
-                                          {IMO_PLAY_TEMPLATES.map((template) => (
-                                            <option key={template.id} value={template.id}>
-                                              {template.label}
-                                            </option>
-                                          ))}
-                                        </select>
-                                        <span className="ui-input__description">
-                                          {
-                                            IMO_PLAY_TEMPLATES.find(
-                                              (template) => template.id === imoPlayTemplateId
-                                            )?.description
-                                          }
-                                        </span>
-                                      </label>
-
+                                    <AutomationPhaseCard
+                                      description="Escolha o que acontece quando a carta entra em jogo."
+                                      onSelectTemplate={(templateId) =>
+                                        handleImoAutomationTemplateChange('play', templateId)
+                                      }
+                                      selectedTemplateId={imoPlayTemplateId}
+                                      templates={IMO_PLAY_TEMPLATES}
+                                      title="Ao jogar"
+                                    >
                                       {templateRequiresGeneratedCardSelection(imoPlayTemplateId) ? (
-                                        <label className="ui-input">
-                                          <span className="ui-input__label">Carta gerada ao jogar</span>
-                                          <select
-                                            className="ui-input__field"
-                                            onChange={(event) =>
-                                              handleImoFormChange('playGeneratedCardId', event.target.value)
+                                        <div className="imo-generated-builder">
+                                          <div className="imo-generated-builder__header">
+                                            <div className="stack-gap" style={{ gap: '4px' }}>
+                                              <span className="status-label">Carta gerada</span>
+                                              <p className="muted-text compact">
+                                                Escolha qual carta o sistema deve criar na mao quando esse efeito acontecer.
+                                              </p>
+                                            </div>
+                                            {imoForm.playGeneratedCardId ? (
+                                              <Badge tone="secondary">
+                                                {catalogMap.get(imoForm.playGeneratedCardId)?.name || 'Carta escolhida'}
+                                              </Badge>
+                                            ) : null}
+                                          </div>
+
+                                          <GeneratedCardDropdown
+                                            cards={catalog}
+                                            onSelect={(cardId) =>
+                                              handleImoFormChange('playGeneratedCardId', cardId)
                                             }
-                                            value={imoForm.playGeneratedCardId}
-                                          >
-                                            <option value="">Selecione uma carta</option>
-                                            {catalog.map((card) => (
-                                              <option key={card.id} value={card.id}>
-                                                {card.name}
-                                              </option>
-                                            ))}
-                                          </select>
-                                        </label>
+                                            selectedCardId={imoForm.playGeneratedCardId}
+                                          />
+                                        </div>
                                       ) : null}
-                                    </div>
+                                    </AutomationPhaseCard>
 
-                                    <div className="imo-automation-phase">
-                                      <label className="ui-input">
-                                        <span className="ui-input__label">Ao descartar</span>
-                                        <select
-                                          className="ui-input__field"
-                                          disabled={!imoCanDiscard}
-                                          onChange={(event) =>
-                                            handleImoAutomationTemplateChange('discard', event.target.value)
-                                          }
-                                          value={imoCanDiscard ? imoDiscardTemplateId : 'none'}
-                                        >
-                                          {IMO_DISCARD_TEMPLATES.map((template) => (
-                                            <option key={template.id} value={template.id}>
-                                              {template.label}
-                                            </option>
-                                          ))}
-                                        </select>
-                                        <span className="ui-input__description">
-                                          {!imoCanDiscard
-                                            ? 'Desativado porque a carta esta marcada como nao descartavel.'
-                                            : IMO_DISCARD_TEMPLATES.find(
-                                                (template) => template.id === imoDiscardTemplateId
-                                              )?.description}
-                                        </span>
-                                      </label>
-
+                                    <AutomationPhaseCard
+                                      description="Escolha o que acontece quando a carta vai para o exilio por descarte."
+                                      disabled={!imoCanDiscard}
+                                      disabledMessage='Desativado porque esta carta esta marcada como "Nao descarta".'
+                                      onSelectTemplate={(templateId) =>
+                                        handleImoAutomationTemplateChange('discard', templateId)
+                                      }
+                                      selectedTemplateId={imoCanDiscard ? imoDiscardTemplateId : 'none'}
+                                      templates={IMO_DISCARD_TEMPLATES}
+                                      title="Ao descartar"
+                                    >
                                       {imoCanDiscard &&
                                       templateRequiresGeneratedCardSelection(imoDiscardTemplateId) ? (
-                                        <label className="ui-input">
-                                          <span className="ui-input__label">Carta gerada ao descartar</span>
-                                          <select
-                                            className="ui-input__field"
-                                            onChange={(event) =>
-                                              handleImoFormChange('discardGeneratedCardId', event.target.value)
+                                        <div className="imo-generated-builder">
+                                          <div className="imo-generated-builder__header">
+                                            <div className="stack-gap" style={{ gap: '4px' }}>
+                                              <span className="status-label">Carta gerada</span>
+                                              <p className="muted-text compact">
+                                                Escolha qual carta o sistema deve criar na mao quando esse descarte for resolvido.
+                                              </p>
+                                            </div>
+                                            {imoForm.discardGeneratedCardId ? (
+                                              <Badge tone="secondary">
+                                                {catalogMap.get(imoForm.discardGeneratedCardId)?.name || 'Carta escolhida'}
+                                              </Badge>
+                                            ) : null}
+                                          </div>
+
+                                          <GeneratedCardDropdown
+                                            cards={catalog}
+                                            onSelect={(cardId) =>
+                                              handleImoFormChange('discardGeneratedCardId', cardId)
                                             }
-                                            value={imoForm.discardGeneratedCardId}
-                                          >
-                                            <option value="">Selecione uma carta</option>
-                                            {catalog.map((card) => (
-                                              <option key={card.id} value={card.id}>
-                                                {card.name}
-                                              </option>
-                                            ))}
-                                          </select>
-                                        </label>
+                                            selectedCardId={imoForm.discardGeneratedCardId}
+                                          />
+                                        </div>
                                       ) : null}
+                                    </AutomationPhaseCard>
+                                  </div>
+
+                                  <div className="imo-automation-summary">
+                                    <div className="imo-automation-summary__header">
+                                      <strong>Resumo do efeito automatizado</strong>
+                                      <Badge tone="accent">{imoAutomationSummary.length} regra(s)</Badge>
                                     </div>
+
+                                    {imoAutomationSummary.length ? (
+                                      <ul className="imo-automation-preview__list">
+                                        {imoAutomationSummary.map((item) => (
+                                          <li key={item}>{item}</li>
+                                        ))}
+                                      </ul>
+                                    ) : (
+                                      <p className="muted-text compact">
+                                        Nenhum efeito automatico selecionado. A carta continuara totalmente manual.
+                                      </p>
+                                    )}
                                   </div>
                                 </div>
 
