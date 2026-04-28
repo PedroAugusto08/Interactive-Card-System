@@ -2386,12 +2386,14 @@ ul {
 }
 
 .deck-builder-right {
-  position: sticky;
-  top: 104px;
+  align-self: start;
 }
 
 .deck-side-panel {
   overflow: visible;
+  position: sticky;
+  top: 104px;
+  align-self: start;
 }
 
 .deck-side-panel__content {
@@ -2701,6 +2703,10 @@ ul {
   }
 
   .deck-builder-right {
+    align-self: auto;
+  }
+
+  .deck-side-panel {
     position: static;
   }
 

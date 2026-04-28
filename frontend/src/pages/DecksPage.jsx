@@ -322,7 +322,7 @@ function DeckCardControl({ card, quantity, onDecrease, onIncrease, onPreview }) 
       <div className="deck-catalog-card__body">
         {card.category === 'imo' && typeof cost === 'number' ? (
           <div className="deck-catalog-card__badges">
-            <Badge tone="accent">Custo {cost}</Badge>
+            <Badge tone="accent">Custo Mais {cost}</Badge>
           </div>
         ) : null}
 
@@ -763,7 +763,7 @@ export function DecksPage() {
       <div className="deck-builder-hero">
         <div className="stack-gap" style={{ gap: '10px' }}>
           <span className="deck-builder-hero__eyebrow">Deck Builder</span>
-          <h1 className="page-title">Monte um deck com cara de jogo digital</h1>
+          <h1 className="page-title">Monte seu deck</h1>
         </div>
 
         <form className="deck-name-bar" onSubmit={handleSaveDeck}>
@@ -797,7 +797,6 @@ export function DecksPage() {
         <div className="deck-builder-left">
           <Card
             className="deck-overview-card"
-            description="Resumo visual da composicao atual com foco em validacao rapida."
             title="Resumo do deck"
           >
             <div className="deck-feedback-stack">
@@ -827,7 +826,6 @@ export function DecksPage() {
 
           <Card
             className="deck-catalog-panel"
-            description="Busque, filtre e monte o deck com controles rapidos."
             title="Catalogo de cartas"
           >
             <div className="deck-catalog-toolbar">
@@ -1037,7 +1035,6 @@ export function DecksPage() {
         <div className="deck-builder-right">
           <Card
             className="deck-side-panel"
-            description="Painel premium para acompanhar o deck em tempo real."
             title="Meu Deck"
           >
             <div className="deck-side-panel__content">
