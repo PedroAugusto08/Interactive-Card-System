@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+import { buildDefaultImoForm } from '../utils/imoAutomation';
 import { STORAGE_KEYS } from '../utils/storageKeys';
 
 const DEFAULT_SECTION_STATE = {
@@ -8,16 +9,6 @@ const DEFAULT_SECTION_STATE = {
   division: true,
   imo: true,
 };
-
-function buildDefaultImoForm() {
-  return {
-    name: '',
-    description: '',
-    maxCopies: 1,
-    imoCost: 1,
-    imagePath: '',
-  };
-}
 
 export const useDeckStore = create(
   persist(

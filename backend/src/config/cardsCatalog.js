@@ -1,3 +1,5 @@
+const { normalizeCardAutomationConfig } = require('./cardAutomation');
+
 const CARD_CATEGORIES = {
   FIXED: 'fixed',
   DIVISION: 'division',
@@ -17,10 +19,7 @@ const DECK_RULES = {
 
 function defineCard(card) {
   return {
-    canDiscard: true,
-    canPlayTogether: false,
-    playAutomation: null,
-    discardAutomation: null,
+    ...normalizeCardAutomationConfig(),
     ...card,
   };
 }
@@ -290,6 +289,8 @@ function mapImoCardRecordToCatalogCard(record) {
     return null;
   }
 
+  const automationConfig = normalizeCardAutomationConfig(record.automation_json);
+
   return {
     id: `imo:${record.id}`,
     sourceId: record.id,
@@ -300,10 +301,7 @@ function mapImoCardRecordToCatalogCard(record) {
     effect: record.description,
     imagePath: record.image_path,
     isCustom: true,
-    canDiscard: true,
-    canPlayTogether: false,
-    playAutomation: null,
-    discardAutomation: null,
+    ...automationConfig,
   };
 }
 

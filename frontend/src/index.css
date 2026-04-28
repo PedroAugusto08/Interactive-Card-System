@@ -659,6 +659,56 @@ ul {
   grid-template-columns: minmax(0, 1.1fr) minmax(260px, 0.9fr);
 }
 
+.imo-automation-builder,
+.imo-automation-phase,
+.imo-automation-preview {
+  display: grid;
+  gap: 14px;
+}
+
+.imo-automation-builder {
+  padding: 18px;
+  border: 1px solid rgba(124, 92, 255, 0.18);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at top right, rgba(124, 92, 255, 0.12), transparent 32%),
+    rgba(255, 255, 255, 0.025);
+}
+
+.imo-automation-builder__header,
+.imo-automation-builder__toggles {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.imo-automation-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.imo-automation-phase {
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(7, 10, 18, 0.38);
+}
+
+.imo-automation-preview {
+  padding-top: 4px;
+}
+
+.imo-automation-preview__list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 8px;
+  color: var(--text-secondary);
+}
+
 .zones-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -2946,6 +2996,7 @@ ul {
   .grid-2,
   .stats-grid,
   .deck-meta-grid,
+  .imo-automation-grid,
   .zones-grid,
   .imo-creator-layout {
     grid-template-columns: 1fr;

@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { getCardById, mapImoCardRecordToCatalogCard } = require('./cardsCatalog');
+const { normalizeCardAutomationConfig } = require('./cardAutomation');
 
 test('getCardById resolves official card with imoCost metadata', () => {
   const card = getCardById('divisao');
@@ -31,6 +32,26 @@ test('mapImoCardRecordToCatalogCard maps persisted imo cards to catalog shape', 
     image_path: 'data:image/png;base64,abc',
     max_copies: 2,
     imo_cost: 4,
+    automation_json: {
+      canDiscard: false,
+      canPlayTogether: true,
+      playAutomation: {
+        targetScope: 'selected-player',
+        effects: [
+          {
+            type: 'revealTopDeck',
+            target: 'selected-player',
+          },
+        ],
+      },
+      discardAutomation: {
+        effects: [
+          {
+            type: 'drawTopDeckToHand',
+          },
+        ],
+      },
+    },
   });
 
   assert.deepEqual(card, {
@@ -43,9 +64,44 @@ test('mapImoCardRecordToCatalogCard maps persisted imo cards to catalog shape', 
     effect: 'Carta personalizada de teste.',
     imagePath: 'data:image/png;base64,abc',
     isCustom: true,
+    canDiscard: false,
+    canPlayTogether: true,
+    playAutomation: {
+      targetScope: 'selected-player',
+      effects: [
+        {
+          type: 'revealTopDeck',
+          target: 'selected-player',
+        },
+      ],
+    },
+    discardAutomation: null,
+  });
+});
+
+test('normalizeCardAutomationConfig applies defaults for custom cards', () => {
+  const automation = normalizeCardAutomationConfig({
+    playAutomation: {
+      effects: [
+        {
+          type: 'gainCatalogCardToHand',
+          cardId: 'reacao',
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(automation, {
     canDiscard: true,
     canPlayTogether: false,
-    playAutomation: null,
+    playAutomation: {
+      effects: [
+        {
+          type: 'gainCatalogCardToHand',
+          cardId: 'reacao',
+        },
+      ],
+    },
     discardAutomation: null,
   });
 });

@@ -1,6 +1,7 @@
 const { z } = require('zod');
 
 const deckService = require('../services/deckService');
+const { cardAutomationConfigSchema } = require('../config/cardAutomation');
 
 const cardEntrySchema = z.object({
   cardId: z.string().trim().min(1),
@@ -27,6 +28,7 @@ const createImoCardSchema = z.object({
   imagePath: z.string().trim().max(200000).optional(),
   maxCopies: z.coerce.number().int().min(1).max(5),
   imoCost: z.coerce.number().int().min(0).max(10),
+  automation: cardAutomationConfigSchema.optional(),
 });
 
 const deckIdParamSchema = z.object({
@@ -57,6 +59,7 @@ async function createImoCard(req, res) {
     imagePath: payload.imagePath,
     maxCopies: payload.maxCopies,
     imoCost: payload.imoCost,
+    automation: payload.automation,
   });
 
   return res.status(201).json({ card });

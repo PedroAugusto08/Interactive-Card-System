@@ -55,9 +55,15 @@ async function ensureSchema() {
       image_path TEXT,
       max_copies INTEGER NOT NULL DEFAULT 1,
       imo_cost INTEGER NOT NULL DEFAULT 0,
+      automation_json JSONB NOT NULL DEFAULT '{}'::jsonb,
       created_at TIMESTAMP NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
+  `);
+
+  await query(`
+    ALTER TABLE imo_cards
+    ADD COLUMN IF NOT EXISTS automation_json JSONB NOT NULL DEFAULT '{}'::jsonb;
   `);
 
   await query(`

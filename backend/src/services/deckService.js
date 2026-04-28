@@ -28,7 +28,15 @@ function getDeckRules() {
   return DECK_RULES;
 }
 
-async function createImoCardForUser({ ownerId, name, description, imagePath, maxCopies, imoCost }) {
+async function createImoCardForUser({
+  ownerId,
+  name,
+  description,
+  imagePath,
+  maxCopies,
+  imoCost,
+  automation,
+}) {
   const created = await createImoCard({
     ownerId,
     name,
@@ -36,6 +44,7 @@ async function createImoCardForUser({ ownerId, name, description, imagePath, max
     imagePath,
     maxCopies,
     imoCost,
+    automationJson: automation,
   });
 
   return mapImoCardRecordToCatalogCard(created);

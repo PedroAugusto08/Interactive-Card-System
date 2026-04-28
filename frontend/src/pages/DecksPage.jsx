@@ -9,6 +9,12 @@ import { Modal } from '../components/ui/Modal';
 import { deckApi } from '../api/deckApi';
 import { useAuthStore } from '../stores/authStore';
 import { useDeckStore } from '../stores/deckStore';
+import {
+  buildImoAutomationPayload,
+  buildImoAutomationSummary,
+  getImoAutomationTemplateOptions,
+  templateRequiresGeneratedCardSelection,
+} from '../utils/imoAutomation';
 import { DEFAULT_IMO_IMAGE, resolveCardImageUrl } from '../utils/cardImages';
 import { formatErrorMessage } from '../utils/formatError';
 
@@ -30,6 +36,8 @@ const STATUS_BADGE_TONE = {
   incomplete: 'accent',
   exceeded: 'danger',
 };
+const IMO_PLAY_TEMPLATES = getImoAutomationTemplateOptions('play');
+const IMO_DISCARD_TEMPLATES = getImoAutomationTemplateOptions('discard');
 
 function buildEmptyDraft(catalog) {
   return catalog.reduce((accumulator, card) => {
@@ -270,6 +278,75 @@ function getStatusDotClassName(status) {
     .join(' ');
 }
 
+function describeResolvedAutomation(card, catalogMap) {
+  const items = [];
+
+  if (!card?.canDiscard) {
+    items.push('Nao pode ser descartada.');
+  }
+
+  if (card?.canPlayTogether) {
+    items.push('Pode ser jogada junto com outra carta.');
+  }
+
+  const playSummary = describeAutomationPhase(card?.playAutomation, catalogMap);
+  if (playSummary) {
+    items.push(`Ao jogar: ${playSummary}.`);
+  }
+
+  if (card?.canDiscard !== false) {
+    const discardSummary = describeAutomationPhase(card?.discardAutomation, catalogMap);
+    if (discardSummary) {
+      items.push(`Ao descartar: ${discardSummary}.`);
+    }
+  }
+
+  return items;
+}
+
+function describeAutomationPhase(automation, catalogMap) {
+  if (!automation?.effects?.length) {
+    return '';
+  }
+
+  const [effect] = automation.effects;
+  if (!effect) {
+    return '';
+  }
+
+  if (effect.type === 'gainCatalogCardToHand') {
+    return `gera ${catalogMap.get(effect.cardId)?.name || 'uma carta'} na mao`;
+  }
+
+  if (effect.type === 'moveSelectedExileCardToHand') {
+    return 'recupera uma carta do proprio exilio para a mao';
+  }
+
+  if (effect.type === 'drawTopDeckToHand') {
+    return effect.target === 'selected-player'
+      ? 'faz outro jogador comprar uma carta'
+      : 'compra uma carta';
+  }
+
+  if (effect.type === 'moveTopDeckToExile') {
+    return effect.target === 'selected-player'
+      ? 'exila o topo do deck de um alvo'
+      : 'exila o topo do proprio deck';
+  }
+
+  if (effect.type === 'moveTopExileToDeck') {
+    return effect.target === 'selected-player'
+      ? 'devolve o topo do exilio de outro jogador para o deck'
+      : 'devolve o topo do proprio exilio para o deck';
+  }
+
+  if (effect.type === 'revealTopDeck') {
+    return 'revela o topo do deck de um alvo';
+  }
+
+  return 'resolve um efeito automatico';
+}
+
 function DeckMetricCard({ metric }) {
   return (
     <article className={['deck-metric-card', `is-${metric.state}`].join(' ')}>
@@ -291,7 +368,6 @@ function DeckMetricCard({ metric }) {
 function DeckCardControl({ card, quantity, onDecrease, onIncrease, onPreview }) {
   const isSelected = quantity > 0;
   const cost = getCardCost(card);
-  const imageDescription = card.effect || 'Sem descricao adicional.';
 
   return (
     <Card
@@ -403,6 +479,22 @@ export function DecksPage() {
   const deckEvaluation = useMemo(
     () => buildDeckEvaluation(draftSummary, rules),
     [draftSummary, rules]
+  );
+  const imoCanDiscard = imoForm.canDiscard !== false;
+  const imoCanPlayTogether = Boolean(imoForm.canPlayTogether);
+  const imoPlayTemplateId = imoForm.playTemplateId || 'none';
+  const imoDiscardTemplateId = imoForm.discardTemplateId || 'none';
+  const imoAutomationSummary = useMemo(
+    () =>
+      buildImoAutomationSummary({
+        ...imoForm,
+        catalogMap,
+      }),
+    [catalogMap, imoForm]
+  );
+  const previewAutomationSummary = useMemo(
+    () => (previewCard ? describeResolvedAutomation(previewCard, catalogMap) : []),
+    [catalogMap, previewCard]
   );
   const userDeck = useMemo(() => decks[0] || null, [decks]);
   const selectedCards = useMemo(() => {
@@ -616,6 +708,38 @@ export function DecksPage() {
     }));
   }
 
+  function handleImoFlagToggle(field) {
+    setImoForm((previous) => {
+      const nextValue = !previous[field];
+      if (field !== 'canDiscard') {
+        return {
+          ...previous,
+          [field]: nextValue,
+        };
+      }
+
+      return {
+        ...previous,
+        canDiscard: nextValue,
+        discardTemplateId: nextValue ? previous.discardTemplateId : 'none',
+        discardGeneratedCardId: nextValue ? previous.discardGeneratedCardId : '',
+      };
+    });
+  }
+
+  function handleImoAutomationTemplateChange(phase, templateId) {
+    const templateField = phase === 'play' ? 'playTemplateId' : 'discardTemplateId';
+    const generatedCardField = phase === 'play' ? 'playGeneratedCardId' : 'discardGeneratedCardId';
+
+    setImoForm((previous) => ({
+      ...previous,
+      [templateField]: templateId,
+      [generatedCardField]: templateRequiresGeneratedCardSelection(templateId)
+        ? previous[generatedCardField]
+        : '',
+    }));
+  }
+
   function handleImoImageChange(event) {
     const file = event.target.files?.[0];
     if (!file) {
@@ -634,9 +758,27 @@ export function DecksPage() {
 
   async function handleCreateImoCard(event) {
     event.preventDefault();
-    setIsSubmitting(true);
     setErrorMessage('');
     setStatusMessage('');
+
+    if (
+      templateRequiresGeneratedCardSelection(imoPlayTemplateId) &&
+      !String(imoForm.playGeneratedCardId || '').trim()
+    ) {
+      setErrorMessage('Selecione qual carta deve ser gerada no efeito automatico ao jogar.');
+      return;
+    }
+
+    if (
+      imoCanDiscard &&
+      templateRequiresGeneratedCardSelection(imoDiscardTemplateId) &&
+      !String(imoForm.discardGeneratedCardId || '').trim()
+    ) {
+      setErrorMessage('Selecione qual carta deve ser gerada no efeito automatico ao descartar.');
+      return;
+    }
+
+    setIsSubmitting(true);
 
     try {
       const response = await deckApi.createImoCard({
@@ -647,6 +789,7 @@ export function DecksPage() {
           imagePath: imoForm.imagePath,
           maxCopies: Number(imoForm.maxCopies) || 1,
           imoCost: Number(imoForm.imoCost) || 0,
+          automation: buildImoAutomationPayload(imoForm),
         },
       });
 
@@ -960,6 +1103,133 @@ export function DecksPage() {
                                   value={imoForm.description}
                                 />
 
+                                <div className="imo-automation-builder">
+                                  <div className="imo-automation-builder__header">
+                                    <div className="stack-gap" style={{ gap: '4px' }}>
+                                      <strong>Automacao opcional</strong>
+                                      <span className="muted-text compact">
+                                        O texto da carta continua livre, mas aqui voce escolhe o que o sistema vai resolver sozinho.
+                                      </span>
+                                    </div>
+
+                                    <div className="imo-automation-builder__toggles">
+                                      <button
+                                        className={['deck-toggle-chip', imoCanDiscard ? 'is-active' : ''].join(' ')}
+                                        onClick={() => handleImoFlagToggle('canDiscard')}
+                                        type="button"
+                                      >
+                                        {imoCanDiscard ? 'Pode descartar' : 'Nao descarta'}
+                                      </button>
+                                      <button
+                                        className={[
+                                          'deck-toggle-chip',
+                                          imoCanPlayTogether ? 'is-active' : '',
+                                        ].join(' ')}
+                                        onClick={() => handleImoFlagToggle('canPlayTogether')}
+                                        type="button"
+                                      >
+                                        {imoCanPlayTogether ? 'Permite jogar junto' : 'Sem combo'}
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  <div className="imo-automation-grid">
+                                    <div className="imo-automation-phase">
+                                      <label className="ui-input">
+                                        <span className="ui-input__label">Ao jogar</span>
+                                        <select
+                                          className="ui-input__field"
+                                          onChange={(event) =>
+                                            handleImoAutomationTemplateChange('play', event.target.value)
+                                          }
+                                          value={imoPlayTemplateId}
+                                        >
+                                          {IMO_PLAY_TEMPLATES.map((template) => (
+                                            <option key={template.id} value={template.id}>
+                                              {template.label}
+                                            </option>
+                                          ))}
+                                        </select>
+                                        <span className="ui-input__description">
+                                          {
+                                            IMO_PLAY_TEMPLATES.find(
+                                              (template) => template.id === imoPlayTemplateId
+                                            )?.description
+                                          }
+                                        </span>
+                                      </label>
+
+                                      {templateRequiresGeneratedCardSelection(imoPlayTemplateId) ? (
+                                        <label className="ui-input">
+                                          <span className="ui-input__label">Carta gerada ao jogar</span>
+                                          <select
+                                            className="ui-input__field"
+                                            onChange={(event) =>
+                                              handleImoFormChange('playGeneratedCardId', event.target.value)
+                                            }
+                                            value={imoForm.playGeneratedCardId}
+                                          >
+                                            <option value="">Selecione uma carta</option>
+                                            {catalog.map((card) => (
+                                              <option key={card.id} value={card.id}>
+                                                {card.name}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </label>
+                                      ) : null}
+                                    </div>
+
+                                    <div className="imo-automation-phase">
+                                      <label className="ui-input">
+                                        <span className="ui-input__label">Ao descartar</span>
+                                        <select
+                                          className="ui-input__field"
+                                          disabled={!imoCanDiscard}
+                                          onChange={(event) =>
+                                            handleImoAutomationTemplateChange('discard', event.target.value)
+                                          }
+                                          value={imoCanDiscard ? imoDiscardTemplateId : 'none'}
+                                        >
+                                          {IMO_DISCARD_TEMPLATES.map((template) => (
+                                            <option key={template.id} value={template.id}>
+                                              {template.label}
+                                            </option>
+                                          ))}
+                                        </select>
+                                        <span className="ui-input__description">
+                                          {!imoCanDiscard
+                                            ? 'Desativado porque a carta esta marcada como nao descartavel.'
+                                            : IMO_DISCARD_TEMPLATES.find(
+                                                (template) => template.id === imoDiscardTemplateId
+                                              )?.description}
+                                        </span>
+                                      </label>
+
+                                      {imoCanDiscard &&
+                                      templateRequiresGeneratedCardSelection(imoDiscardTemplateId) ? (
+                                        <label className="ui-input">
+                                          <span className="ui-input__label">Carta gerada ao descartar</span>
+                                          <select
+                                            className="ui-input__field"
+                                            onChange={(event) =>
+                                              handleImoFormChange('discardGeneratedCardId', event.target.value)
+                                            }
+                                            value={imoForm.discardGeneratedCardId}
+                                          >
+                                            <option value="">Selecione uma carta</option>
+                                            {catalog.map((card) => (
+                                              <option key={card.id} value={card.id}>
+                                                {card.name}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </label>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                </div>
+
                                 <label className="ui-input">
                                   <span className="ui-input__label">Imagem da carta</span>
                                   <input
@@ -1000,6 +1270,23 @@ export function DecksPage() {
                               <div className="row-wrap">
                                 <Badge tone="accent">Custo Imo {Number(imoForm.imoCost) || 0}</Badge>
                                 <Badge tone="secondary">{imoCards.length} cartas salvas</Badge>
+                                {!imoCanDiscard ? <Badge tone="danger">Nao descarta</Badge> : null}
+                                {imoCanPlayTogether ? <Badge tone="primary">Joga junto</Badge> : null}
+                              </div>
+
+                              <div className="imo-automation-preview">
+                                <span className="status-label">O sistema vai automatizar</span>
+                                {imoAutomationSummary.length ? (
+                                  <ul className="imo-automation-preview__list">
+                                    {imoAutomationSummary.map((item) => (
+                                      <li key={item}>{item}</li>
+                                    ))}
+                                  </ul>
+                                ) : (
+                                  <p className="muted-text compact">
+                                    Nenhum efeito automatico selecionado. A carta ficara apenas com o texto manual.
+                                  </p>
+                                )}
                               </div>
                             </Card>
                           </div>
@@ -1191,6 +1478,8 @@ export function DecksPage() {
                 {String(previewCard.id).startsWith('imo:') ? (
                   <Badge tone="primary">Customizada</Badge>
                 ) : null}
+                {previewCard.canPlayTogether ? <Badge tone="primary">Joga junto</Badge> : null}
+                {previewCard.canDiscard === false ? <Badge tone="danger">Nao descarta</Badge> : null}
               </div>
 
               <div className="deck-preview-modal__section">
@@ -1198,6 +1487,21 @@ export function DecksPage() {
                 <p className="deck-preview-modal__description">
                   {previewCard.effect || 'Sem descricao adicional.'}
                 </p>
+              </div>
+
+              <div className="deck-preview-modal__section">
+                <span className="status-label">Automacao</span>
+                {previewAutomationSummary.length ? (
+                  <ul className="imo-automation-preview__list">
+                    {previewAutomationSummary.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="muted-text compact">
+                    Nenhum efeito automatico configurado para esta carta.
+                  </p>
+                )}
               </div>
 
               <div className="deck-preview-modal__meta">
@@ -1225,3 +1529,4 @@ export function DecksPage() {
     </section>
   );
 }
+
