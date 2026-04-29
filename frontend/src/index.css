@@ -659,6 +659,7 @@ ul {
   grid-template-columns: minmax(0, 1.1fr) minmax(260px, 0.9fr);
 }
 
+.imo-automation-launcher,
 .imo-automation-builder,
 .imo-automation-preview,
 .imo-phase-card,
@@ -666,6 +667,23 @@ ul {
 .imo-automation-summary {
   display: grid;
   gap: 14px;
+}
+
+.imo-automation-launcher {
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(124, 92, 255, 0.14);
+  background:
+    radial-gradient(circle at top right, rgba(124, 92, 255, 0.1), transparent 26%),
+    rgba(255, 255, 255, 0.03);
+}
+
+.imo-automation-launcher__header {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
 }
 
 .imo-automation-builder {
@@ -947,6 +965,11 @@ ul {
   display: grid;
   gap: 8px;
   color: var(--text-secondary);
+}
+
+.imo-automation-preview__list--compact {
+  gap: 6px;
+  font-size: 0.95rem;
 }
 
 .zones-grid {
@@ -3244,6 +3267,11 @@ ul {
 
   .imo-automation-builder__toggles {
     flex-direction: column;
+  }
+
+  .imo-automation-launcher__header {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .imo-toggle-button {
