@@ -15,7 +15,7 @@ const { getDeckCatalog, getResolvedDeckForUser, resolveCardById } = require('./d
 const INITIAL_HEALTH = 10;
 const INITIAL_IMO = 3;
 const MAX_IMO = 10;
-const INITIAL_HAND_SIZE = 5;
+const MAX_HAND_SIZE = 3;
 
 async function startMatchForRoom({ roomId, userId, includeSnapshot = true }) {
   const room = await findRoomById(roomId);
@@ -67,7 +67,7 @@ async function startMatchForRoom({ roomId, userId, includeSnapshot = true }) {
     });
 
     const shuffledDeck = shuffleCards(expandedCards);
-    const handCards = shuffledDeck.splice(0, INITIAL_HAND_SIZE);
+    const handCards = shuffledDeck.splice(0, MAX_HAND_SIZE);
 
     await upsertMatchPlayer({
       matchId: match.id,
@@ -423,6 +423,10 @@ async function drawCardForPlayer({ roomId, userId, includeSnapshot = true }) {
 
   if (playerState.has_drawn_this_turn) {
     throw new AppError('Voce ja comprou uma carta neste turno.', 409);
+  }
+
+  if ((playerState.hand_cards_json || []).length >= MAX_HAND_SIZE) {
+    throw new AppError('Sua mao ja esta no limite de 3 cartas.', 409);
   }
 
   if (!(playerState.deck_cards_json || []).length) {
@@ -1142,7 +1146,7 @@ function buildAvailableActions({ activeMatch, matchPlayer, requesterUserId }) {
     actions.unshift('playCard');
   }
 
-  if (!matchPlayer.has_drawn_this_turn) {
+  if (!matchPlayer.has_drawn_this_turn && (matchPlayer.hand_cards_json || []).length < MAX_HAND_SIZE) {
     actions.unshift('drawCard');
   }
 
