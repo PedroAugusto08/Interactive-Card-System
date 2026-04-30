@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 
 import { ActionLogItem } from '../components/system/ActionLogItem';
 import { CardItem } from '../components/system/CardItem';
@@ -374,7 +374,7 @@ export function MatchPage() {
     }
 
     if (requiresExileSelection && !pendingCardAction.selectedExileCardId) {
-      setLocalError('Selecione uma carta do seu exilio.');
+      setLocalError('Selecione uma carta do seu exílio.');
       return;
     }
 
@@ -384,7 +384,7 @@ export function MatchPage() {
     }
 
     if (requiresPairedExileSelection && !pendingCardAction.pairedSelectedExileCardId) {
-      setLocalError('Selecione uma carta do seu exilio para a carta jogada junto.');
+      setLocalError('Selecione uma carta do seu exílio para a carta jogada junto.');
       return;
     }
 
@@ -492,7 +492,7 @@ export function MatchPage() {
                 </div>
 
                 <div className="status-item">
-                  <span className="status-label">Cartas na mao</span>
+                  <span className="status-label">Cartas na mão</span>
                   <span className="status-value">{currentZones.handCount}</span>
                 </div>
               </div>
@@ -504,7 +504,7 @@ export function MatchPage() {
                   description="Cartas exiladas."
                   onClick={() => setIsExileModalOpen(true)}
                   previewCards={exileCards}
-                  title="Exilio"
+                  title="Exílio"
                   tone="accent"
                 />
               </div>
@@ -513,8 +513,8 @@ export function MatchPage() {
 
           <Card
             className="player-hand-panel"
-            description="Sua mao e o foco da mesa: selecione e jogue suas cartas daqui."
-            title="Sua mao"
+            description="Sua mão é o foco da mesa: selecione e jogue suas cartas daqui."
+            title="Sua mão"
             actions={
               <div className="match-action-bar">
                 <Button
@@ -549,7 +549,7 @@ export function MatchPage() {
         </main>
 
         <aside className="match-right-column">
-          <Card className="match-side-panel" description="Feed dos eventos mais recentes." title="Log de acoes">
+          <Card className="match-side-panel" description="Feed dos eventos mais recentes." title="Log de ações">
             <div className="log-list">
               {logs.length ? (
                 logs.map((item, index) => <ActionLogItem item={item} key={`${item.id || 'log'}-${index}`} />)
@@ -564,20 +564,20 @@ export function MatchPage() {
       <Modal
         cancelLabel="Continuar turno"
         confirmLabel="Encerrar assim mesmo"
-        description="Voce ainda nao comprou nenhuma carta neste turno. Tem certeza que quer encerrar?"
+        description="Você ainda não comprou nenhuma carta neste turno. Tem certeza que quer encerrar?"
         isLoading={isSubmitting}
         onClose={() => setIsEndTurnConfirmOpen(false)}
         onConfirm={handleConfirmEndTurn}
         open={isEndTurnConfirmOpen}
         title="Confirmar encerramento"
       >
-        <p className="muted-text">Se quiser seguir a sequencia completa do turno, jogue ou descarte uma carta e depois compre.</p>
+        <p className="muted-text">Se quiser seguir a sequência completa do turno, jogue ou descarte uma carta e depois compre.</p>
       </Modal>
 
       <Modal
         cancelLabel="Cancelar"
         confirmLabel={pendingCardAction?.action === 'match:discardCard' ? 'Descartar carta' : 'Jogar carta'}
-        description="Organize a jogada, escolha a carta extra se quiser e resolva os parametros automaticos em uma ordem mais clara."
+        description="Organize a jogada, escolha a carta extra se quiser e resolva os parâmetros automáticos em uma ordem mais clara."
         isLoading={isSubmitting}
         onClose={closePendingCardAction}
         onConfirm={handleConfirmPendingCardAction}
@@ -606,7 +606,7 @@ export function MatchPage() {
               <p className="muted-text">
                 {pendingPrimaryCard?.canPlayTogether
                   ? 'Esta carta permite montar um combo. Escolha uma segunda carta se quiser ampliar a jogada.'
-                  : 'Resolva os parametros automaticos desta jogada antes de confirmar.'}
+                  : 'Resolva os parâmetros automáticos desta jogada antes de confirmar.'}
               </p>
 
               <div className="combo-modal__summary">
@@ -620,7 +620,7 @@ export function MatchPage() {
                   <strong>
                     {pendingCardAction?.targetUserId || pendingCardAction?.pairedTargetUserId
                       ? 'Configurados'
-                      : 'Nao exigidos'}
+                      : 'Não exigidos'}
                   </strong>
                 </div>
               </div>
@@ -657,8 +657,8 @@ export function MatchPage() {
                   type="button"
                 >
                   <Badge tone={!pendingCardAction.pairedCardId ? 'primary' : 'secondary'}>Sem combo</Badge>
-                  <strong>Jogar so a carta principal</strong>
-                  <span className="muted-text">Use esta opcao se quiser uma jogada simples.</span>
+                  <strong>Jogar só a carta principal</strong>
+                  <span className="muted-text">Use esta opção se quiser uma jogada simples.</span>
                 </button>
 
                 {pendingPairedCandidates.map((card) => (
@@ -709,7 +709,7 @@ export function MatchPage() {
                   <Badge tone="secondary">Etapa 2</Badge>
                   <h4>Resolva a carta principal</h4>
                 </div>
-                <p className="muted-text">Defina os parametros automaticos exigidos pela carta que iniciou a jogada.</p>
+                <p className="muted-text">Defina os parâmetros automáticos exigidos pela carta que iniciou a jogada.</p>
               </div>
 
               {pendingCardAction?.automation?.targetScope ? (
@@ -738,14 +738,14 @@ export function MatchPage() {
                       ))}
                     </div>
                   ) : (
-                    <p className="muted-text">Nenhum alvo disponivel para essa carta.</p>
+                    <p className="muted-text">Nenhum alvo disponível para essa carta.</p>
                   )}
                 </div>
               ) : null}
 
               {pendingCardAction?.automation?.selection === 'own-exile-card' ? (
                 <div className="combo-modal__subsection">
-                  <span className="status-label">Escolha a carta do exilio</span>
+                  <span className="status-label">Escolha a carta do exílio</span>
                   {exileCards.length ? (
                     <div className="exile-modal-grid combo-modal__card-grid">
                       {exileCards.map((card) => (
@@ -783,7 +783,7 @@ export function MatchPage() {
                       ))}
                     </div>
                   ) : (
-                    <p className="muted-text">Seu exilio esta vazio; o efeito sera resolvido sem recuperar carta.</p>
+                    <p className="muted-text">Seu exílio está vazio; o efeito será resolvido sem recuperar carta.</p>
                   )}
                 </div>
               ) : null}
@@ -797,7 +797,7 @@ export function MatchPage() {
                   <Badge tone="primary">Carta extra</Badge>
                   <h4>{pendingCardAction.pairedCardName}</h4>
                 </div>
-                <p className="muted-text">Se a carta jogada junto exigir parametros automaticos, resolva-os aqui.</p>
+                <p className="muted-text">Se a carta jogada junto exigir parâmetros automáticos, resolva-os aqui.</p>
               </div>
 
               <div className="combo-modal__secondary-preview">
@@ -840,14 +840,14 @@ export function MatchPage() {
                       ))}
                     </div>
                   ) : (
-                    <p className="muted-text">Nenhum alvo disponivel para a carta jogada junto.</p>
+                    <p className="muted-text">Nenhum alvo disponível para a carta jogada junto.</p>
                   )}
                 </div>
               ) : null}
 
               {pendingCardAction?.pairedAutomation?.selection === 'own-exile-card' ? (
                 <div className="combo-modal__subsection">
-                  <span className="status-label">Escolha a carta do exilio para a carta extra</span>
+                  <span className="status-label">Escolha a carta do exílio para a carta extra</span>
                   {exileCards.length ? (
                     <div className="exile-modal-grid combo-modal__card-grid">
                       {exileCards.map((card) => (
@@ -885,7 +885,7 @@ export function MatchPage() {
                       ))}
                     </div>
                   ) : (
-                    <p className="muted-text">Seu exilio esta vazio; a carta jogada junto nao podera recuperar carta.</p>
+                    <p className="muted-text">Seu exílio está vazio; a carta jogada junto não poderá recuperar carta.</p>
                   )}
                 </div>
               ) : null}
@@ -897,11 +897,11 @@ export function MatchPage() {
       <Modal
         cancelLabel={null}
         confirmLabel="Fechar"
-        description="As cartas aparecem em ordem no exilio: do topo para o fundo."
+        description="As cartas aparecem em ordem no exílio: do topo para o fundo."
         onClose={() => setIsExileModalOpen(false)}
         onConfirm={() => setIsExileModalOpen(false)}
         open={isExileModalOpen}
-        title="Exilio"
+        title="Exílio"
       >
         {exileCards.length ? (
           <div className="exile-modal-grid">
@@ -913,7 +913,7 @@ export function MatchPage() {
                 description={card.effect}
                 footer={
                   <div className="exile-card-order">
-                    <span>{index === 0 ? 'Topo do exilio' : `Posicao ${index + 1}`}</span>
+                    <span>{index === 0 ? 'Topo do exílio' : `Posição ${index + 1}`}</span>
                     <span>{index === exileCards.length - 1 ? 'Fundo' : null}</span>
                   </div>
                 }
@@ -930,3 +930,4 @@ export function MatchPage() {
     </section>
   );
 }
+

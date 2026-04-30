@@ -152,12 +152,12 @@ export function ProtectedLayout() {
     <div className="app-shell">
       <header className="topbar">
         <div className="topbar-left">
-          <div className="topbar-brand" aria-label="Acedia Deck">
+          <div className="topbar-brand" aria-label="Acédia Deck">
             <span aria-hidden="true" className="topbar-brand__mark">
               <span className="topbar-brand__mark-core" />
             </span>
             <div className="topbar-brand__copy">
-              <strong className="topbar-brand__name">Acedia</strong>
+              <strong className="topbar-brand__name">Acédia</strong>
               <span className="topbar-brand__subtitle">Deck System</span>
             </div>
           </div>
@@ -194,7 +194,7 @@ export function ProtectedLayout() {
           <button
             aria-controls="profile-sidebar"
             aria-expanded={isProfileOpen}
-            aria-label="Abrir menu do usuario"
+            aria-label="Abrir menu do usuário"
             className="profile-trigger"
             onClick={toggleProfileSidebar}
             type="button"
@@ -216,7 +216,7 @@ export function ProtectedLayout() {
 
       {isProfileOpen ? (
         <button
-          aria-label="Fechar menu do usuario"
+          aria-label="Fechar menu do usuário"
           className="profile-overlay"
           onClick={closeProfileSidebar}
           type="button"
@@ -245,7 +245,7 @@ export function ProtectedLayout() {
             </div>
           </div>
 
-          <button aria-label="Fechar menu do usuario" className="profile-close" onClick={closeProfileSidebar} type="button">
+          <button aria-label="Fechar menu do usuário" className="profile-close" onClick={closeProfileSidebar} type="button">
             ×
           </button>
         </div>
@@ -314,15 +314,15 @@ export function ProtectedLayout() {
               onClick={() => setActiveSection(activeSection === 'username' ? '' : 'username')}
               variant="secondary"
             >
-              Alterar nome de usuario
+              Alterar nome de usuário
             </Button>
 
             {activeSection === 'username' ? (
               <form className="profile-form profile-form--compact" onSubmit={handleUsernameSubmit}>
                 <Input
-                  label="Nome de usuario"
+                  label="Nome de usuário"
                   onChange={(event) => setUsername(event.target.value)}
-                  placeholder="Digite o nome de usuario"
+                  placeholder="Digite o nome de usuário"
                   value={username}
                 />
 
@@ -373,7 +373,7 @@ export function ProtectedLayout() {
         </div>
 
         <div className="profile-sidebar__section">
-          <span className="profile-section-label">Sessao</span>
+          <span className="profile-section-label">Sessão</span>
 
           <div className="profile-sidebar__actions">
             <Button className="profile-action" onClick={handleLogout} variant="danger">

@@ -1,6 +1,6 @@
+import { getDeckCardCount } from '../../utils/lobbyUi';
 import { Badge } from '../ui/Badge';
 import { Card } from '../ui/Card';
-import { getDeckCardCount } from '../../utils/lobbyUi';
 
 function getInitials(name) {
   return String(name || '?')
@@ -40,7 +40,7 @@ export function PlayerCard({
               {isActiveTurn ? <Badge tone="accent">Turno ativo</Badge> : null}
             </div>
             <span className="muted-text compact">
-              {isHost ? 'Controla o inicio da sala' : 'Aguardando a abertura da partida'}
+              {isHost ? 'Controla o início da sala' : 'Aguardando a abertura da partida'}
             </span>
           </div>
         </div>
@@ -63,13 +63,13 @@ export function PlayerCard({
                 .filter(Boolean)
                 .join(' ')}
             />
-            <span>{player.is_ready ? 'Pronto' : 'Nao pronto'}</span>
+            <span>{player.is_ready ? 'Pronto' : 'Não pronto'}</span>
           </div>
         </div>
 
         <div className="player-card__deck">
           <span className="status-label">Deck selecionado</span>
-          <strong>{selectedDeck?.name || 'Deck nao selecionado'}</strong>
+          <strong>{selectedDeck?.name || 'Deck não selecionado'}</strong>
           <span className="muted-text compact">
             {deckCardCount ? `${deckCardCount} cartas` : 'Selecione um deck para liberar o pronto.'}
           </span>

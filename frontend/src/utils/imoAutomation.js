@@ -1,15 +1,15 @@
-const AUTOMATION_TEMPLATES = [
+﻿const AUTOMATION_TEMPLATES = [
   {
     id: 'none',
-    label: 'Manual ou sem automacao',
-    description: 'Mantem o efeito apenas no texto da carta, sem resolucao automatica.',
+    label: 'Manual ou sem automação',
+    description: 'Mantém o efeito apenas no texto da carta, sem resolução automática.',
     phases: ['play', 'discard'],
     build: () => null,
   },
   {
     id: 'gainCatalogCardToHand',
-    label: 'Gerar carta na mao',
-    description: 'Cria uma copia de uma carta do catalogo diretamente na sua mao.',
+    label: 'Gerar carta na mão',
+    description: 'Cria uma cópia de uma carta do catálogo diretamente na sua mão.',
     phases: ['play', 'discard'],
     requiresCatalogCardId: true,
     build: ({ generatedCardId }) =>
@@ -26,8 +26,8 @@ const AUTOMATION_TEMPLATES = [
   },
   {
     id: 'recoverOwnExileToHand',
-    label: 'Recuperar carta do exilio',
-    description: 'Escolhe uma carta do seu exilio e a devolve para a sua mao.',
+    label: 'Recuperar carta do exílio',
+    description: 'Escolhe uma carta do seu exílio e a devolve para a sua mão.',
     phases: ['play', 'discard'],
     build: () => ({
       selection: 'own-exile-card',
@@ -41,7 +41,7 @@ const AUTOMATION_TEMPLATES = [
   {
     id: 'drawTopDeckToHandSelf',
     label: 'Comprar uma carta',
-    description: 'Compra o topo do proprio deck para a mao.',
+    description: 'Compra o topo do próprio deck para a mão.',
     phases: ['play', 'discard'],
     build: () => ({
       effects: [
@@ -69,8 +69,8 @@ const AUTOMATION_TEMPLATES = [
   },
   {
     id: 'moveTopDeckToExileSelf',
-    label: 'Exilar topo do proprio deck',
-    description: 'Move o topo do seu deck para o exilio.',
+    label: 'Exilar topo do próprio deck',
+    description: 'Move o topo do seu deck para o exílio.',
     phases: ['play', 'discard'],
     build: () => ({
       effects: [
@@ -98,8 +98,8 @@ const AUTOMATION_TEMPLATES = [
   },
   {
     id: 'moveTopExileToDeckSelfShuffle',
-    label: 'Voltar exilio proprio ao deck',
-    description: 'Retorna o topo do seu exilio para o deck embaralhando.',
+    label: 'Voltar exílio próprio ao deck',
+    description: 'Retorna o topo do seu exílio para o deck embaralhando.',
     phases: ['play', 'discard'],
     build: () => ({
       effects: [
@@ -113,8 +113,8 @@ const AUTOMATION_TEMPLATES = [
   },
   {
     id: 'moveTopExileToDeckOtherShuffle',
-    label: 'Voltar exilio de outro jogador',
-    description: 'Escolhe outro jogador e devolve o topo do exilio dele para o deck embaralhando.',
+    label: 'Voltar exílio de outro jogador',
+    description: 'Escolhe outro jogador e devolve o topo do exílio dele para o deck embaralhando.',
     phases: ['play', 'discard'],
     build: () => ({
       targetScope: 'other-player',
@@ -203,7 +203,7 @@ export function buildImoAutomationSummary({
   const resolvedCanDiscard = canDiscard !== false;
 
   if (!resolvedCanDiscard) {
-    items.push('Nao pode ser descartada.');
+    items.push('Não pode ser descartada.');
   }
 
   if (canPlayTogether) {
@@ -241,8 +241,9 @@ function describeTemplateSelection(templateId, generatedCardId, catalogMap) {
 
   if (template.id === 'gainCatalogCardToHand') {
     const cardName = catalogMap?.get(generatedCardId)?.name || 'carta selecionada';
-    return `gera ${cardName} na mao`;
+    return `gera ${cardName} na mão`;
   }
 
   return template.label.charAt(0).toLowerCase() + template.label.slice(1);
 }
+

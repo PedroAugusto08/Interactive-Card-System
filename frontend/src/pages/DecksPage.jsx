@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 
 import { CardItem } from '../components/system/CardItem';
 import { Badge } from '../components/ui/Badge';
@@ -20,7 +20,7 @@ import { formatErrorMessage } from '../utils/formatError';
 
 const CATEGORY_LABEL = {
   fixed: 'Fixas',
-  division: 'Divisao',
+  division: 'Divisão',
   imo: 'Imo',
 };
 
@@ -203,15 +203,15 @@ function buildDeckEvaluation(summary, rules) {
   );
 
   let status = 'valid';
-  let title = 'Deck valido';
-  let message = 'Seu deck esta pronto para partida.';
+  let title = 'Deck válido';
+  let message = 'Seu deck está pronto para a partida.';
 
   if (firstExceeded) {
     status = 'exceeded';
-    title = 'Deck invalido';
+    title = 'Deck inválido';
     message =
       firstExceeded.key === 'total'
-        ? `Voce excedeu o limite total em ${firstExceeded.current - firstExceeded.max} carta(s).`
+        ? `Você excedeu o limite total em ${firstExceeded.current - firstExceeded.max} carta(s).`
         : `Limite de cartas ${firstExceeded.label} excedido.`;
   } else if (firstIncomplete) {
     status = 'incomplete';
@@ -261,7 +261,7 @@ function sortCatalogCards(cards, sortBy) {
 
 function getMetricRuleText(metric) {
   if (metric.exact) {
-    return `${metric.max} obrigatorias`;
+    return `${metric.max} obrigatórias`;
   }
 
   return `${metric.min} a ${metric.max}`;
@@ -282,7 +282,7 @@ function describeResolvedAutomation(card, catalogMap) {
   const items = [];
 
   if (!card?.canDiscard) {
-    items.push('Nao pode ser descartada.');
+    items.push('Não pode ser descartada.');
   }
 
   if (card?.canPlayTogether) {
@@ -315,11 +315,11 @@ function describeAutomationPhase(automation, catalogMap) {
   }
 
   if (effect.type === 'gainCatalogCardToHand') {
-    return `gera ${catalogMap.get(effect.cardId)?.name || 'uma carta'} na mao`;
+    return `gera ${catalogMap.get(effect.cardId)?.name || 'uma carta'} na mão`;
   }
 
   if (effect.type === 'moveSelectedExileCardToHand') {
-    return 'recupera uma carta do proprio exilio para a mao';
+    return 'recupera uma carta do próprio exílio para a mão';
   }
 
   if (effect.type === 'drawTopDeckToHand') {
@@ -331,20 +331,20 @@ function describeAutomationPhase(automation, catalogMap) {
   if (effect.type === 'moveTopDeckToExile') {
     return effect.target === 'selected-player'
       ? 'exila o topo do deck de um alvo'
-      : 'exila o topo do proprio deck';
+      : 'exila o topo do próprio deck';
   }
 
   if (effect.type === 'moveTopExileToDeck') {
     return effect.target === 'selected-player'
-      ? 'devolve o topo do exilio de outro jogador para o deck'
-      : 'devolve o topo do proprio exilio para o deck';
+      ? 'devolve o topo do exílio de outro jogador para o deck'
+      : 'devolve o topo do próprio exílio para o deck';
   }
 
   if (effect.type === 'revealTopDeck') {
     return 'revela o topo do deck de um alvo';
   }
 
-  return 'resolve um efeito automatico';
+  return 'resolve um efeito automático';
 }
 
 function EffectToggleButton({ title, description, active, onClick }) {
@@ -514,22 +514,19 @@ function ImoAutomationBuilder({
     <div className="imo-automation-builder">
       <div className="imo-automation-builder__header">
         <div className="stack-gap" style={{ gap: '4px' }}>
-          <strong>Automacao da carta</strong>
-          <span className="muted-text compact">
-            Monte os efeitos automatizados da carta sem mexer no texto livre dela.
-          </span>
+          <strong>Monte os efeitos automatizados da carta</strong>
         </div>
 
         <div className="imo-automation-builder__toggles">
           <EffectToggleButton
             active={!imoCanDiscard}
-            description="Quando ativo, a fase de descarte fica bloqueada e a carta nunca vai para o exilio por descarte."
+            description="Quando ativo, não é possível descartar a carta."
             onClick={() => onToggleFlag('canDiscard')}
-            title="Nao descarta"
+            title="Não descarta"
           />
           <EffectToggleButton
             active={imoCanPlayTogether}
-            description="Quando ativo, esta carta permite ser jogada junto com outra carta da mao."
+            description="Quando ativo, esta carta permite ser jogada junto com outra carta da mão."
             onClick={() => onToggleFlag('canPlayTogether')}
             title={imoCanPlayTogether ? 'Permite combo' : 'Sem combo'}
           />
@@ -550,7 +547,7 @@ function ImoAutomationBuilder({
                 <div className="stack-gap" style={{ gap: '4px' }}>
                   <span className="status-label">Carta gerada</span>
                   <p className="muted-text compact">
-                    Escolha qual carta o sistema deve criar na mao quando esse efeito acontecer.
+                    Escolha qual carta o sistema deve criar na mão quando esse efeito acontecer.
                   </p>
                 </div>
                 {imoForm.playGeneratedCardId ? (
@@ -570,9 +567,9 @@ function ImoAutomationBuilder({
         </AutomationPhaseCard>
 
         <AutomationPhaseCard
-          description="Escolha o que acontece quando a carta vai para o exilio por descarte."
+          description="Escolha o que acontece quando a carta vai para o exílio por descarte."
           disabled={!imoCanDiscard}
-          disabledMessage='Desativado porque esta carta esta marcada como "Nao descarta".'
+          disabledMessage='Desativado porque esta carta está marcada como "Não descarta".'
           onSelectTemplate={(templateId) => onSelectTemplate('discard', templateId)}
           selectedTemplateId={imoCanDiscard ? imoDiscardTemplateId : 'none'}
           templates={IMO_DISCARD_TEMPLATES}
@@ -584,7 +581,7 @@ function ImoAutomationBuilder({
                 <div className="stack-gap" style={{ gap: '4px' }}>
                   <span className="status-label">Carta gerada</span>
                   <p className="muted-text compact">
-                    Escolha qual carta o sistema deve criar na mao quando esse descarte for resolvido.
+                    Escolha qual carta o sistema deve criar na mão quando esse descarte for resolvido.
                   </p>
                 </div>
                 {imoForm.discardGeneratedCardId ? (
@@ -618,7 +615,7 @@ function ImoAutomationBuilder({
           </ul>
         ) : (
           <p className="muted-text compact">
-            Nenhum efeito automatico selecionado. A carta continuara totalmente manual.
+            Nenhum efeito automático selecionado. A carta continuará totalmente manual.
           </p>
         )}
       </div>
@@ -1045,7 +1042,7 @@ export function DecksPage() {
       templateRequiresGeneratedCardSelection(imoPlayTemplateId) &&
       !String(imoForm.playGeneratedCardId || '').trim()
     ) {
-      setErrorMessage('Selecione qual carta deve ser gerada no efeito automatico ao jogar.');
+      setErrorMessage('Selecione qual carta deve ser gerada no efeito automático ao jogar.');
       return;
     }
 
@@ -1054,7 +1051,7 @@ export function DecksPage() {
       templateRequiresGeneratedCardSelection(imoDiscardTemplateId) &&
       !String(imoForm.discardGeneratedCardId || '').trim()
     ) {
-      setErrorMessage('Selecione qual carta deve ser gerada no efeito automatico ao descartar.');
+      setErrorMessage('Selecione qual carta deve ser gerada no efeito automático ao descartar.');
       return;
     }
 
@@ -1196,7 +1193,7 @@ export function DecksPage() {
             inputClassName="deck-name-bar__input"
             label="Nome do deck"
             onChange={(event) => updateDraftName(event.target.value)}
-            placeholder="Ex.: Divisao Ofensiva"
+            placeholder="Ex.: Divisão Ofensiva"
             required
             value={name}
           />
@@ -1250,7 +1247,7 @@ export function DecksPage() {
 
           <Card
             className="deck-catalog-panel"
-            title="Catalogo de cartas"
+            title="Catálogo de cartas"
           >
             <div className="deck-catalog-toolbar">
               <Input
@@ -1339,7 +1336,6 @@ export function DecksPage() {
                             <Card
                               compact
                               className="deck-subpanel"
-                              description="Crie uma carta Imo personalizada persistida no backend."
                               title="Criar carta Imo"
                             >
                               <form className="stack-gap" onSubmit={handleCreateImoCard}>
@@ -1352,7 +1348,7 @@ export function DecksPage() {
 
                                 <div className="deck-meta-grid">
                                   <Input
-                                    label="Maximo de copias"
+                label="Máximo de cópias"
                                     max="5"
                                     min="1"
                                     onChange={(event) =>
@@ -1374,7 +1370,7 @@ export function DecksPage() {
                                 </div>
 
                                 <Input
-                                  label="Descricao"
+                label="Descrição"
                                   multiline
                                   onChange={(event) =>
                                     handleImoFormChange('description', event.target.value)
@@ -1405,7 +1401,7 @@ export function DecksPage() {
 
                                   <div className="row-wrap">
                                     <Badge tone="accent">{imoAutomationSummary.length} regra(s)</Badge>
-                                    {!imoCanDiscard ? <Badge tone="danger">Nao descarta</Badge> : null}
+                {!imoCanDiscard ? <Badge tone="danger">Não descarta</Badge> : null}
                                     {imoCanPlayTogether ? <Badge tone="primary">Joga junto</Badge> : null}
                                   </div>
 
@@ -1451,18 +1447,18 @@ export function DecksPage() {
                                 category="Imo"
                                 description={
                                   imoForm.description ||
-                                  'A descricao completa da carta Imo aparecera aqui.'
+                                  'A descrição completa da carta Imo aparecerá aqui.'
                                 }
                                 imageSrc={resolveCardImageUrl(imoForm.imagePath)}
                                 maxCopies={Number(imoForm.maxCopies) || 1}
-                                name={imoForm.name.trim() || 'Carta Imo em criacao'}
+                                name={imoForm.name.trim() || 'Carta Imo em criação'}
                                 showDescription={false}
                               />
 
                               <div className="row-wrap">
                                 <Badge tone="accent">Custo Imo {Number(imoForm.imoCost) || 0}</Badge>
                                 <Badge tone="secondary">{imoCards.length} cartas salvas</Badge>
-                                {!imoCanDiscard ? <Badge tone="danger">Nao descarta</Badge> : null}
+                                {!imoCanDiscard ? <Badge tone="danger">Não descarta</Badge> : null}
                                 {imoCanPlayTogether ? <Badge tone="primary">Joga junto</Badge> : null}
                               </div>
 
@@ -1476,7 +1472,7 @@ export function DecksPage() {
                                   </ul>
                                 ) : (
                                   <p className="muted-text compact">
-                                    Nenhum efeito automatico selecionado. A carta ficara apenas com o texto manual.
+                                    Nenhum efeito automático selecionado. A carta ficará apenas com o texto manual.
                                   </p>
                                 )}
                               </div>
@@ -1555,7 +1551,7 @@ export function DecksPage() {
                   <div
                     className={['deck-mini-stat', `is-${deckEvaluation.metrics.division.state}`].join(' ')}
                   >
-                    <span>Divisao</span>
+                    <span>Divisão</span>
                     <strong>{deckEvaluation.metrics.division.displayValue}</strong>
                   </div>
                   <div className={['deck-mini-stat', `is-${deckEvaluation.metrics.imo.state}`].join(' ')}>
@@ -1642,11 +1638,10 @@ export function DecksPage() {
       <Modal
         cancelLabel={null}
         confirmLabel="Concluir"
-        description="Escolha os efeitos automatizados opcionais da carta Imo."
         onClose={() => setIsImoAutomationModalOpen(false)}
         onConfirm={() => setIsImoAutomationModalOpen(false)}
         open={isImoAutomationModalOpen}
-        title="Automacao da carta"
+                title="Efeitos da carta"
       >
         <ImoAutomationBuilder
           catalog={catalog}
@@ -1695,18 +1690,18 @@ export function DecksPage() {
                   <Badge tone="primary">Customizada</Badge>
                 ) : null}
                 {previewCard.canPlayTogether ? <Badge tone="primary">Joga junto</Badge> : null}
-                {previewCard.canDiscard === false ? <Badge tone="danger">Nao descarta</Badge> : null}
+                {previewCard.canDiscard === false ? <Badge tone="danger">Não descarta</Badge> : null}
               </div>
 
               <div className="deck-preview-modal__section">
-                <span className="status-label">Descricao</span>
+                <span className="status-label">Descrição</span>
                 <p className="deck-preview-modal__description">
-                  {previewCard.effect || 'Sem descricao adicional.'}
+                  {previewCard.effect || 'Sem descrição adicional.'}
                 </p>
               </div>
 
               <div className="deck-preview-modal__section">
-                <span className="status-label">Automacao</span>
+                <span className="status-label">Automação</span>
                 {previewAutomationSummary.length ? (
                   <ul className="imo-automation-preview__list">
                     {previewAutomationSummary.map((item) => (
@@ -1715,7 +1710,7 @@ export function DecksPage() {
                   </ul>
                 ) : (
                   <p className="muted-text compact">
-                    Nenhum efeito automatico configurado para esta carta.
+                    Nenhum efeito automático configurado para esta carta.
                   </p>
                 )}
               </div>
@@ -1726,7 +1721,7 @@ export function DecksPage() {
                   <strong>{CATEGORY_LABEL[previewCard.category] || 'Carta'}</strong>
                 </div>
                 <div className="deck-preview-modal__meta-item">
-                  <span>Copias</span>
+                  <span>Cópias</span>
                   <strong>Max {previewCard.maxCopies}</strong>
                 </div>
                 <div className="deck-preview-modal__meta-item">
@@ -1745,4 +1740,5 @@ export function DecksPage() {
     </section>
   );
 }
+
 

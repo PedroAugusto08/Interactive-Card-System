@@ -1,12 +1,12 @@
-import { Badge } from '../ui/Badge';
-import { Button } from '../ui/Button';
-import { Card } from '../ui/Card';
 import {
   areAllPlayersReady,
   getHostPlayer,
   translateMatchStatus,
   translateRoomStatus,
 } from '../../utils/lobbyUi';
+import { Badge } from '../ui/Badge';
+import { Button } from '../ui/Button';
+import { Card } from '../ui/Card';
 
 function getStatusTone({ roomStatus, matchStatus, players }) {
   if (roomStatus === 'in_match' || matchStatus === 'active') {
@@ -54,7 +54,7 @@ export function RoomStatusPanel({
       title="Sala atual"
     >
       <div className="lobby-room-code">
-        <span className="status-label">Codigo da sala</span>
+        <span className="status-label">Código da sala</span>
         <div className="lobby-room-code__row">
           <strong className="lobby-room-code__value">{currentRoom.code}</strong>
           <Button className="lobby-copy-button" onClick={onCopyCode} size="sm" variant="secondary">
@@ -101,7 +101,7 @@ export function RoomStatusPanel({
           </div>
           <div className="lobby-room-field__value">{matchStatusLabel}</div>
           <span className="muted-text compact">
-            {currentMatch?.round ? `Rodada ${currentMatch.round}` : 'Aguardando inicio'}
+            {currentMatch?.round ? `Rodada ${currentMatch.round}` : 'Aguardando início'}
           </span>
         </div>
       </div>

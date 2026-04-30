@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 
 import { PlayerCard } from '../components/system/PlayerCard';
 import { RoomStatusPanel } from '../components/system/RoomStatusPanel';
@@ -74,7 +74,7 @@ export function RoomLobbyPage() {
     }
 
     if (currentRoom.status !== 'lobby') {
-      return 'A partida ja esta em andamento ou foi encerrada.';
+      return 'A partida já está em andamento ou foi encerrada.';
     }
 
     if (players.length < 2) {
@@ -201,7 +201,7 @@ export function RoomLobbyPage() {
     try {
       const response = await roomApi.createRoom({ token });
       setRoomData(response);
-      setStatusMessage(`Sala criada com codigo ${response.room.code}.`);
+      setStatusMessage(`Sala criada com código ${response.room.code}.`);
     } catch (error) {
       setErrorMessage(formatErrorMessage(error));
     } finally {
@@ -228,7 +228,7 @@ export function RoomLobbyPage() {
 
   async function handleLeaveRoom() {
     if (!currentRoom?.id) {
-      setErrorMessage('Nao existe sala ativa para sair.');
+      setErrorMessage('Não existe sala ativa para sair.');
       return;
     }
 
@@ -239,7 +239,7 @@ export function RoomLobbyPage() {
     try {
       await roomApi.leaveRoom({ roomId: currentRoom.id, token });
       clearRoom();
-      setStatusMessage('Voce saiu da sala atual.');
+      setStatusMessage('Você saiu da sala atual.');
     } catch (error) {
       setErrorMessage(formatErrorMessage(error));
     } finally {
@@ -311,7 +311,7 @@ export function RoomLobbyPage() {
         token,
       });
       setRoomData(response);
-      setStatusMessage(currentPlayer?.is_ready ? 'Voce nao esta mais pronto.' : 'Voce marcou como pronto.');
+      setStatusMessage(currentPlayer?.is_ready ? 'Você não está mais pronto.' : 'Você marcou como pronto.');
     } catch (error) {
       setErrorMessage(formatErrorMessage(error));
     } finally {
@@ -342,13 +342,13 @@ export function RoomLobbyPage() {
 
   async function handleCopyRoomCode() {
     if (!currentRoom?.code || !navigator?.clipboard) {
-      setErrorMessage('Nao foi possivel copiar o codigo da sala.');
+      setErrorMessage('Não foi possível copiar o código da sala.');
       return;
     }
 
     try {
       await navigator.clipboard.writeText(currentRoom.code);
-      setCopyMessage('Codigo copiado para a area de transferencia.');
+      setCopyMessage('Código copiado para a área de transferência.');
     } catch (error) {
       setErrorMessage(formatErrorMessage(error));
     }
@@ -421,13 +421,13 @@ export function RoomLobbyPage() {
             <form className="lobby-join-form" onSubmit={handleJoinRoom}>
               <Input
                 onChange={(event) => setJoinCode(event.target.value)}
-                placeholder="Codigo da sala"
+                placeholder="Código da sala"
                 required
                 value={joinCode}
               />
 
               <Button loading={isLoading} type="submit">
-                Entrar por codigo
+                Entrar por código
               </Button>
             </form>
 
@@ -507,3 +507,4 @@ export function RoomLobbyPage() {
     </section>
   );
 }
+

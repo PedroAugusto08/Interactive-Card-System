@@ -8,7 +8,7 @@ import { authApi } from '../api/authApi';
 import { useAuthStore } from '../stores/authStore';
 import { formatErrorMessage } from '../utils/formatError';
 
-// Tela de login do usuario.
+// Tela de login do usuário.
 export function LoginPage() {
   const navigate = useNavigate();
   const setAuth = useAuthStore((state) => state.setAuth);

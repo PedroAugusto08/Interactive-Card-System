@@ -22,10 +22,10 @@ export function DeckCardRow({ deck, isSelected = false, onEdit, onDelete }) {
       </div>
 
       <div className="row-wrap">
-        <Button size="sm" variant="secondary" onClick={() => onEdit?.(deck)}>
+        <Button onClick={() => onEdit?.(deck)} size="sm" variant="secondary">
           Editar
         </Button>
-        <Button size="sm" variant="danger" onClick={() => onDelete?.(deck)}>
+        <Button onClick={() => onDelete?.(deck)} size="sm" variant="danger">
           Excluir
         </Button>
       </div>

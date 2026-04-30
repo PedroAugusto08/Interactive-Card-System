@@ -8,7 +8,7 @@ import { authApi } from '../api/authApi';
 import { useAuthStore } from '../stores/authStore';
 import { formatErrorMessage } from '../utils/formatError';
 
-// Tela de cadastro de novo usuario.
+// Tela de cadastro de novo usuário.
 export function RegisterPage() {
   const navigate = useNavigate();
   const setAuth = useAuthStore((state) => state.setAuth);
