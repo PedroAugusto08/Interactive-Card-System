@@ -214,6 +214,7 @@ function createSocketServer(httpServer) {
             snapshot: actionState?.snapshot || null,
             log: actionState?.log || null,
             notice: actionState?.notice || '',
+            effectResults: actionState?.effectResults || [],
             metrics: ackMetrics,
           });
         }
@@ -259,6 +260,7 @@ function createSocketServer(httpServer) {
             snapshot: actionState?.snapshot || null,
             log: actionState?.log || null,
             notice: actionState?.notice || '',
+            effectResults: actionState?.effectResults || [],
             metrics: ackMetrics,
           });
         }
@@ -310,6 +312,34 @@ function createSocketServer(httpServer) {
           totalMs: performance.now() - actionStartedAt,
         });
         queueMatchBroadcast(io, Number(roomId), [socket.id]);
+      } catch (error) {
+        acknowledgeSocketError(acknowledge, error.message);
+        emitSocketError(socket, error.message);
+      }
+    });
+
+    socket.on('match:revealTopDeck', async ({ roomId, targetUserId, topDeckInstanceId }, acknowledge) => {
+      try {
+        const actionState = await matchService.revealViewedTopDeckCardForPlayer({
+          roomId: Number(roomId),
+          userId: user.id,
+          targetUserId: Number(targetUserId),
+          topDeckInstanceId,
+        });
+
+        const roomChannel = getRoomChannel(Number(roomId));
+        if (actionState?.log) {
+          io.to(roomChannel).emit('match:log', actionState.log);
+        }
+        if (actionState?.revealEvent) {
+          io.to(roomChannel).emit('match:topDeckRevealed', actionState.revealEvent);
+        }
+
+        if (typeof acknowledge === 'function') {
+          acknowledge({
+            ok: true,
+          });
+        }
       } catch (error) {
         acknowledgeSocketError(acknowledge, error.message);
         emitSocketError(socket, error.message);

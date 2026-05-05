@@ -95,6 +95,14 @@ function buildActionFeedback(logMessage, notice, metrics) {
   return `${text}${import.meta.env.DEV ? formatPerfLabel(metrics) : ''}`;
 }
 
+function getTopDeckViewEffects(effectResults) {
+  if (!Array.isArray(effectResults)) {
+    return [];
+  }
+
+  return effectResults.filter((effect) => effect?.type === 'viewTopDeck' && effect?.card);
+}
+
 export function MatchPage() {
   const token = useAuthStore((state) => state.token);
   const user = useAuthStore((state) => state.user);
@@ -119,6 +127,8 @@ export function MatchPage() {
   const [isEndTurnConfirmOpen, setIsEndTurnConfirmOpen] = useState(false);
   const [isExileModalOpen, setIsExileModalOpen] = useState(false);
   const [pendingCardAction, setPendingCardAction] = useState(null);
+  const [pendingTopDeckViews, setPendingTopDeckViews] = useState([]);
+  const [revealedTopDeckModal, setRevealedTopDeckModal] = useState(null);
 
   const isSocketConnected = Boolean(socket?.connected);
   const activeTurnPlayerId = currentMatch?.currentTurnPlayerId;
@@ -172,14 +182,24 @@ export function MatchPage() {
       appendMatchLog(payload);
     }
 
+    function handleTopDeckRevealed(payload) {
+      if (!payload?.card) {
+        return;
+      }
+
+      setRevealedTopDeckModal(payload);
+    }
+
     socket.on('room:update', handleRoomUpdate);
     socket.on('match:sync', handleMatchSync);
     socket.on('match:log', handleLog);
+    socket.on('match:topDeckRevealed', handleTopDeckRevealed);
 
     return () => {
       socket.off('room:update', handleRoomUpdate);
       socket.off('match:sync', handleMatchSync);
       socket.off('match:log', handleLog);
+      socket.off('match:topDeckRevealed', handleTopDeckRevealed);
     };
   }, [appendMatchLog, setMatchData, setRoomData, socket]);
 
@@ -249,6 +269,10 @@ export function MatchPage() {
         if (response?.snapshot) {
           setMatchData(response.snapshot);
         }
+        const effectResults = getTopDeckViewEffects(response?.effectResults);
+        if (effectResults.length) {
+          setPendingTopDeckViews((current) => [...current, ...effectResults]);
+        }
         if (response?.log) {
           setSyncMessage(buildActionFeedback(response.log.message, response.notice, response.metrics));
           appendMatchLog(response.log);
@@ -295,8 +319,53 @@ export function MatchPage() {
             matchPlayers: snapshot.playerStates || [],
           });
           setSyncMessage(snapshot.actionNotice || '');
+          const effectResults = getTopDeckViewEffects(snapshot.actionEffects);
+          if (effectResults.length) {
+            setPendingTopDeckViews((current) => [...current, ...effectResults]);
+          }
         }
       }
+    } catch (error) {
+      setLocalError(formatErrorMessage(error));
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleRevealTopDeck() {
+    const activeTopDeckView = pendingTopDeckViews[0];
+    if (!activeTopDeckView || !currentRoom?.id) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    setLocalError('');
+
+    try {
+      if (isSocketConnected) {
+        await emitSocketAction(socket, 'match:revealTopDeck', {
+          roomId: currentRoom.id,
+          targetUserId: activeTopDeckView.targetUserId,
+          topDeckInstanceId: activeTopDeckView.card.instanceId,
+        });
+      } else {
+        const response = await matchApi.revealTopDeck({
+          roomId: currentRoom.id,
+          targetUserId: activeTopDeckView.targetUserId,
+          topDeckInstanceId: activeTopDeckView.card.instanceId,
+          token,
+        });
+
+        if (response?.log) {
+          setSyncMessage(response.log.message);
+          appendMatchLog(response.log);
+        }
+        if (response?.revealEvent?.card) {
+          setRevealedTopDeckModal(response.revealEvent);
+        }
+      }
+
+      setPendingTopDeckViews((current) => current.slice(1));
     } catch (error) {
       setLocalError(formatErrorMessage(error));
     } finally {
@@ -316,6 +385,7 @@ export function MatchPage() {
   const availableActions = currentUserState?.availableActions || [];
   const hasDrawnThisTurn = Boolean(currentUserState?.hasDrawnThisTurn);
   const targetablePlayers = playerStates.length ? playerStates : players;
+  const activeTopDeckView = pendingTopDeckViews[0] || null;
   const connectionState = !socket ? 'offline' : isSocketConnected ? 'connected' : 'reconnecting';
   const connectionLabel =
     connectionState === 'connected'
@@ -1070,6 +1140,85 @@ export function MatchPage() {
             </section>
           ) : null}
         </div>
+      </Modal>
+
+      <Modal
+        cancelLabel="Seguir"
+        confirmLabel="Revelar"
+        description={
+          activeTopDeckView
+            ? `Voce visualizou o topo do deck de ${activeTopDeckView.targetUsername}. Revele para a mesa apenas se quiser compartilhar essa informacao.`
+            : ''
+        }
+        isLoading={isSubmitting}
+        onClose={() => setPendingTopDeckViews((current) => current.slice(1))}
+        onConfirm={handleRevealTopDeck}
+        open={Boolean(activeTopDeckView) && !revealedTopDeckModal}
+        title="Visualizar"
+      >
+        {activeTopDeckView?.card ? (
+          <div className="top-deck-modal">
+            <div className="top-deck-modal__header">
+              <Badge tone="accent">Topo do deck</Badge>
+              <p className="muted-text">
+                Alvo: <strong>{activeTopDeckView.targetUsername}</strong>
+              </p>
+            </div>
+
+            <div className="top-deck-modal__card">
+              <CardItem
+                category={activeTopDeckView.card.category}
+                cost={activeTopDeckView.card.category === 'imo' ? activeTopDeckView.card.imoCost || 0 : undefined}
+                costLabel="Custo Imo"
+                description={activeTopDeckView.card.effect}
+                imageSrc={resolveCardImageUrl(activeTopDeckView.card.imagePath)}
+                name={activeTopDeckView.card.name}
+                selected
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="empty-state">Nao foi possivel carregar a carta visualizada.</div>
+        )}
+      </Modal>
+
+      <Modal
+        cancelLabel={null}
+        confirmLabel="Fechar"
+        description={
+          revealedTopDeckModal
+            ? `${revealedTopDeckModal.actorUsername} revelou o topo do deck de ${revealedTopDeckModal.targetUsername} para toda a mesa.`
+            : ''
+        }
+        onClose={() => setRevealedTopDeckModal(null)}
+        onConfirm={() => setRevealedTopDeckModal(null)}
+        open={Boolean(revealedTopDeckModal)}
+        title="Carta revelada"
+      >
+        {revealedTopDeckModal?.card ? (
+          <div className="top-deck-modal">
+            <div className="top-deck-modal__header">
+              <Badge tone="primary">Carta revelada</Badge>
+              <p className="muted-text">
+                Deck de <strong>{revealedTopDeckModal.targetUsername}</strong>
+              </p>
+            </div>
+
+            <div className="top-deck-modal__card">
+              <CardItem
+                category={revealedTopDeckModal.card.category}
+                cost={revealedTopDeckModal.card.category === 'imo' ? revealedTopDeckModal.card.imoCost || 0 : undefined}
+                costLabel="Custo Imo"
+                description={revealedTopDeckModal.card.effect}
+                imageSrc={resolveCardImageUrl(revealedTopDeckModal.card.imagePath)}
+                name={revealedTopDeckModal.card.name}
+                selected
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="empty-state">Nenhuma carta revelada no momento.</div>
+        )}
       </Modal>
 
       <Modal

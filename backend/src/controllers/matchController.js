@@ -17,6 +17,11 @@ const cardActionSchema = z.object({
   pairedSelectedTargetHandCardId: z.string().trim().min(1).optional(),
 });
 
+const revealTopDeckSchema = z.object({
+  targetUserId: z.coerce.number().int().positive(),
+  topDeckInstanceId: z.string().trim().min(1),
+});
+
 async function getMatchSnapshot(req, res) {
   const { roomId } = roomIdParamSchema.parse(req.params);
   const data = await matchService.getMatchSnapshot({
@@ -91,11 +96,25 @@ async function endTurn(req, res) {
   return res.status(200).json(data);
 }
 
+async function revealTopDeck(req, res) {
+  const { roomId } = roomIdParamSchema.parse(req.params);
+  const payload = revealTopDeckSchema.parse(req.body);
+  const data = await matchService.revealViewedTopDeckCardForPlayer({
+    roomId,
+    userId: req.user.id,
+    targetUserId: payload.targetUserId,
+    topDeckInstanceId: payload.topDeckInstanceId,
+  });
+
+  return res.status(200).json(data);
+}
+
 module.exports = {
   getMatchSnapshot,
   startMatch,
   drawCard,
   playCard,
   discardCard,
+  revealTopDeck,
   endTurn,
 };

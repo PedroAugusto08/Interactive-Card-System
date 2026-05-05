@@ -49,6 +49,13 @@ export const matchApi = {
       body: { cardId, targetUserId, selectedExileCardId, selectedTargetHandCardId },
     }),
 
+  revealTopDeck: ({ roomId, targetUserId, topDeckInstanceId, token }) =>
+    request(`/match/${roomId}/reveal-top-deck`, {
+      method: 'POST',
+      token,
+      body: { targetUserId, topDeckInstanceId },
+    }),
+
   endTurn: ({ roomId, token }) =>
     request(`/match/${roomId}/end-turn`, {
       method: 'POST',

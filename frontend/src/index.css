@@ -2351,6 +2351,34 @@ ul {
   margin-top: 8px;
 }
 
+.top-deck-modal,
+.top-deck-modal__header,
+.top-deck-modal__card {
+  display: grid;
+  gap: 14px;
+}
+
+.top-deck-modal__header {
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(124, 92, 255, 0.2);
+  background:
+    linear-gradient(180deg, rgba(124, 92, 255, 0.12), rgba(255, 255, 255, 0)),
+    rgba(16, 19, 27, 0.92);
+}
+
+.top-deck-modal__header p {
+  margin: 0;
+}
+
+.top-deck-modal__card {
+  justify-items: center;
+}
+
+.top-deck-modal__card .game-card {
+  width: min(260px, 100%);
+}
+
 .exile-card-order {
   grid-template-columns: 1fr auto;
   align-items: center;

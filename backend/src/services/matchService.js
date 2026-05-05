@@ -356,7 +356,7 @@ async function buildPlayerState({ activeMatch, matchPlayer, requesterUserId, car
   };
 }
 
-async function buildActionRealtimeState({ activeMatch, currentUserId, log, notice = '' }) {
+async function buildActionRealtimeState({ activeMatch, currentUserId, log, notice = '', effectResults = [] }) {
   const matchPlayers = await listMatchPlayers(activeMatch.id);
   const cardCatalogCache = new Map();
   const playerStates = await Promise.all(
@@ -388,6 +388,7 @@ async function buildActionRealtimeState({ activeMatch, currentUserId, log, notic
       playerStates,
     },
     notice,
+    effectResults,
     log: log
       ? {
           id: log.id,
@@ -524,8 +525,9 @@ async function playCardForPlayer({
   actingPlayerState.hand_cards_json = handCards;
   actingPlayerState.deck_cards_json = [...actingPlayerState.deck_cards_json, primaryPlay.cardEntry];
 
-  const notices = [];
-  notices.push(
+  const automationOutcome = createAutomationOutcome();
+  mergeAutomationOutcome(
+    automationOutcome,
     await applyCardAutomation({
       phase: 'play',
       ownerId: userId,
@@ -541,7 +543,8 @@ async function playCardForPlayer({
 
   if (pairedPlay) {
     actingPlayerState.deck_cards_json = [...actingPlayerState.deck_cards_json, pairedPlay.cardEntry];
-    notices.push(
+    mergeAutomationOutcome(
+      automationOutcome,
       await applyCardAutomation({
         phase: 'play',
         ownerId: userId,
@@ -556,7 +559,7 @@ async function playCardForPlayer({
     );
   }
 
-  const notice = notices.filter(Boolean).join(' ');
+  const notice = automationOutcome.notices.join(' ');
   const updatedPlayerStatesByUserId = await persistMatchPlayerStates({
     matchId: context.match.id,
     playerStatesByUserId,
@@ -591,6 +594,7 @@ async function playCardForPlayer({
       currentPlayer: updatedPlayerStatesByUserId.get(userId),
       log: createdLog,
       notice,
+      effectResults: automationOutcome.effects,
     }),
   });
 }
@@ -634,7 +638,7 @@ async function discardCardForPlayer({
   actingPlayerState.hand_cards_json = handCards;
   actingPlayerState.exile_cards_json = [discardedCard, ...actingPlayerState.exile_cards_json];
 
-  const notice = await applyCardAutomation({
+  const automationOutcome = await applyCardAutomation({
     phase: 'discard',
     ownerId: userId,
     card: resolvedCard,
@@ -645,6 +649,7 @@ async function discardCardForPlayer({
     selectedExileCardId,
     selectedTargetHandCardId,
   });
+  const notice = automationOutcome.notices.join(' ');
 
   const updatedPlayerStatesByUserId = await persistMatchPlayerStates({
     matchId: context.match.id,
@@ -674,8 +679,82 @@ async function discardCardForPlayer({
       currentPlayer: updatedPlayerStatesByUserId.get(userId),
       log: createdLog,
       notice,
+      effectResults: automationOutcome.effects,
     }),
   });
+}
+
+async function revealViewedTopDeckCardForPlayer({
+  roomId,
+  userId,
+  targetUserId,
+  topDeckInstanceId,
+}) {
+  const context = await requireActiveMatchContext({ roomId, userId, includeAllPlayers: true });
+  const targetState = context.matchPlayers.find((player) => player.user_id === Number(targetUserId));
+
+  if (!targetState) {
+    throw new AppError('O alvo selecionado nao esta disponivel na partida.', 404);
+  }
+
+  if (!topDeckInstanceId) {
+    throw new AppError('A carta visualizada nao foi informada para revelacao.', 400);
+  }
+
+  const currentTopDeckCard = targetState.deck_cards_json?.[0];
+  if (!currentTopDeckCard) {
+    throw new AppError(`O deck de ${targetState.username} esta vazio.`, 409);
+  }
+
+  if (currentTopDeckCard.instanceId !== topDeckInstanceId) {
+    throw new AppError('O topo do deck mudou antes da revelacao.', 409);
+  }
+
+  const resolvedCard = await resolveCardById({
+    ownerId: targetState.user_id,
+    cardId: currentTopDeckCard.cardId,
+  });
+
+  if (!resolvedCard) {
+    throw new AppError('A carta revelada nao foi encontrada no catalogo.', 404);
+  }
+
+  const revealEvent = {
+    type: 'topDeckRevealed',
+    actorUserId: context.currentPlayer.user_id,
+    actorUsername: context.currentPlayer.username,
+    targetUserId: targetState.user_id,
+    targetUsername: targetState.username,
+    card: {
+      ...resolvedCard,
+      instanceId: currentTopDeckCard.instanceId,
+    },
+  };
+
+  const createdLog = await addMatchLog({
+    matchId: context.match.id,
+    type: 'MATCH_REVEAL_TOP_DECK',
+    message: `${context.currentPlayer.username} revelou o topo do deck de ${targetState.username}: ${resolvedCard.name}.`,
+    payload: {
+      actorUserId: context.currentPlayer.user_id,
+      targetUserId: targetState.user_id,
+      cardId: resolvedCard.id,
+      topDeckInstanceId: currentTopDeckCard.instanceId,
+    },
+  });
+
+  return {
+    revealEvent,
+    log: createdLog
+      ? {
+          id: createdLog.id,
+          type: createdLog.type,
+          message: createdLog.message,
+          payload: createdLog.payload_json,
+          timestamp: createdLog.created_at,
+        }
+      : null,
+  };
 }
 
 async function endTurnForPlayer({ roomId, userId, includeSnapshot = true }) {
@@ -881,7 +960,7 @@ async function applyCardAutomation({
 }) {
   const automation = phase === 'play' ? card.playAutomation : card.discardAutomation;
   if (!automation?.effects?.length) {
-    return '';
+    return createAutomationOutcome();
   }
 
   const selectedTargetState = resolveAutomationTarget({
@@ -890,7 +969,7 @@ async function applyCardAutomation({
     playerStatesByUserId,
     targetUserId,
   });
-  const notices = [];
+  const outcome = createAutomationOutcome();
 
   for (const effect of automation.effects) {
     if (effect.type === 'gainCatalogCardToHand') {
@@ -900,7 +979,7 @@ async function applyCardAutomation({
       });
 
       actingPlayerState.hand_cards_json = [...actingPlayerState.hand_cards_json, generatedCard];
-      notices.push(`Efeito resolvido: ${generatedCard.cardId} foi gerada na sua mao.`);
+      outcome.notices.push(`Efeito resolvido: ${generatedCard.cardId} foi gerada na sua mao.`);
       continue;
     }
 
@@ -913,7 +992,7 @@ async function applyCardAutomation({
       );
 
       if (!selectableCards.length) {
-        notices.push('Efeito sem alvo valido: nao havia carta exilada disponivel para recuperar.');
+        outcome.notices.push('Efeito sem alvo valido: nao havia carta exilada disponivel para recuperar.');
         continue;
       }
 
@@ -931,7 +1010,7 @@ async function applyCardAutomation({
 
       const [recoveredCard] = actingPlayerState.exile_cards_json.splice(exileIndex, 1);
       actingPlayerState.hand_cards_json = [...actingPlayerState.hand_cards_json, recoveredCard];
-      notices.push('Efeito resolvido: uma carta do seu exilio voltou para a sua mao.');
+      outcome.notices.push('Efeito resolvido: uma carta do seu exilio voltou para a sua mao.');
       continue;
     }
 
@@ -943,13 +1022,13 @@ async function applyCardAutomation({
       });
 
       if (!targetState.deck_cards_json.length) {
-        notices.push(`Efeito sem alvo valido: o deck de ${targetState.username} estava vazio.`);
+        outcome.notices.push(`Efeito sem alvo valido: o deck de ${targetState.username} estava vazio.`);
         continue;
       }
 
       const [drawnCard] = targetState.deck_cards_json.splice(0, 1);
       targetState.hand_cards_json = [...targetState.hand_cards_json, drawnCard];
-      notices.push(`Efeito resolvido: ${targetState.username} comprou uma carta.`);
+      outcome.notices.push(`Efeito resolvido: ${targetState.username} comprou uma carta.`);
       continue;
     }
 
@@ -961,13 +1040,13 @@ async function applyCardAutomation({
       });
 
       if (!targetState.deck_cards_json.length) {
-        notices.push(`Efeito sem alvo valido: o deck de ${targetState.username} estava vazio.`);
+        outcome.notices.push(`Efeito sem alvo valido: o deck de ${targetState.username} estava vazio.`);
         continue;
       }
 
       const [exiledCard] = targetState.deck_cards_json.splice(0, 1);
       targetState.exile_cards_json = [exiledCard, ...targetState.exile_cards_json];
-      notices.push(`Efeito resolvido: o topo do deck de ${targetState.username} foi para o exilio.`);
+      outcome.notices.push(`Efeito resolvido: o topo do deck de ${targetState.username} foi para o exilio.`);
       continue;
     }
 
@@ -979,7 +1058,7 @@ async function applyCardAutomation({
       });
 
       if (!targetState.exile_cards_json.length) {
-        notices.push(`Efeito sem alvo valido: o exilio de ${targetState.username} estava vazio.`);
+        outcome.notices.push(`Efeito sem alvo valido: o exilio de ${targetState.username} estava vazio.`);
         continue;
       }
 
@@ -987,7 +1066,7 @@ async function applyCardAutomation({
       targetState.deck_cards_json = effect.shuffleIntoDeck
         ? shuffleCardEntries([...targetState.deck_cards_json, returnedCard])
         : [returnedCard, ...targetState.deck_cards_json];
-      notices.push(`Efeito resolvido: uma carta do exilio de ${targetState.username} voltou para o deck.`);
+      outcome.notices.push(`Efeito resolvido: uma carta do exilio de ${targetState.username} voltou para o deck.`);
       continue;
     }
 
@@ -999,7 +1078,7 @@ async function applyCardAutomation({
       });
 
       if (!targetState.deck_cards_json.length) {
-        notices.push(`O deck de ${targetState.username} estava vazio.`);
+        outcome.notices.push(`O deck de ${targetState.username} estava vazio.`);
         continue;
       }
 
@@ -1008,11 +1087,23 @@ async function applyCardAutomation({
         cardId: targetState.deck_cards_json[0].cardId,
       });
 
-      notices.push(
-        revealedCard
-          ? `Topo do deck de ${targetState.username}: ${revealedCard.name}.`
-          : `Topo do deck de ${targetState.username}: carta desconhecida.`
-      );
+      if (!revealedCard) {
+        outcome.notices.push(`Voce visualizou o topo do deck de ${targetState.username}.`);
+        continue;
+      }
+
+      outcome.notices.push(`Voce visualizou o topo do deck de ${targetState.username}.`);
+      outcome.effects.push({
+        type: 'viewTopDeck',
+        actorUserId: actingPlayerState.user_id,
+        targetUserId: targetState.user_id,
+        targetUsername: targetState.username,
+        canReveal: true,
+        card: {
+          ...revealedCard,
+          instanceId: targetState.deck_cards_json[0].instanceId,
+        },
+      });
       continue;
     }
 
@@ -1024,7 +1115,7 @@ async function applyCardAutomation({
       });
 
       if (!targetState.hand_cards_json.length) {
-        notices.push(`Efeito sem alvo valido: a mao de ${targetState.username} estava vazia.`);
+        outcome.notices.push(`Efeito sem alvo valido: a mao de ${targetState.username} estava vazia.`);
         continue;
       }
 
@@ -1044,7 +1135,7 @@ async function applyCardAutomation({
         ownerId: targetState.user_id,
         cardId: destroyedCard.cardId,
       });
-      notices.push(
+      outcome.notices.push(
         destroyedResolvedCard
           ? `Efeito resolvido: ${destroyedResolvedCard.name} foi destruida da mao de ${targetState.username}.`
           : `Efeito resolvido: uma carta da mao de ${targetState.username} foi destruida.`
@@ -1060,7 +1151,7 @@ async function applyCardAutomation({
       });
 
       if (!targetState.hand_cards_json.length) {
-        notices.push(`Efeito sem alvo valido: a mao de ${targetState.username} estava vazia.`);
+        outcome.notices.push(`Efeito sem alvo valido: a mao de ${targetState.username} estava vazia.`);
         continue;
       }
 
@@ -1070,7 +1161,7 @@ async function applyCardAutomation({
         ownerId: targetState.user_id,
         cardId: destroyedCard.cardId,
       });
-      notices.push(
+      outcome.notices.push(
         destroyedResolvedCard
           ? `Efeito resolvido: ${destroyedResolvedCard.name} foi destruida aleatoriamente da mao de ${targetState.username}.`
           : `Efeito resolvido: uma carta aleatoria da mao de ${targetState.username} foi destruida.`
@@ -1078,7 +1169,24 @@ async function applyCardAutomation({
     }
   }
 
-  return notices.filter(Boolean).join(' ');
+  return outcome;
+}
+
+function createAutomationOutcome() {
+  return {
+    notices: [],
+    effects: [],
+  };
+}
+
+function mergeAutomationOutcome(targetOutcome, nextOutcome) {
+  if (!targetOutcome || !nextOutcome) {
+    return targetOutcome;
+  }
+
+  targetOutcome.notices.push(...(nextOutcome.notices || []));
+  targetOutcome.effects.push(...(nextOutcome.effects || []));
+  return targetOutcome;
 }
 
 function resolveAutomationTarget({ automation, actingPlayerState, playerStatesByUserId, targetUserId }) {
@@ -1154,6 +1262,16 @@ function buildHiddenHandCards(handEntries) {
 }
 
 async function requireActiveTurnContext({ roomId, userId, includeAllPlayers = false }) {
+  const context = await requireActiveMatchContext({ roomId, userId, includeAllPlayers });
+
+  if (context.match.current_turn_player_id !== userId) {
+    throw new AppError('Nao e o seu turno.', 409);
+  }
+
+  return context;
+}
+
+async function requireActiveMatchContext({ roomId, userId, includeAllPlayers = false }) {
   const match = await findActiveMatchByRoomId(roomId);
   if (!match) {
     const room = await findRoomById(roomId);
@@ -1278,13 +1396,14 @@ async function finalizeActionResponse({ roomId, userId, includeSnapshot, actionS
   }
 
   const snapshot = await getMatchSnapshot({ roomId, userId });
-  if (!actionState?.notice) {
+  if (!actionState?.notice && !actionState?.effectResults?.length) {
     return snapshot;
   }
 
   return {
     ...snapshot,
     actionNotice: actionState.notice,
+    actionEffects: actionState.effectResults || [],
   };
 }
 
@@ -1296,6 +1415,7 @@ module.exports = {
   drawCardForPlayer,
   playCardForPlayer,
   discardCardForPlayer,
+  revealViewedTopDeckCardForPlayer,
   endTurnForPlayer,
   forfeitMatchByLeavingRoom,
 };
