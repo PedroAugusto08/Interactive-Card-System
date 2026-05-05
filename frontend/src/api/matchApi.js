@@ -20,9 +20,11 @@ export const matchApi = {
     cardId,
     targetUserId,
     selectedExileCardId,
+    selectedTargetHandCardId,
     pairedCardId,
     pairedTargetUserId,
     pairedSelectedExileCardId,
+    pairedSelectedTargetHandCardId,
     token,
   }) =>
     request(`/match/${roomId}/play-card`, {
@@ -32,17 +34,19 @@ export const matchApi = {
         cardId,
         targetUserId,
         selectedExileCardId,
+        selectedTargetHandCardId,
         pairedCardId,
         pairedTargetUserId,
         pairedSelectedExileCardId,
+        pairedSelectedTargetHandCardId,
       },
     }),
 
-  discardCard: ({ roomId, cardId, targetUserId, selectedExileCardId, token }) =>
+  discardCard: ({ roomId, cardId, targetUserId, selectedExileCardId, selectedTargetHandCardId, token }) =>
     request(`/match/${roomId}/discard-card`, {
       method: 'POST',
       token,
-      body: { cardId, targetUserId, selectedExileCardId },
+      body: { cardId, targetUserId, selectedExileCardId, selectedTargetHandCardId },
     }),
 
   endTurn: ({ roomId, token }) =>

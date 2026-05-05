@@ -247,44 +247,14 @@ async function buildMatchSnapshot({ room, players, activeMatch, matchPlayers, lo
 
   const cardCatalogCache = new Map();
   const hydratedPlayers = await Promise.all(
-    matchPlayers.map(async (player) => {
-      const isRequester = player.user_id === userId;
-      let handCards = [];
-      let exileCards = [];
-
-      if (isRequester) {
-        const cardCatalogMap = await getCardCatalogMapForUser(player.user_id, cardCatalogCache);
-        [handCards, exileCards] = [
-          hydrateCards(cardCatalogMap, player.hand_cards_json || []),
-          hydrateCards(cardCatalogMap, player.exile_cards_json || []),
-        ];
-      }
-
-      return {
-        userId: player.user_id,
-        username: player.username,
-        email: player.email,
-        turnOrder: player.turn_order,
-        health: player.health,
-        imo: player.imo,
-        maxImo: player.max_imo,
-        hasDrawnThisTurn: player.has_drawn_this_turn,
-        hasUsedCardActionThisTurn: player.has_used_card_action_this_turn,
-        isDefeated: player.is_defeated,
-        zones: {
-          deckCount: (player.deck_cards_json || []).length,
-          handCount: isRequester ? handCards.length : (player.hand_cards_json || []).length,
-          exileCount: isRequester ? exileCards.length : (player.exile_cards_json || []).length,
-        },
-        handCards: isRequester ? handCards : [],
-        exileCards: isRequester ? exileCards : [],
-        availableActions: buildAvailableActions({
-          activeMatch,
-          matchPlayer: player,
-          requesterUserId: userId,
-        }),
-      };
-    })
+    matchPlayers.map((player) =>
+      buildPlayerState({
+        activeMatch,
+        matchPlayer: player,
+        requesterUserId: userId,
+        cardCatalogCache,
+      })
+    )
   );
 
   const currentUserState = hydratedPlayers.find((player) => player.userId === userId) || null;
@@ -316,15 +286,17 @@ async function buildMatchSnapshot({ room, players, activeMatch, matchPlayers, lo
 }
 
 async function buildRealtimeMatchState({ activeMatch, matchPlayers, userId, cardCatalogCache }) {
-  const matchPlayer = matchPlayers.find((player) => player.user_id === userId) || null;
-  const currentUserState = matchPlayer
-    ? await buildPlayerState({
+  const playerStates = await Promise.all(
+    matchPlayers.map((matchPlayer) =>
+      buildPlayerState({
         activeMatch,
         matchPlayer,
         requesterUserId: userId,
         cardCatalogCache,
       })
-    : null;
+    )
+  );
+  const currentUserState = playerStates.find((player) => player.userId === userId) || null;
 
   return {
     match: {
@@ -339,6 +311,7 @@ async function buildRealtimeMatchState({ activeMatch, matchPlayers, userId, card
     currentTurnPlayerId: activeMatch.current_turn_player_id,
     round: activeMatch.round,
     currentUserState,
+    playerStates,
   };
 }
 
@@ -353,6 +326,8 @@ async function buildPlayerState({ activeMatch, matchPlayer, requesterUserId, car
       hydrateCards(cardCatalogMap, matchPlayer.hand_cards_json || []),
       hydrateCards(cardCatalogMap, matchPlayer.exile_cards_json || []),
     ];
+  } else {
+    handCards = buildHiddenHandCards(matchPlayer.hand_cards_json || []);
   }
 
   return {
@@ -371,7 +346,7 @@ async function buildPlayerState({ activeMatch, matchPlayer, requesterUserId, car
       handCount: isRequester ? handCards.length : (matchPlayer.hand_cards_json || []).length,
       exileCount: isRequester ? exileCards.length : (matchPlayer.exile_cards_json || []).length,
     },
-    handCards: isRequester ? handCards : [],
+    handCards,
     exileCards: isRequester ? exileCards : [],
     availableActions: buildAvailableActions({
       activeMatch,
@@ -381,13 +356,20 @@ async function buildPlayerState({ activeMatch, matchPlayer, requesterUserId, car
   };
 }
 
-async function buildActionRealtimeState({ activeMatch, currentUserId, currentPlayer, log, notice = '' }) {
-  const currentUserState = await buildPlayerState({
-    activeMatch,
-    matchPlayer: currentPlayer,
-    requesterUserId: currentUserId,
-    cardCatalogCache: new Map(),
-  });
+async function buildActionRealtimeState({ activeMatch, currentUserId, log, notice = '' }) {
+  const matchPlayers = await listMatchPlayers(activeMatch.id);
+  const cardCatalogCache = new Map();
+  const playerStates = await Promise.all(
+    matchPlayers.map((matchPlayer) =>
+      buildPlayerState({
+        activeMatch,
+        matchPlayer,
+        requesterUserId: currentUserId,
+        cardCatalogCache,
+      })
+    )
+  );
+  const currentUserState = playerStates.find((player) => player.userId === currentUserId) || null;
 
   return {
     snapshot: {
@@ -403,6 +385,7 @@ async function buildActionRealtimeState({ activeMatch, currentUserId, currentPla
       currentTurnPlayerId: activeMatch.current_turn_player_id,
       round: activeMatch.round,
       currentUserState,
+      playerStates,
     },
     notice,
     log: log
@@ -483,9 +466,11 @@ async function playCardForPlayer({
   cardId,
   targetUserId = null,
   selectedExileCardId = null,
+  selectedTargetHandCardId = null,
   pairedCardId = null,
   pairedTargetUserId = null,
   pairedSelectedExileCardId = null,
+  pairedSelectedTargetHandCardId = null,
   includeSnapshot = true,
 }) {
   const context = await requireActiveTurnContext({ roomId, userId, includeAllPlayers: true });
@@ -550,6 +535,7 @@ async function playCardForPlayer({
       playerStatesByUserId,
       targetUserId,
       selectedExileCardId,
+      selectedTargetHandCardId,
     })
   );
 
@@ -565,6 +551,7 @@ async function playCardForPlayer({
         playerStatesByUserId,
         targetUserId: pairedTargetUserId,
         selectedExileCardId: pairedSelectedExileCardId,
+        selectedTargetHandCardId: pairedSelectedTargetHandCardId,
       })
     );
   }
@@ -587,8 +574,10 @@ async function playCardForPlayer({
       cardId: primaryPlay.cardEntry.cardId,
       imoCost: totalImoCost,
       targetUserId: targetUserId || null,
+      selectedTargetHandCardId: selectedTargetHandCardId || null,
       pairedCardId: pairedPlay?.cardEntry.cardId || null,
       pairedTargetUserId: pairedTargetUserId || null,
+      pairedSelectedTargetHandCardId: pairedSelectedTargetHandCardId || null,
     },
   });
 
@@ -612,6 +601,7 @@ async function discardCardForPlayer({
   cardId,
   targetUserId = null,
   selectedExileCardId = null,
+  selectedTargetHandCardId = null,
   includeSnapshot = true,
 }) {
   const context = await requireActiveTurnContext({ roomId, userId, includeAllPlayers: true });
@@ -653,6 +643,7 @@ async function discardCardForPlayer({
     playerStatesByUserId,
     targetUserId,
     selectedExileCardId,
+    selectedTargetHandCardId,
   });
 
   const updatedPlayerStatesByUserId = await persistMatchPlayerStates({
@@ -669,6 +660,7 @@ async function discardCardForPlayer({
       userId,
       cardId: discardedCard.cardId,
       targetUserId: targetUserId || null,
+      selectedTargetHandCardId: selectedTargetHandCardId || null,
     },
   });
 
@@ -885,6 +877,7 @@ async function applyCardAutomation({
   playerStatesByUserId,
   targetUserId,
   selectedExileCardId,
+  selectedTargetHandCardId,
 }) {
   const automation = phase === 'play' ? card.playAutomation : card.discardAutomation;
   if (!automation?.effects?.length) {
@@ -1020,6 +1013,68 @@ async function applyCardAutomation({
           ? `Topo do deck de ${targetState.username}: ${revealedCard.name}.`
           : `Topo do deck de ${targetState.username}: carta desconhecida.`
       );
+      continue;
+    }
+
+    if (effect.type === 'destroySelectedHandCard') {
+      const targetState = resolveEffectTargetState({
+        effect,
+        actingPlayerState,
+        selectedTargetState,
+      });
+
+      if (!targetState.hand_cards_json.length) {
+        notices.push(`Efeito sem alvo valido: a mao de ${targetState.username} estava vazia.`);
+        continue;
+      }
+
+      if (!selectedTargetHandCardId) {
+        throw new AppError('Escolha uma carta da mao do alvo para destruir.', 400);
+      }
+
+      const targetHandIndex = targetState.hand_cards_json.findIndex(
+        (entry) => entry.instanceId === selectedTargetHandCardId
+      );
+      if (targetHandIndex < 0) {
+        throw new AppError('A carta selecionada nao esta disponivel na mao do alvo.', 400);
+      }
+
+      const [destroyedCard] = targetState.hand_cards_json.splice(targetHandIndex, 1);
+      const destroyedResolvedCard = await resolveCardById({
+        ownerId: targetState.user_id,
+        cardId: destroyedCard.cardId,
+      });
+      notices.push(
+        destroyedResolvedCard
+          ? `Efeito resolvido: ${destroyedResolvedCard.name} foi destruida da mao de ${targetState.username}.`
+          : `Efeito resolvido: uma carta da mao de ${targetState.username} foi destruida.`
+      );
+      continue;
+    }
+
+    if (effect.type === 'destroyRandomHandCard') {
+      const targetState = resolveEffectTargetState({
+        effect,
+        actingPlayerState,
+        selectedTargetState,
+      });
+
+      if (!targetState.hand_cards_json.length) {
+        notices.push(`Efeito sem alvo valido: a mao de ${targetState.username} estava vazia.`);
+        continue;
+      }
+
+      const randomIndex = Math.floor(Math.random() * targetState.hand_cards_json.length);
+      const [destroyedCard] = targetState.hand_cards_json.splice(randomIndex, 1);
+      const destroyedResolvedCard = await resolveCardById({
+        ownerId: targetState.user_id,
+        cardId: destroyedCard.cardId,
+      });
+      notices.push(
+        destroyedResolvedCard
+          ? `Efeito resolvido: ${destroyedResolvedCard.name} foi destruida aleatoriamente da mao de ${targetState.username}.`
+          : `Efeito resolvido: uma carta aleatoria da mao de ${targetState.username} foi destruida.`
+      );
     }
   }
 
@@ -1084,6 +1139,18 @@ function shuffleCardEntries(cards) {
   }
 
   return entries;
+}
+
+function buildHiddenHandCards(handEntries) {
+  return (handEntries || []).map((entry, index) => ({
+    instanceId: entry.instanceId,
+    cardId: null,
+    name: `Carta oculta ${index + 1}`,
+    category: 'hidden',
+    effect: 'Carta oculta na mao do alvo.',
+    imagePath: '',
+    isHidden: true,
+  }));
 }
 
 async function requireActiveTurnContext({ roomId, userId, includeAllPlayers = false }) {

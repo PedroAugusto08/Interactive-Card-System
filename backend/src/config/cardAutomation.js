@@ -1,7 +1,7 @@
 const { z } = require('zod');
 
 const AUTOMATION_TARGET_SCOPES = ['selected-player', 'other-player'];
-const AUTOMATION_SELECTIONS = ['own-exile-card'];
+const AUTOMATION_SELECTIONS = ['own-exile-card', 'target-hand-card'];
 const AUTOMATION_EFFECT_TARGETS = ['self', 'selected-player'];
 
 const gainCatalogCardToHandEffectSchema = z.object({
@@ -35,6 +35,16 @@ const revealTopDeckEffectSchema = z.object({
   target: z.enum(AUTOMATION_EFFECT_TARGETS).optional(),
 });
 
+const destroySelectedHandCardEffectSchema = z.object({
+  type: z.literal('destroySelectedHandCard'),
+  target: z.enum(AUTOMATION_EFFECT_TARGETS).optional(),
+});
+
+const destroyRandomHandCardEffectSchema = z.object({
+  type: z.literal('destroyRandomHandCard'),
+  target: z.enum(AUTOMATION_EFFECT_TARGETS).optional(),
+});
+
 const cardAutomationEffectSchema = z.discriminatedUnion('type', [
   gainCatalogCardToHandEffectSchema,
   moveSelectedExileCardToHandEffectSchema,
@@ -42,6 +52,8 @@ const cardAutomationEffectSchema = z.discriminatedUnion('type', [
   moveTopDeckToExileEffectSchema,
   moveTopExileToDeckEffectSchema,
   revealTopDeckEffectSchema,
+  destroySelectedHandCardEffectSchema,
+  destroyRandomHandCardEffectSchema,
 ]);
 
 const automationPhaseSchema = z.object({

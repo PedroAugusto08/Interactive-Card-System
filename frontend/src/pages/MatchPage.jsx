@@ -47,20 +47,39 @@ function getCardActionAutomation(card, action) {
   return action === 'match:playCard' ? card.playAutomation || null : card.discardAutomation || null;
 }
 
+function getPlayerId(player) {
+  return player?.user_id ?? player?.userId ?? null;
+}
+
 function getTargetOptions(players, currentUserId, targetScope) {
   if (!Array.isArray(players)) {
     return [];
   }
 
   if (targetScope === 'other-player') {
-    return players.filter((player) => player.user_id !== currentUserId);
+    return players.filter((player) => {
+      const playerId = getPlayerId(player);
+      return playerId !== currentUserId && !player?.isDefeated && !player?.is_defeated;
+    });
   }
 
   if (targetScope === 'selected-player') {
-    return players;
+    return players.filter((player) => !player?.isDefeated && !player?.is_defeated);
   }
 
   return [];
+}
+
+function automationRequiresTargetHandSelection(automation) {
+  return automation?.selection === 'target-hand-card';
+}
+
+function getTargetHandCards(playerStates, targetUserId) {
+  if (!Array.isArray(playerStates) || !targetUserId) {
+    return [];
+  }
+
+  return playerStates.find((player) => player.userId === targetUserId)?.handCards || [];
 }
 
 function getPlayableTogetherCandidates(cards, primaryCardId) {
@@ -84,6 +103,7 @@ export function MatchPage() {
   const players = useRoomStore((state) => state.players);
   const currentMatch = useRoomStore((state) => state.currentMatch);
   const currentUserState = useRoomStore((state) => state.currentUserState);
+  const playerStates = useRoomStore((state) => state.playerStates);
   const logs = useRoomStore((state) => state.logs);
   const setRoomData = useRoomStore((state) => state.setRoomData);
   const setMatchData = useRoomStore((state) => state.setMatchData);
@@ -250,6 +270,11 @@ export function MatchPage() {
             cardId: payload.cardId,
             targetUserId: payload.targetUserId,
             selectedExileCardId: payload.selectedExileCardId,
+            selectedTargetHandCardId: payload.selectedTargetHandCardId,
+            pairedCardId: payload.pairedCardId,
+            pairedTargetUserId: payload.pairedTargetUserId,
+            pairedSelectedExileCardId: payload.pairedSelectedExileCardId,
+            pairedSelectedTargetHandCardId: payload.pairedSelectedTargetHandCardId,
           });
         } else if (action === 'match:discardCard') {
           snapshot = await matchApi.discardCard({
@@ -258,6 +283,7 @@ export function MatchPage() {
             cardId: payload.cardId,
             targetUserId: payload.targetUserId,
             selectedExileCardId: payload.selectedExileCardId,
+            selectedTargetHandCardId: payload.selectedTargetHandCardId,
           });
         } else if (action === 'match:endTurn') {
           snapshot = await matchApi.endTurn({ roomId: currentRoom.id, token });
@@ -289,6 +315,7 @@ export function MatchPage() {
   const exileCards = currentUserState?.exileCards || [];
   const availableActions = currentUserState?.availableActions || [];
   const hasDrawnThisTurn = Boolean(currentUserState?.hasDrawnThisTurn);
+  const targetablePlayers = playerStates.length ? playerStates : players;
   const connectionState = !socket ? 'offline' : isSocketConnected ? 'connected' : 'reconnecting';
   const connectionLabel =
     connectionState === 'connected'
@@ -318,16 +345,21 @@ export function MatchPage() {
     }
 
     const automation = getCardActionAutomation(targetCard, action);
-    const targetOptions = getTargetOptions(players, user?.id, automation?.targetScope);
+    const targetOptions = getTargetOptions(targetablePlayers, user?.id, automation?.targetScope);
     const pairedCandidates =
       action === 'match:playCard' && targetCard.canPlayTogether
         ? getPlayableTogetherCandidates(handCards, cardId)
         : [];
     const requiresTarget = Boolean(automation?.targetScope);
     const requiresExileSelection = automation?.selection === 'own-exile-card' && exileCards.length > 0;
+    const requiresTargetHandSelection = automationRequiresTargetHandSelection(automation);
     const allowsPairedCard = action === 'match:playCard' && pairedCandidates.length > 0;
+    const initialTargetUserId = getPlayerId(targetOptions[0]) || null;
+    const initialTargetHandCards = requiresTargetHandSelection
+      ? getTargetHandCards(playerStates, initialTargetUserId)
+      : [];
 
-    if (!requiresTarget && !requiresExileSelection && !allowsPairedCard) {
+    if (!requiresTarget && !requiresExileSelection && !requiresTargetHandSelection && !allowsPairedCard) {
       handleAction(action, { cardId });
       return;
     }
@@ -338,13 +370,15 @@ export function MatchPage() {
       cardId,
       cardName: targetCard.name,
       automation,
-      targetUserId: targetOptions[0]?.user_id || null,
+      targetUserId: initialTargetUserId,
       selectedExileCardId: requiresExileSelection ? exileCards[0]?.instanceId || null : null,
+      selectedTargetHandCardId: initialTargetHandCards[0]?.instanceId || null,
       pairedCardId: null,
       pairedCardName: '',
       pairedAutomation: null,
       pairedTargetUserId: null,
       pairedSelectedExileCardId: null,
+      pairedSelectedTargetHandCardId: null,
     });
   }
 
@@ -360,6 +394,9 @@ export function MatchPage() {
     const requiresTarget = Boolean(pendingCardAction.automation?.targetScope);
     const requiresExileSelection =
       pendingCardAction.automation?.selection === 'own-exile-card' && exileCards.length > 0;
+    const requiresTargetHandSelection = automationRequiresTargetHandSelection(
+      pendingCardAction.automation
+    ) && pendingTargetHandCards.length > 0;
     const requiresPairedTarget =
       Boolean(pendingCardAction.pairedCardId) &&
       Boolean(pendingCardAction.pairedAutomation?.targetScope);
@@ -367,6 +404,10 @@ export function MatchPage() {
       Boolean(pendingCardAction.pairedCardId) &&
       pendingCardAction.pairedAutomation?.selection === 'own-exile-card' &&
       exileCards.length > 0;
+    const requiresPairedTargetHandSelection =
+      Boolean(pendingCardAction.pairedCardId) &&
+      automationRequiresTargetHandSelection(pendingCardAction.pairedAutomation) &&
+      pendingPairedTargetHandCards.length > 0;
 
     if (requiresTarget && !pendingCardAction.targetUserId) {
       setLocalError('Selecione um alvo para essa carta.');
@@ -375,6 +416,11 @@ export function MatchPage() {
 
     if (requiresExileSelection && !pendingCardAction.selectedExileCardId) {
       setLocalError('Selecione uma carta do seu exílio.');
+      return;
+    }
+
+    if (requiresTargetHandSelection && !pendingCardAction.selectedTargetHandCardId) {
+      setLocalError('Selecione uma carta da mao do alvo.');
       return;
     }
 
@@ -388,24 +434,44 @@ export function MatchPage() {
       return;
     }
 
+    if (requiresPairedTargetHandSelection && !pendingCardAction.pairedSelectedTargetHandCardId) {
+      setLocalError('Selecione uma carta da mao do alvo para a carta jogada junto.');
+      return;
+    }
+
     const payload = {
       cardId: pendingCardAction.cardId,
       targetUserId: pendingCardAction.targetUserId || undefined,
       selectedExileCardId: pendingCardAction.selectedExileCardId || undefined,
+      selectedTargetHandCardId: pendingCardAction.selectedTargetHandCardId || undefined,
       pairedCardId: pendingCardAction.pairedCardId || undefined,
       pairedTargetUserId: pendingCardAction.pairedTargetUserId || undefined,
       pairedSelectedExileCardId: pendingCardAction.pairedSelectedExileCardId || undefined,
+      pairedSelectedTargetHandCardId: pendingCardAction.pairedSelectedTargetHandCardId || undefined,
     };
 
     closePendingCardAction();
     await handleAction(pendingCardAction.action, payload);
   }
 
-  const pendingTargetOptions = getTargetOptions(players, user?.id, pendingCardAction?.automation?.targetScope);
-  const pendingPairedTargetOptions = getTargetOptions(players, user?.id, pendingCardAction?.pairedAutomation?.targetScope);
+  const pendingTargetOptions = getTargetOptions(
+    targetablePlayers,
+    user?.id,
+    pendingCardAction?.automation?.targetScope
+  );
+  const pendingPairedTargetOptions = getTargetOptions(
+    targetablePlayers,
+    user?.id,
+    pendingCardAction?.pairedAutomation?.targetScope
+  );
   const pendingPairedCandidates = getPlayableTogetherCandidates(handCards, pendingCardAction?.cardId);
   const pendingPrimaryCard = handCards.find((card) => card.instanceId === pendingCardAction?.cardId) || null;
   const pendingSecondaryCard = handCards.find((card) => card.instanceId === pendingCardAction?.pairedCardId) || null;
+  const pendingTargetHandCards = getTargetHandCards(playerStates, pendingCardAction?.targetUserId);
+  const pendingPairedTargetHandCards = getTargetHandCards(
+    playerStates,
+    pendingCardAction?.pairedTargetUserId
+  );
 
   return (
     <section className="match-shell">
@@ -650,6 +716,7 @@ export function MatchPage() {
                             pairedAutomation: null,
                             pairedTargetUserId: null,
                             pairedSelectedExileCardId: null,
+                            pairedSelectedTargetHandCardId: null,
                           }
                         : current
                     )
@@ -669,9 +736,19 @@ export function MatchPage() {
                     key={card.instanceId}
                     onClick={() => {
                       const pairedAutomation = getCardActionAutomation(card, 'match:playCard');
-                      const pairedTargetOptions = getTargetOptions(players, user?.id, pairedAutomation?.targetScope);
+                      const pairedTargetOptions = getTargetOptions(
+                        targetablePlayers,
+                        user?.id,
+                        pairedAutomation?.targetScope
+                      );
                       const pairedNeedsExile =
                         pairedAutomation?.selection === 'own-exile-card' && exileCards.length > 0;
+                      const pairedNeedsTargetHandSelection =
+                        automationRequiresTargetHandSelection(pairedAutomation);
+                      const initialPairedTargetUserId = getPlayerId(pairedTargetOptions[0]) || null;
+                      const initialPairedTargetHandCards = pairedNeedsTargetHandSelection
+                        ? getTargetHandCards(playerStates, initialPairedTargetUserId)
+                        : [];
 
                       setPendingCardAction((current) =>
                         current
@@ -680,8 +757,11 @@ export function MatchPage() {
                               pairedCardId: card.instanceId,
                               pairedCardName: card.name,
                               pairedAutomation: pairedAutomation,
-                              pairedTargetUserId: pairedTargetOptions[0]?.user_id || null,
+                              pairedTargetUserId: initialPairedTargetUserId,
                               pairedSelectedExileCardId: pairedNeedsExile ? exileCards[0]?.instanceId || null : null,
+                              pairedSelectedTargetHandCardId: pairedNeedsTargetHandSelection
+                                ? initialPairedTargetHandCards[0]?.instanceId || null
+                                : null,
                             }
                           : current
                       );
@@ -702,7 +782,9 @@ export function MatchPage() {
             </section>
           ) : null}
 
-          {pendingCardAction?.automation?.targetScope || pendingCardAction?.automation?.selection === 'own-exile-card' ? (
+          {pendingCardAction?.automation?.targetScope ||
+          pendingCardAction?.automation?.selection === 'own-exile-card' ||
+          automationRequiresTargetHandSelection(pendingCardAction?.automation) ? (
             <section className="combo-modal__section">
               <div className="combo-modal__section-head">
                 <div>
@@ -719,19 +801,26 @@ export function MatchPage() {
                     <div className="combo-modal__chip-row">
                       {pendingTargetOptions.map((player) => (
                         <Button
-                          key={player.user_id}
-                          onClick={() =>
+                          key={getPlayerId(player)}
+                          onClick={() => {
+                            const nextTargetUserId = getPlayerId(player);
+                            const nextTargetHandCards = getTargetHandCards(playerStates, nextTargetUserId);
                             setPendingCardAction((current) =>
                               current
                                 ? {
                                     ...current,
-                                    targetUserId: player.user_id,
+                                    targetUserId: nextTargetUserId,
+                                    selectedTargetHandCardId: automationRequiresTargetHandSelection(
+                                      current.automation
+                                    )
+                                      ? nextTargetHandCards[0]?.instanceId || null
+                                      : current.selectedTargetHandCardId,
                                   }
                                 : current
-                            )
-                          }
+                            );
+                          }}
                           type="button"
-                          variant={pendingCardAction.targetUserId === player.user_id ? 'primary' : 'secondary'}
+                          variant={pendingCardAction.targetUserId === getPlayerId(player) ? 'primary' : 'secondary'}
                         >
                           {player.username}
                         </Button>
@@ -787,6 +876,45 @@ export function MatchPage() {
                   )}
                 </div>
               ) : null}
+
+              {automationRequiresTargetHandSelection(pendingCardAction?.automation) ? (
+                <div className="combo-modal__subsection">
+                  <span className="status-label">Escolha a carta da mao do alvo</span>
+                  {pendingCardAction?.targetUserId ? (
+                    pendingTargetHandCards.length ? (
+                      <div className="combo-modal__chip-row">
+                        {pendingTargetHandCards.map((card) => (
+                          <Button
+                            key={`target-hand-${card.instanceId}`}
+                            onClick={() =>
+                              setPendingCardAction((current) =>
+                                current
+                                  ? {
+                                      ...current,
+                                      selectedTargetHandCardId: card.instanceId,
+                                    }
+                                  : current
+                              )
+                            }
+                            type="button"
+                            variant={
+                              pendingCardAction.selectedTargetHandCardId === card.instanceId
+                                ? 'primary'
+                                : 'secondary'
+                            }
+                          >
+                            {card.name}
+                          </Button>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="muted-text">A mao do alvo esta vazia.</p>
+                    )
+                  ) : (
+                    <p className="muted-text">Escolha um alvo primeiro.</p>
+                  )}
+                </div>
+              ) : null}
             </section>
           ) : null}
 
@@ -821,19 +949,30 @@ export function MatchPage() {
                     <div className="combo-modal__chip-row">
                       {pendingPairedTargetOptions.map((player) => (
                         <Button
-                          key={`paired-target-${player.user_id}`}
-                          onClick={() =>
+                          key={`paired-target-${getPlayerId(player)}`}
+                          onClick={() => {
+                            const nextTargetUserId = getPlayerId(player);
+                            const nextTargetHandCards = getTargetHandCards(playerStates, nextTargetUserId);
                             setPendingCardAction((current) =>
                               current
                                 ? {
                                     ...current,
-                                    pairedTargetUserId: player.user_id,
+                                    pairedTargetUserId: nextTargetUserId,
+                                    pairedSelectedTargetHandCardId: automationRequiresTargetHandSelection(
+                                      current.pairedAutomation
+                                    )
+                                      ? nextTargetHandCards[0]?.instanceId || null
+                                      : current.pairedSelectedTargetHandCardId,
                                   }
                                 : current
-                            )
-                          }
+                            );
+                          }}
                           type="button"
-                          variant={pendingCardAction.pairedTargetUserId === player.user_id ? 'primary' : 'secondary'}
+                          variant={
+                            pendingCardAction.pairedTargetUserId === getPlayerId(player)
+                              ? 'primary'
+                              : 'secondary'
+                          }
                         >
                           {player.username}
                         </Button>
@@ -886,6 +1025,45 @@ export function MatchPage() {
                     </div>
                   ) : (
                     <p className="muted-text">Seu exílio está vazio; a carta jogada junto não poderá recuperar carta.</p>
+                  )}
+                </div>
+              ) : null}
+
+              {automationRequiresTargetHandSelection(pendingCardAction?.pairedAutomation) ? (
+                <div className="combo-modal__subsection">
+                  <span className="status-label">Escolha a carta da mao do alvo da carta extra</span>
+                  {pendingCardAction?.pairedTargetUserId ? (
+                    pendingPairedTargetHandCards.length ? (
+                      <div className="combo-modal__chip-row">
+                        {pendingPairedTargetHandCards.map((card) => (
+                          <Button
+                            key={`paired-target-hand-${card.instanceId}`}
+                            onClick={() =>
+                              setPendingCardAction((current) =>
+                                current
+                                  ? {
+                                      ...current,
+                                      pairedSelectedTargetHandCardId: card.instanceId,
+                                    }
+                                  : current
+                              )
+                            }
+                            type="button"
+                            variant={
+                              pendingCardAction.pairedSelectedTargetHandCardId === card.instanceId
+                                ? 'primary'
+                                : 'secondary'
+                            }
+                          >
+                            {card.name}
+                          </Button>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="muted-text">A mao do alvo da carta extra esta vazia.</p>
+                    )
+                  ) : (
+                    <p className="muted-text">Escolha um alvo para a carta extra primeiro.</p>
                   )}
                 </div>
               ) : null}

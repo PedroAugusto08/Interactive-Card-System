@@ -10,6 +10,7 @@ export const useRoomStore = create(
       players: [],
       currentMatch: null,
       currentUserState: null,
+      playerStates: [],
       logs: [],
 
       setRoomData: ({ room, players }) =>
@@ -23,6 +24,7 @@ export const useRoomStore = create(
           currentMatch: snapshot?.match !== undefined ? snapshot.match || null : state.currentMatch,
           currentUserState:
             snapshot?.currentUserState !== undefined ? snapshot.currentUserState || null : state.currentUserState,
+          playerStates: Array.isArray(snapshot?.playerStates) ? snapshot.playerStates : state.playerStates,
           logs: Array.isArray(snapshot?.logs) ? snapshot.logs : state.logs,
         })),
 
@@ -40,6 +42,7 @@ export const useRoomStore = create(
           players: [],
           currentMatch: null,
           currentUserState: null,
+          playerStates: [],
           logs: [],
         }),
     }),

@@ -173,7 +173,20 @@ function createSocketServer(httpServer) {
 
     socket.on(
       'match:playCard',
-      async ({ roomId, cardId, targetUserId, selectedExileCardId, pairedCardId, pairedTargetUserId, pairedSelectedExileCardId }, acknowledge) => {
+      async (
+        {
+          roomId,
+          cardId,
+          targetUserId,
+          selectedExileCardId,
+          selectedTargetHandCardId,
+          pairedCardId,
+          pairedTargetUserId,
+          pairedSelectedExileCardId,
+          pairedSelectedTargetHandCardId,
+        },
+        acknowledge
+      ) => {
       try {
         const actionStartedAt = performance.now();
         const actionState = await matchService.playCardForPlayer({
@@ -182,9 +195,11 @@ function createSocketServer(httpServer) {
           cardId,
           targetUserId: targetUserId ? Number(targetUserId) : undefined,
           selectedExileCardId,
+          selectedTargetHandCardId,
           pairedCardId,
           pairedTargetUserId: pairedTargetUserId ? Number(pairedTargetUserId) : undefined,
           pairedSelectedExileCardId,
+          pairedSelectedTargetHandCardId,
           includeSnapshot: false,
         });
         const mutateMs = performance.now() - actionStartedAt;
@@ -218,7 +233,9 @@ function createSocketServer(httpServer) {
       }
     });
 
-    socket.on('match:discardCard', async ({ roomId, cardId, targetUserId, selectedExileCardId }, acknowledge) => {
+    socket.on(
+      'match:discardCard',
+      async ({ roomId, cardId, targetUserId, selectedExileCardId, selectedTargetHandCardId }, acknowledge) => {
       try {
         const actionStartedAt = performance.now();
         const actionState = await matchService.discardCardForPlayer({
@@ -227,6 +244,7 @@ function createSocketServer(httpServer) {
           cardId,
           targetUserId: targetUserId ? Number(targetUserId) : undefined,
           selectedExileCardId,
+          selectedTargetHandCardId,
           includeSnapshot: false,
         });
         const mutateMs = performance.now() - actionStartedAt;

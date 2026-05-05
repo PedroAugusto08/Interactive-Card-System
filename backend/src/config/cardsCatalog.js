@@ -267,6 +267,16 @@ const CARD_CATALOG = [
     effect:
       'Ao tornar-se Corrompida e estiver na mao, cure o alvo em 2 de Imo. Ao jogar, destrua uma carta na mao do alvo selecionado. Ao descartar, compre uma carta.',
     imagePath: '/cartas/15.png',
+    playAutomation: {
+      targetScope: 'other-player',
+      selection: 'target-hand-card',
+      effects: [
+        {
+          type: 'destroySelectedHandCard',
+          target: 'selected-player',
+        },
+      ],
+    },
     discardAutomation: {
       effects: [
         {

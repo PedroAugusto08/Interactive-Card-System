@@ -142,6 +142,37 @@
       ],
     }),
   },
+  {
+    id: 'destroySelectedHandCardOther',
+    label: 'Destruir carta escolhida da mão de um alvo',
+    description: 'Escolhe outro jogador e destrói uma carta específica da mão dele.',
+    phases: ['play', 'discard'],
+    build: () => ({
+      targetScope: 'other-player',
+      selection: 'target-hand-card',
+      effects: [
+        {
+          type: 'destroySelectedHandCard',
+          target: 'selected-player',
+        },
+      ],
+    }),
+  },
+  {
+    id: 'destroyRandomHandCardOther',
+    label: 'Destruir carta aleatória da mão de um alvo',
+    description: 'Escolhe outro jogador e destrói uma carta aleatória da mão dele.',
+    phases: ['play', 'discard'],
+    build: () => ({
+      targetScope: 'other-player',
+      effects: [
+        {
+          type: 'destroyRandomHandCard',
+          target: 'selected-player',
+        },
+      ],
+    }),
+  },
 ];
 
 const TEMPLATE_BY_ID = new Map(AUTOMATION_TEMPLATES.map((template) => [template.id, template]));
