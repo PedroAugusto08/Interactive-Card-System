@@ -176,10 +176,10 @@
   {
     id: 'destroySelectedHandCardOther',
     label: 'Destruir carta escolhida da mão de um alvo',
-    description: 'Escolhe outro jogador e destrói uma carta específica da mão dele.',
+    description: 'Escolhe um jogador, inclusive você, e destrói uma carta específica da mão dele.',
     phases: ['play', 'discard'],
     build: () => ({
-      targetScope: 'other-player',
+      targetScope: 'selected-player',
       selection: 'target-hand-card',
       effects: [
         {
@@ -192,10 +192,10 @@
   {
     id: 'destroyRandomHandCardOther',
     label: 'Destruir carta aleatória da mão de um alvo',
-    description: 'Escolhe outro jogador e destrói uma carta aleatória da mão dele.',
+    description: 'Escolhe um jogador, inclusive você, e destrói uma carta aleatória da mão dele.',
     phases: ['play', 'discard'],
     build: () => ({
-      targetScope: 'other-player',
+      targetScope: 'selected-player',
       effects: [
         {
           type: 'destroyRandomHandCard',
