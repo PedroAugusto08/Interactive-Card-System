@@ -74,10 +74,16 @@ async function ensureSchema() {
       round INTEGER NOT NULL DEFAULT 1,
       current_turn_player_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
       winner_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      combat_state_json JSONB DEFAULT NULL,
       started_at TIMESTAMP NOT NULL DEFAULT NOW(),
       ended_at TIMESTAMP,
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
+  `);
+
+  await query(`
+    ALTER TABLE matches
+    ADD COLUMN IF NOT EXISTS combat_state_json JSONB DEFAULT NULL;
   `);
 
   await query(`

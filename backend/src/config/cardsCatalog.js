@@ -29,11 +29,16 @@ const CARD_CATALOG = [
     id: 'ataque_normal',
     name: 'Ataque Normal',
     category: CARD_CATEGORIES.FIXED,
+    combatRole: 'attack',
     maxCopies: 5,
     imoCost: 0,
     effect:
       'Ao jogar esta carta, o jogador desfere um golpe com Combate ou Pontaria, usando a arma em maos (ou os punhos). Ao ser descartada, esta carta gera a carta Reacao em sua mao.',
     imagePath: '/cartas/1.png',
+    playAutomation: {
+      targetScope: 'other-player',
+      effects: [],
+    },
     discardAutomation: {
       effects: [
         {
@@ -47,11 +52,16 @@ const CARD_CATALOG = [
     id: 'ataque_especial',
     name: 'Ataque Especial',
     category: CARD_CATEGORIES.FIXED,
+    combatRole: 'attack',
     maxCopies: 3,
     imoCost: 0,
     effect:
       'Ao jogar esta carta, o jogador desfere um golpe com vantagem de +1 dado com Combate ou Pontaria, usando a arma em maos (ou os punhos). Ao ser descartada, esta carta gera a carta Reacao em sua mao e cura 1 de Carne.',
     imagePath: '/cartas/2.png',
+    playAutomation: {
+      targetScope: 'other-player',
+      effects: [],
+    },
     discardAutomation: {
       effects: [
         {
@@ -65,6 +75,7 @@ const CARD_CATALOG = [
     id: 'reacao',
     name: 'Reacao',
     category: CARD_CATEGORIES.FIXED,
+    combatRole: 'reaction',
     maxCopies: 4,
     imoCost: 0,
     effect:

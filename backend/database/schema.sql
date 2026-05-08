@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS matches (
   round INTEGER NOT NULL DEFAULT 1,
   current_turn_player_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
   winner_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  combat_state_json JSONB DEFAULT NULL,
   started_at TIMESTAMP NOT NULL DEFAULT NOW(),
   ended_at TIMESTAMP,
   created_at TIMESTAMP NOT NULL DEFAULT NOW()

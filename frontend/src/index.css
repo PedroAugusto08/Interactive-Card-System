@@ -2351,6 +2351,50 @@ ul {
   margin-top: 8px;
 }
 
+.combat-status-card,
+.combat-status-card__row,
+.combat-flow,
+.combat-flow__summary,
+.combat-flow__card-grid,
+.combat-flow__actions {
+  display: grid;
+  gap: 14px;
+}
+
+.combat-status-card {
+  border-color: rgba(214, 175, 92, 0.22);
+  background:
+    radial-gradient(circle at top right, rgba(214, 175, 92, 0.16), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0)),
+    rgba(12, 15, 22, 0.96);
+}
+
+.combat-status-card__row {
+  grid-template-columns: repeat(auto-fit, minmax(160px, max-content));
+  align-items: center;
+}
+
+.combat-flow__summary {
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(124, 92, 255, 0.16);
+  background:
+    linear-gradient(180deg, rgba(124, 92, 255, 0.12), rgba(255, 255, 255, 0)),
+    rgba(16, 19, 27, 0.92);
+}
+
+.combat-flow__summary p {
+  margin: 0;
+}
+
+.combat-flow__card-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.combat-flow__actions {
+  justify-items: flex-start;
+}
+
 .top-deck-modal,
 .top-deck-modal__header,
 .top-deck-modal__card {

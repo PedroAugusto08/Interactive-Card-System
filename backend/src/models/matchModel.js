@@ -5,7 +5,7 @@ async function createMatch({ roomId, currentTurnPlayerId }) {
     `
       INSERT INTO matches (room_id, current_turn_player_id)
       VALUES ($1, $2)
-      RETURNING id, room_id, status, round, current_turn_player_id, winner_user_id, started_at, ended_at, created_at;
+      RETURNING id, room_id, status, round, current_turn_player_id, winner_user_id, combat_state_json, started_at, ended_at, created_at;
     `,
     [roomId, currentTurnPlayerId]
   );
@@ -16,7 +16,7 @@ async function createMatch({ roomId, currentTurnPlayerId }) {
 async function findActiveMatchByRoomId(roomId) {
   const result = await query(
     `
-      SELECT id, room_id, status, round, current_turn_player_id, winner_user_id, started_at, ended_at, created_at
+      SELECT id, room_id, status, round, current_turn_player_id, winner_user_id, combat_state_json, started_at, ended_at, created_at
       FROM matches
       WHERE room_id = $1 AND status = 'active'
       LIMIT 1;
@@ -30,7 +30,7 @@ async function findActiveMatchByRoomId(roomId) {
 async function findMatchById(matchId) {
   const result = await query(
     `
-      SELECT id, room_id, status, round, current_turn_player_id, winner_user_id, started_at, ended_at, created_at
+      SELECT id, room_id, status, round, current_turn_player_id, winner_user_id, combat_state_json, started_at, ended_at, created_at
       FROM matches
       WHERE id = $1
       LIMIT 1;
@@ -52,9 +52,23 @@ async function updateMatchState({ matchId, status, round, currentTurnPlayerId, w
         winner_user_id = $5,
         ended_at = $6
       WHERE id = $1
-      RETURNING id, room_id, status, round, current_turn_player_id, winner_user_id, started_at, ended_at, created_at;
+      RETURNING id, room_id, status, round, current_turn_player_id, winner_user_id, combat_state_json, started_at, ended_at, created_at;
     `,
     [matchId, status, round, currentTurnPlayerId, winnerUserId, endedAt]
+  );
+
+  return result.rows[0] || null;
+}
+
+async function updateMatchCombatState({ matchId, combatState = null }) {
+  const result = await query(
+    `
+      UPDATE matches
+      SET combat_state_json = $2::jsonb
+      WHERE id = $1
+      RETURNING id, room_id, status, round, current_turn_player_id, winner_user_id, combat_state_json, started_at, ended_at, created_at;
+    `,
+    [matchId, JSON.stringify(combatState)]
   );
 
   return result.rows[0] || null;
@@ -227,6 +241,7 @@ module.exports = {
   findActiveMatchByRoomId,
   findMatchById,
   updateMatchState,
+  updateMatchCombatState,
   upsertMatchPlayer,
   listMatchPlayers,
   findMatchPlayer,

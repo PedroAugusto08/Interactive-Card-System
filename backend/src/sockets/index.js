@@ -184,6 +184,7 @@ function createSocketServer(httpServer) {
           pairedTargetUserId,
           pairedSelectedExileCardId,
           pairedSelectedTargetHandCardId,
+          asCounterResponse,
         },
         acknowledge
       ) => {
@@ -200,6 +201,7 @@ function createSocketServer(httpServer) {
           pairedTargetUserId: pairedTargetUserId ? Number(pairedTargetUserId) : undefined,
           pairedSelectedExileCardId,
           pairedSelectedTargetHandCardId,
+          asCounterResponse: Boolean(asCounterResponse),
           includeSnapshot: false,
         });
         const mutateMs = performance.now() - actionStartedAt;
@@ -236,7 +238,10 @@ function createSocketServer(httpServer) {
 
     socket.on(
       'match:discardCard',
-      async ({ roomId, cardId, targetUserId, selectedExileCardId, selectedTargetHandCardId }, acknowledge) => {
+      async (
+        { roomId, cardId, targetUserId, selectedExileCardId, selectedTargetHandCardId, asCounterResponse },
+        acknowledge
+      ) => {
       try {
         const actionStartedAt = performance.now();
         const actionState = await matchService.discardCardForPlayer({
@@ -246,6 +251,7 @@ function createSocketServer(httpServer) {
           targetUserId: targetUserId ? Number(targetUserId) : undefined,
           selectedExileCardId,
           selectedTargetHandCardId,
+          asCounterResponse: Boolean(asCounterResponse),
           includeSnapshot: false,
         });
         const mutateMs = performance.now() - actionStartedAt;
@@ -267,6 +273,84 @@ function createSocketServer(httpServer) {
         ackMetrics.buildAckMs = performance.now() - acknowledgeStartedAt;
         ackMetrics.totalMs = ackMetrics.buildAckMs;
         logMatchPerf('match:discardCard', {
+          roomId: Number(roomId),
+          userId: user.id,
+          mutateMs,
+          realtimeMetrics: ackMetrics,
+          totalMs: performance.now() - actionStartedAt,
+        });
+        queueMatchBroadcast(io, Number(roomId), [socket.id]);
+      } catch (error) {
+        acknowledgeSocketError(acknowledge, error.message);
+        emitSocketError(socket, error.message);
+      }
+    });
+
+    socket.on('match:reactToAttack', async ({ roomId, reactionCardId }, acknowledge) => {
+      try {
+        const actionStartedAt = performance.now();
+        const actionState = await matchService.reactToAttackForPlayer({
+          roomId: Number(roomId),
+          userId: user.id,
+          reactionCardId,
+          includeSnapshot: false,
+        });
+        const mutateMs = performance.now() - actionStartedAt;
+        const acknowledgeStartedAt = performance.now();
+        const ackMetrics = {
+          buildAckMs: 0,
+          totalMs: 0,
+        };
+        if (typeof acknowledge === 'function') {
+          acknowledge({
+            ok: true,
+            snapshot: actionState?.snapshot || null,
+            log: actionState?.log || null,
+            metrics: ackMetrics,
+          });
+        }
+        ackMetrics.buildAckMs = performance.now() - acknowledgeStartedAt;
+        ackMetrics.totalMs = ackMetrics.buildAckMs;
+        logMatchPerf('match:reactToAttack', {
+          roomId: Number(roomId),
+          userId: user.id,
+          mutateMs,
+          realtimeMetrics: ackMetrics,
+          totalMs: performance.now() - actionStartedAt,
+        });
+        queueMatchBroadcast(io, Number(roomId), [socket.id]);
+      } catch (error) {
+        acknowledgeSocketError(acknowledge, error.message);
+        emitSocketError(socket, error.message);
+      }
+    });
+
+    socket.on('match:resolveAttack', async ({ roomId, resolution }, acknowledge) => {
+      try {
+        const actionStartedAt = performance.now();
+        const actionState = await matchService.resolveAttackForPlayer({
+          roomId: Number(roomId),
+          userId: user.id,
+          resolution,
+          includeSnapshot: false,
+        });
+        const mutateMs = performance.now() - actionStartedAt;
+        const acknowledgeStartedAt = performance.now();
+        const ackMetrics = {
+          buildAckMs: 0,
+          totalMs: 0,
+        };
+        if (typeof acknowledge === 'function') {
+          acknowledge({
+            ok: true,
+            snapshot: actionState?.snapshot || null,
+            log: actionState?.log || null,
+            metrics: ackMetrics,
+          });
+        }
+        ackMetrics.buildAckMs = performance.now() - acknowledgeStartedAt;
+        ackMetrics.totalMs = ackMetrics.buildAckMs;
+        logMatchPerf('match:resolveAttack', {
           roomId: Number(roomId),
           userId: user.id,
           mutateMs,

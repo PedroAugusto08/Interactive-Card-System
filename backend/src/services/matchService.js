@@ -3,6 +3,7 @@ const {
   createMatch,
   findActiveMatchByRoomId,
   updateMatchState,
+  updateMatchCombatState,
   upsertMatchPlayer,
   listMatchPlayers,
   findMatchPlayer,
@@ -16,6 +17,18 @@ const INITIAL_HEALTH = 10;
 const INITIAL_IMO = 3;
 const MAX_IMO = 10;
 const MAX_HAND_SIZE = 3;
+
+function isAttackCard(card) {
+  return card?.combatRole === 'attack';
+}
+
+function isReactionCard(card) {
+  return card?.combatRole === 'reaction';
+}
+
+function normalizeCombatState(combatState) {
+  return combatState && typeof combatState === 'object' && Object.keys(combatState).length ? combatState : null;
+}
 
 async function startMatchForRoom({ roomId, userId, includeSnapshot = true }) {
   const room = await findRoomById(roomId);
@@ -268,6 +281,7 @@ async function buildMatchSnapshot({ room, players, activeMatch, matchPlayers, lo
       round: activeMatch.round,
       currentTurnPlayerId: activeMatch.current_turn_player_id,
       winnerUserId: activeMatch.winner_user_id,
+      combatState: activeMatch.combat_state_json || null,
       startedAt: activeMatch.started_at,
       endedAt: activeMatch.ended_at,
     },
@@ -305,6 +319,7 @@ async function buildRealtimeMatchState({ activeMatch, matchPlayers, userId, card
       round: activeMatch.round,
       currentTurnPlayerId: activeMatch.current_turn_player_id,
       winnerUserId: activeMatch.winner_user_id,
+      combatState: activeMatch.combat_state_json || null,
       startedAt: activeMatch.started_at,
       endedAt: activeMatch.ended_at,
     },
@@ -379,6 +394,7 @@ async function buildActionRealtimeState({ activeMatch, currentUserId, log, notic
         round: activeMatch.round,
         currentTurnPlayerId: activeMatch.current_turn_player_id,
         winnerUserId: activeMatch.winner_user_id,
+        combatState: activeMatch.combat_state_json || null,
         startedAt: activeMatch.started_at,
         endedAt: activeMatch.ended_at,
       },
@@ -404,6 +420,11 @@ async function buildActionRealtimeState({ activeMatch, currentUserId, log, notic
 async function drawCardForPlayer({ roomId, userId, includeSnapshot = true }) {
   const context = await requireActiveTurnContext({ roomId, userId, includeAllPlayers: false });
   const playerState = context.currentPlayer;
+  const combatState = normalizeCombatState(context.match.combat_state_json);
+
+  if (combatState) {
+    throw new AppError('Resolva o ataque pendente antes de comprar uma carta.', 409);
+  }
 
   if (playerState.has_drawn_this_turn) {
     throw new AppError('Voce ja comprou uma carta neste turno.', 409);
@@ -472,12 +493,31 @@ async function playCardForPlayer({
   pairedTargetUserId = null,
   pairedSelectedExileCardId = null,
   pairedSelectedTargetHandCardId = null,
+  asCounterResponse = false,
   includeSnapshot = true,
 }) {
-  const context = await requireActiveTurnContext({ roomId, userId, includeAllPlayers: true });
+  const context = await requireActiveMatchContext({ roomId, userId, includeAllPlayers: true });
+  const combatState = normalizeCombatState(context.match.combat_state_json);
+  const isCounterResponse =
+    Boolean(asCounterResponse) &&
+    combatState?.type === 'attack' &&
+    combatState?.status === 'awaiting-counter-response' &&
+    combatState?.defenderUserId === userId;
   const originalPlayerState = context.currentPlayer;
 
-  if (originalPlayerState.has_used_card_action_this_turn) {
+  if (!asCounterResponse && combatState) {
+    throw new AppError('Resolva o ataque pendente antes de continuar a partida.', 409);
+  }
+
+  if (!asCounterResponse && context.match.current_turn_player_id !== userId) {
+    throw new AppError('Nao e o seu turno.', 409);
+  }
+
+  if (asCounterResponse && !isCounterResponse) {
+    throw new AppError('Nao ha uma janela de resposta disponivel para voce agora.', 409);
+  }
+
+  if (!isCounterResponse && originalPlayerState.has_used_card_action_this_turn) {
     throw new AppError('Voce ja usou sua acao de carta neste turno.', 409);
   }
 
@@ -492,8 +532,16 @@ async function playCardForPlayer({
     unresolvedMessage: 'Carta jogada nao encontrada no catalogo.',
   });
 
+  if (isReactionCard(primaryPlay.resolvedCard)) {
+    throw new AppError('A carta Reacao so pode ser usada para reagir a um ataque.', 409);
+  }
+
   let pairedPlay = null;
   if (pairedCardId) {
+    if (isCounterResponse) {
+      throw new AppError('A carta de resposta nao pode ser jogada junto com outra carta.', 409);
+    }
+
     if (!primaryPlay.resolvedCard.canPlayTogether) {
       throw new AppError(
         `A carta ${primaryPlay.resolvedCard.name} nao permite ser jogada junto com outra carta.`,
@@ -521,7 +569,9 @@ async function playCardForPlayer({
   }
 
   actingPlayerState.imo -= totalImoCost;
-  actingPlayerState.has_used_card_action_this_turn = true;
+  if (!isCounterResponse) {
+    actingPlayerState.has_used_card_action_this_turn = true;
+  }
   actingPlayerState.hand_cards_json = handCards;
   actingPlayerState.deck_cards_json = [...actingPlayerState.deck_cards_json, primaryPlay.cardEntry];
 
@@ -559,6 +609,30 @@ async function playCardForPlayer({
     );
   }
 
+  let nextCombatState = combatState;
+  let attackTargetState = null;
+  if (isAttackCard(primaryPlay.resolvedCard)) {
+    const normalizedTargetUserId = Number(targetUserId);
+    if (!Number.isInteger(normalizedTargetUserId)) {
+      throw new AppError('Selecione um alvo valido para o ataque.', 400);
+    }
+
+    attackTargetState = playerStatesByUserId.get(normalizedTargetUserId);
+    if (!attackTargetState || attackTargetState.user_id === userId || attackTargetState.is_defeated) {
+      throw new AppError('Selecione outro jogador valido para receber o ataque.', 400);
+    }
+
+    nextCombatState = buildAttackCombatState({
+      attackerState: actingPlayerState,
+      defenderState: attackTargetState,
+      attackCard: primaryPlay.resolvedCard,
+      attackCardEntry: primaryPlay.cardEntry,
+      initiatedByCounterResponse: isCounterResponse,
+    });
+  } else if (isCounterResponse) {
+    nextCombatState = null;
+  }
+
   const notice = automationOutcome.notices.join(' ');
   const updatedPlayerStatesByUserId = await persistMatchPlayerStates({
     matchId: context.match.id,
@@ -566,17 +640,30 @@ async function playCardForPlayer({
     originalPlayers: context.matchPlayers,
   });
 
+  const updatedMatchState =
+    combatState !== nextCombatState || isAttackCard(primaryPlay.resolvedCard) || isCounterResponse
+      ? await updateMatchCombatState({
+          matchId: context.match.id,
+          combatState: normalizeCombatState(nextCombatState),
+        })
+      : null;
+
   const createdLog = await addMatchLog({
     matchId: context.match.id,
     type: 'MATCH_PLAY_CARD',
-    message: pairedPlay
-      ? `${originalPlayerState.username} jogou ${primaryPlay.resolvedCard.name} junto com ${pairedPlay.resolvedCard.name}.`
-      : `${originalPlayerState.username} jogou ${primaryPlay.resolvedCard.name}.`,
+    message: isAttackCard(primaryPlay.resolvedCard) && attackTargetState
+      ? `${originalPlayerState.username} atacou ${attackTargetState.username} com ${primaryPlay.resolvedCard.name}.`
+      : isCounterResponse
+        ? `${originalPlayerState.username} jogou ${primaryPlay.resolvedCard.name} em resposta ao ataque de ${combatState.attackerUsername}.`
+        : pairedPlay
+          ? `${originalPlayerState.username} jogou ${primaryPlay.resolvedCard.name} junto com ${pairedPlay.resolvedCard.name}.`
+          : `${originalPlayerState.username} jogou ${primaryPlay.resolvedCard.name}.`,
     payload: {
       userId,
       cardId: primaryPlay.cardEntry.cardId,
       imoCost: totalImoCost,
       targetUserId: targetUserId || null,
+      asCounterResponse: isCounterResponse,
       selectedTargetHandCardId: selectedTargetHandCardId || null,
       pairedCardId: pairedPlay?.cardEntry.cardId || null,
       pairedTargetUserId: pairedTargetUserId || null,
@@ -589,7 +676,7 @@ async function playCardForPlayer({
     userId,
     includeSnapshot,
     actionState: await buildActionRealtimeState({
-      activeMatch: context.match,
+      activeMatch: updatedMatchState || context.match,
       currentUserId: userId,
       currentPlayer: updatedPlayerStatesByUserId.get(userId),
       log: createdLog,
@@ -606,12 +693,31 @@ async function discardCardForPlayer({
   targetUserId = null,
   selectedExileCardId = null,
   selectedTargetHandCardId = null,
+  asCounterResponse = false,
   includeSnapshot = true,
 }) {
-  const context = await requireActiveTurnContext({ roomId, userId, includeAllPlayers: true });
+  const context = await requireActiveMatchContext({ roomId, userId, includeAllPlayers: true });
+  const combatState = normalizeCombatState(context.match.combat_state_json);
+  const isCounterResponse =
+    Boolean(asCounterResponse) &&
+    combatState?.type === 'attack' &&
+    combatState?.status === 'awaiting-counter-response' &&
+    combatState?.defenderUserId === userId;
   const originalPlayerState = context.currentPlayer;
 
-  if (originalPlayerState.has_used_card_action_this_turn) {
+  if (!asCounterResponse && combatState) {
+    throw new AppError('Resolva o ataque pendente antes de continuar a partida.', 409);
+  }
+
+  if (!asCounterResponse && context.match.current_turn_player_id !== userId) {
+    throw new AppError('Nao e o seu turno.', 409);
+  }
+
+  if (asCounterResponse && !isCounterResponse) {
+    throw new AppError('Nao ha uma janela de resposta disponivel para voce agora.', 409);
+  }
+
+  if (!isCounterResponse && originalPlayerState.has_used_card_action_this_turn) {
     throw new AppError('Voce ja usou sua acao de carta neste turno.', 409);
   }
 
@@ -634,7 +740,9 @@ async function discardCardForPlayer({
     throw new AppError(`A carta ${resolvedCard.name} nao pode ser descartada.`, 409);
   }
 
-  actingPlayerState.has_used_card_action_this_turn = true;
+  if (!isCounterResponse) {
+    actingPlayerState.has_used_card_action_this_turn = true;
+  }
   actingPlayerState.hand_cards_json = handCards;
   actingPlayerState.exile_cards_json = [discardedCard, ...actingPlayerState.exile_cards_json];
 
@@ -657,14 +765,24 @@ async function discardCardForPlayer({
     originalPlayers: context.matchPlayers,
   });
 
+  const updatedMatchState = isCounterResponse
+    ? await updateMatchCombatState({
+        matchId: context.match.id,
+        combatState: null,
+      })
+    : null;
+
   const createdLog = await addMatchLog({
     matchId: context.match.id,
     type: 'MATCH_DISCARD_CARD',
-    message: `${originalPlayerState.username} descartou ${resolvedCard.name}.`,
+    message: isCounterResponse
+      ? `${originalPlayerState.username} descartou ${resolvedCard.name} em resposta ao ataque de ${combatState.attackerUsername}.`
+      : `${originalPlayerState.username} descartou ${resolvedCard.name}.`,
     payload: {
       userId,
       cardId: discardedCard.cardId,
       targetUserId: targetUserId || null,
+      asCounterResponse: isCounterResponse,
       selectedTargetHandCardId: selectedTargetHandCardId || null,
     },
   });
@@ -674,7 +792,7 @@ async function discardCardForPlayer({
     userId,
     includeSnapshot,
     actionState: await buildActionRealtimeState({
-      activeMatch: context.match,
+      activeMatch: updatedMatchState || context.match,
       currentUserId: userId,
       currentPlayer: updatedPlayerStatesByUserId.get(userId),
       log: createdLog,
@@ -682,6 +800,181 @@ async function discardCardForPlayer({
       effectResults: automationOutcome.effects,
     }),
   });
+}
+
+async function reactToAttackForPlayer({ roomId, userId, reactionCardId, includeSnapshot = true }) {
+  const context = await requireActiveMatchContext({ roomId, userId, includeAllPlayers: true });
+  const combatState = normalizeCombatState(context.match.combat_state_json);
+
+  if (
+    !combatState ||
+    combatState.type !== 'attack' ||
+    combatState.status !== 'awaiting-reaction' ||
+    combatState.defenderUserId !== userId
+  ) {
+    throw new AppError('Nao ha um ataque pendente aguardando sua reacao.', 409);
+  }
+
+  const playerStatesByUserId = createMutableMatchPlayerMap(context.matchPlayers);
+  const defendingPlayerState = playerStatesByUserId.get(userId);
+  const handCards = [...defendingPlayerState.hand_cards_json];
+  const reactionPlay = await consumeCardFromHand({
+    ownerId: userId,
+    handCards,
+    instanceId: reactionCardId,
+    notFoundMessage: 'Carta de reacao nao encontrada na sua mao.',
+    unresolvedMessage: 'Carta de reacao nao encontrada no catalogo.',
+  });
+
+  if (!isReactionCard(reactionPlay.resolvedCard)) {
+    throw new AppError('Selecione uma carta de Reacao valida para defender esse ataque.', 400);
+  }
+
+  defendingPlayerState.hand_cards_json = handCards;
+  defendingPlayerState.deck_cards_json = [...defendingPlayerState.deck_cards_json, reactionPlay.cardEntry];
+
+  await persistMatchPlayerStates({
+    matchId: context.match.id,
+    playerStatesByUserId,
+    originalPlayers: context.matchPlayers,
+  });
+
+  const updatedMatchState = await updateMatchCombatState({
+    matchId: context.match.id,
+    combatState: {
+      ...combatState,
+      status: 'awaiting-reaction-result',
+      reactionCard: {
+        cardId: reactionPlay.resolvedCard.id,
+        instanceId: reactionPlay.cardEntry.instanceId,
+        name: reactionPlay.resolvedCard.name,
+      },
+    },
+  });
+
+  const createdLog = await addMatchLog({
+    matchId: context.match.id,
+    type: 'MATCH_ATTACK_REACTION',
+    message: `${context.currentPlayer.username} usou Reacao contra o ataque de ${combatState.attackerUsername}.`,
+    payload: {
+      attackerUserId: combatState.attackerUserId,
+      defenderUserId: combatState.defenderUserId,
+      reactionCardId: reactionPlay.resolvedCard.id,
+      reactionCardInstanceId: reactionPlay.cardEntry.instanceId,
+    },
+  });
+
+  return finalizeActionResponse({
+    roomId,
+    userId,
+    includeSnapshot,
+    actionState: await buildActionRealtimeState({
+      activeMatch: updatedMatchState || context.match,
+      currentUserId: userId,
+      currentPlayer: playerStatesByUserId.get(userId),
+      log: createdLog,
+    }),
+  });
+}
+
+async function resolveAttackForPlayer({ roomId, userId, resolution, includeSnapshot = true }) {
+  const context = await requireActiveMatchContext({ roomId, userId, includeAllPlayers: true });
+  const combatState = normalizeCombatState(context.match.combat_state_json);
+
+  if (!combatState || combatState.type !== 'attack' || combatState.defenderUserId !== userId) {
+    throw new AppError('Nao ha um ataque pendente vinculado a voce.', 409);
+  }
+
+  let nextCombatState = combatState;
+  let logMessage = '';
+  let logType = 'MATCH_ATTACK_RESOLUTION';
+
+  if (resolution === 'skip-reaction') {
+    if (combatState.status !== 'awaiting-reaction') {
+      throw new AppError('A etapa atual do ataque nao permite pular a reacao.', 409);
+    }
+
+    nextCombatState = null;
+    logMessage = `${combatState.defenderUsername} optou por nao reagir ao ataque de ${combatState.attackerUsername}.`;
+  } else if (resolution === 'reaction-success') {
+    if (combatState.status !== 'awaiting-reaction-result') {
+      throw new AppError('Nao ha um teste de reacao pendente para resolver.', 409);
+    }
+
+    nextCombatState = {
+      ...combatState,
+      status: 'awaiting-counter-response',
+    };
+    logMessage = `${combatState.defenderUsername} superou o ataque de ${combatState.attackerUsername} e pode responder com outra carta.`;
+  } else if (resolution === 'reaction-fail') {
+    if (combatState.status !== 'awaiting-reaction-result') {
+      throw new AppError('Nao ha um teste de reacao pendente para resolver.', 409);
+    }
+
+    nextCombatState = null;
+    logMessage = `${combatState.defenderUsername} nao superou o ataque de ${combatState.attackerUsername}.`;
+  } else if (resolution === 'skip-counter-response') {
+    if (combatState.status !== 'awaiting-counter-response') {
+      throw new AppError('Nao ha uma carta de resposta pendente para pular.', 409);
+    }
+
+    nextCombatState = null;
+    logMessage = `${combatState.defenderUsername} encerrou a janela de resposta contra ${combatState.attackerUsername}.`;
+  } else {
+    throw new AppError('Resolucao de ataque invalida.', 400);
+  }
+
+  const updatedMatchState = await updateMatchCombatState({
+    matchId: context.match.id,
+    combatState: normalizeCombatState(nextCombatState),
+  });
+
+  const createdLog = await addMatchLog({
+    matchId: context.match.id,
+    type: logType,
+    message: logMessage,
+    payload: {
+      attackerUserId: combatState.attackerUserId,
+      defenderUserId: combatState.defenderUserId,
+      resolution,
+    },
+  });
+
+  return finalizeActionResponse({
+    roomId,
+    userId,
+    includeSnapshot,
+    actionState: await buildActionRealtimeState({
+      activeMatch: updatedMatchState || context.match,
+      currentUserId: userId,
+      currentPlayer: context.currentPlayer,
+      log: createdLog,
+    }),
+  });
+}
+
+function buildAttackCombatState({
+  attackerState,
+  defenderState,
+  attackCard,
+  attackCardEntry,
+  initiatedByCounterResponse = false,
+}) {
+  return {
+    type: 'attack',
+    status: 'awaiting-reaction',
+    attackerUserId: attackerState.user_id,
+    attackerUsername: attackerState.username,
+    defenderUserId: defenderState.user_id,
+    defenderUsername: defenderState.username,
+    attackCard: {
+      cardId: attackCard.id,
+      instanceId: attackCardEntry.instanceId,
+      name: attackCard.name,
+    },
+    initiatedByCounterResponse,
+    reactionCard: null,
+  };
 }
 
 async function revealViewedTopDeckCardForPlayer({
@@ -760,6 +1053,12 @@ async function revealViewedTopDeckCardForPlayer({
 async function endTurnForPlayer({ roomId, userId, includeSnapshot = true }) {
   const context = await requireActiveTurnContext({ roomId, userId, includeAllPlayers: true });
   const currentPlayer = context.currentPlayer;
+  const combatState = normalizeCombatState(context.match.combat_state_json);
+
+  if (combatState) {
+    throw new AppError('Resolva o ataque pendente antes de encerrar o turno.', 409);
+  }
+
   const activePlayers = context.matchPlayers.filter((player) => !player.is_defeated);
 
   const nextPlayer = getNextTurnPlayer(activePlayers, currentPlayer.user_id);
@@ -1296,10 +1595,6 @@ async function requireActiveMatchContext({ roomId, userId, includeAllPlayers = f
     throw new AppError('Jogador nao encontrado na partida.', 404);
   }
 
-  if (match.current_turn_player_id !== userId) {
-    throw new AppError('Nao e o seu turno.', 409);
-  }
-
   if (currentPlayer.is_defeated) {
     throw new AppError('Jogador derrotado nao pode agir.', 409);
   }
@@ -1320,7 +1615,16 @@ function buildAvailableActions({ activeMatch, matchPlayer, requesterUserId }) {
     return [];
   }
 
-  if (activeMatch.current_turn_player_id !== requesterUserId || matchPlayer.is_defeated) {
+  if (matchPlayer.is_defeated) {
+    return [];
+  }
+
+  const combatState = normalizeCombatState(activeMatch.combat_state_json);
+  if (combatState) {
+    return [];
+  }
+
+  if (activeMatch.current_turn_player_id !== requesterUserId) {
     return [];
   }
 
@@ -1415,6 +1719,8 @@ module.exports = {
   drawCardForPlayer,
   playCardForPlayer,
   discardCardForPlayer,
+  reactToAttackForPlayer,
+  resolveAttackForPlayer,
   revealViewedTopDeckCardForPlayer,
   endTurnForPlayer,
   forfeitMatchByLeavingRoom,

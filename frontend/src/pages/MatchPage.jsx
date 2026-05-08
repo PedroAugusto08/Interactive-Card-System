@@ -86,6 +86,10 @@ function getPlayableTogetherCandidates(cards, primaryCardId) {
   return (cards || []).filter((card) => card.instanceId !== primaryCardId);
 }
 
+function getReactionCards(cards) {
+  return (cards || []).filter((card) => card?.combatRole === 'reaction');
+}
+
 function buildActionFeedback(logMessage, notice, metrics) {
   const text = [logMessage, notice].filter(Boolean).join(' ');
   if (!text) {
@@ -299,6 +303,7 @@ export function MatchPage() {
             pairedTargetUserId: payload.pairedTargetUserId,
             pairedSelectedExileCardId: payload.pairedSelectedExileCardId,
             pairedSelectedTargetHandCardId: payload.pairedSelectedTargetHandCardId,
+            asCounterResponse: payload.asCounterResponse,
           });
         } else if (action === 'match:discardCard') {
           snapshot = await matchApi.discardCard({
@@ -308,6 +313,19 @@ export function MatchPage() {
             targetUserId: payload.targetUserId,
             selectedExileCardId: payload.selectedExileCardId,
             selectedTargetHandCardId: payload.selectedTargetHandCardId,
+            asCounterResponse: payload.asCounterResponse,
+          });
+        } else if (action === 'match:reactToAttack') {
+          snapshot = await matchApi.reactToAttack({
+            roomId: currentRoom.id,
+            reactionCardId: payload.reactionCardId,
+            token,
+          });
+        } else if (action === 'match:resolveAttack') {
+          snapshot = await matchApi.resolveAttack({
+            roomId: currentRoom.id,
+            resolution: payload.resolution,
+            token,
           });
         } else if (action === 'match:endTurn') {
           snapshot = await matchApi.endTurn({ roomId: currentRoom.id, token });
@@ -373,6 +391,10 @@ export function MatchPage() {
     }
   }
 
+  function handleOpenCounterResponse(action, cardId) {
+    openCardAction(action, cardId, { asCounterResponse: true });
+  }
+
   const currentTurnPlayer = players.find((player) => player.user_id === activeTurnPlayerId);
   const isCurrentUserTurn = Boolean(user?.id && activeTurnPlayerId === user.id);
   const currentZones = currentUserState?.zones || {
@@ -385,6 +407,10 @@ export function MatchPage() {
   const availableActions = currentUserState?.availableActions || [];
   const hasDrawnThisTurn = Boolean(currentUserState?.hasDrawnThisTurn);
   const targetablePlayers = playerStates.length ? playerStates : players;
+  const combatState = currentMatch?.combatState || null;
+  const isCurrentUserCombatDefender = Boolean(combatState?.defenderUserId && combatState.defenderUserId === user?.id);
+  const reactionCards = getReactionCards(handCards);
+  const counterResponseCards = handCards;
   const activeTopDeckView = pendingTopDeckViews[0] || null;
   const connectionState = !socket ? 'offline' : isSocketConnected ? 'connected' : 'reconnecting';
   const connectionLabel =
@@ -408,7 +434,7 @@ export function MatchPage() {
     handleAction('match:endTurn');
   }
 
-  function openCardAction(action, cardId) {
+  function openCardAction(action, cardId, options = {}) {
     const targetCard = handCards.find((card) => card.instanceId === cardId);
     if (!targetCard) {
       return;
@@ -417,7 +443,7 @@ export function MatchPage() {
     const automation = getCardActionAutomation(targetCard, action);
     const targetOptions = getTargetOptions(targetablePlayers, user?.id, automation?.targetScope);
     const pairedCandidates =
-      action === 'match:playCard' && targetCard.canPlayTogether
+      action === 'match:playCard' && targetCard.canPlayTogether && !options.asCounterResponse
         ? getPlayableTogetherCandidates(handCards, cardId)
         : [];
     const requiresTarget = Boolean(automation?.targetScope);
@@ -430,7 +456,10 @@ export function MatchPage() {
       : [];
 
     if (!requiresTarget && !requiresExileSelection && !requiresTargetHandSelection && !allowsPairedCard) {
-      handleAction(action, { cardId });
+      handleAction(action, {
+        cardId,
+        asCounterResponse: options.asCounterResponse || undefined,
+      });
       return;
     }
 
@@ -443,6 +472,7 @@ export function MatchPage() {
       targetUserId: initialTargetUserId,
       selectedExileCardId: requiresExileSelection ? exileCards[0]?.instanceId || null : null,
       selectedTargetHandCardId: initialTargetHandCards[0]?.instanceId || null,
+      asCounterResponse: Boolean(options.asCounterResponse),
       pairedCardId: null,
       pairedCardName: '',
       pairedAutomation: null,
@@ -514,6 +544,7 @@ export function MatchPage() {
       targetUserId: pendingCardAction.targetUserId || undefined,
       selectedExileCardId: pendingCardAction.selectedExileCardId || undefined,
       selectedTargetHandCardId: pendingCardAction.selectedTargetHandCardId || undefined,
+      asCounterResponse: pendingCardAction.asCounterResponse || undefined,
       pairedCardId: pendingCardAction.pairedCardId || undefined,
       pairedTargetUserId: pendingCardAction.pairedTargetUserId || undefined,
       pairedSelectedExileCardId: pendingCardAction.pairedSelectedExileCardId || undefined,
@@ -534,7 +565,9 @@ export function MatchPage() {
     user?.id,
     pendingCardAction?.pairedAutomation?.targetScope
   );
-  const pendingPairedCandidates = getPlayableTogetherCandidates(handCards, pendingCardAction?.cardId);
+  const pendingPairedCandidates = pendingCardAction?.asCounterResponse
+    ? []
+    : getPlayableTogetherCandidates(handCards, pendingCardAction?.cardId);
   const pendingPrimaryCard = handCards.find((card) => card.instanceId === pendingCardAction?.cardId) || null;
   const pendingSecondaryCard = handCards.find((card) => card.instanceId === pendingCardAction?.pairedCardId) || null;
   const pendingTargetHandCards = getTargetHandCards(playerStates, pendingCardAction?.targetUserId);
@@ -608,6 +641,31 @@ export function MatchPage() {
           {syncMessage ? <p className="success-text">{syncMessage}</p> : null}
           {localError ? <p className="error-text">{localError}</p> : null}
         </div>
+      ) : null}
+
+      {combatState ? (
+        <Card
+          className="combat-status-card"
+          description={
+            combatState.status === 'awaiting-reaction'
+              ? `${combatState.defenderUsername} pode usar Reacao agora.`
+              : combatState.status === 'awaiting-reaction-result'
+                ? `${combatState.defenderUsername} esta resolvendo o teste fisico de defesa.`
+                : `${combatState.defenderUsername} pode jogar ou descartar uma carta em resposta.`
+          }
+          title={`Ataque em andamento: ${combatState.attackerUsername} -> ${combatState.defenderUsername}`}
+        >
+          <div className="combat-status-card__row">
+            <Badge tone="accent">{combatState.attackCard?.name || 'Ataque'}</Badge>
+            <Badge tone="secondary">
+              {combatState.status === 'awaiting-reaction'
+                ? 'Aguardando reação'
+                : combatState.status === 'awaiting-reaction-result'
+                  ? 'Teste de reação'
+                  : 'Carta de resposta'}
+            </Badge>
+          </div>
+        </Card>
       ) : null}
 
       <div className="match-grid">
@@ -1140,6 +1198,151 @@ export function MatchPage() {
             </section>
           ) : null}
         </div>
+      </Modal>
+
+      <Modal
+        cancelLabel={null}
+        confirmLabel={
+          combatState?.status === 'awaiting-reaction'
+            ? 'Seguir sem reação'
+            : combatState?.status === 'awaiting-reaction-result'
+              ? 'Não superou'
+              : 'Pular resposta'
+        }
+        description={
+          combatState?.status === 'awaiting-reaction'
+            ? `${combatState.attackerUsername} atacou voce com ${combatState.attackCard?.name}. Se voce tiver Reacao na mao, pode usa-la agora.`
+            : combatState?.status === 'awaiting-reaction-result'
+              ? 'Resolva fisicamente o teste de defesa. Se voce superar o ataque, libera uma carta de resposta.'
+              : 'Voce superou o ataque. Agora pode jogar ou descartar uma carta em resposta antes de seguir a partida.'
+        }
+        isLoading={isSubmitting}
+        onClose={() => {}}
+        onConfirm={() =>
+          handleAction('match:resolveAttack', {
+            resolution:
+              combatState?.status === 'awaiting-reaction'
+                ? 'skip-reaction'
+                : combatState?.status === 'awaiting-reaction-result'
+                  ? 'reaction-fail'
+                  : 'skip-counter-response',
+          })
+        }
+        open={isCurrentUserCombatDefender && !pendingCardAction}
+        title="Ataque recebido"
+      >
+        {combatState?.status === 'awaiting-reaction' ? (
+          <div className="combat-flow">
+            <div className="combat-flow__summary">
+              <Badge tone="accent">{combatState.attackCard?.name || 'Ataque'}</Badge>
+              <p className="muted-text">
+                Alvo: <strong>Você</strong>
+              </p>
+            </div>
+
+            {reactionCards.length ? (
+              <div className="combat-flow__card-grid">
+                {reactionCards.map((card) => (
+                  <CardItem
+                    category={card.category}
+                    cost={card.category === 'imo' ? card.imoCost || 0 : undefined}
+                    costLabel="Custo Imo"
+                    description={card.effect}
+                    footer={
+                      <div className="row-wrap">
+                        <Button
+                          disabled={isSubmitting}
+                          onClick={() =>
+                            handleAction('match:reactToAttack', {
+                              reactionCardId: card.instanceId,
+                            })
+                          }
+                          size="sm"
+                          type="button"
+                        >
+                          Usar Reação
+                        </Button>
+                      </div>
+                    }
+                    imageSrc={resolveCardImageUrl(card.imagePath)}
+                    key={`reaction-${card.instanceId}`}
+                    name={card.name}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state">Você não tem uma carta de Reação disponível na mão.</div>
+            )}
+          </div>
+        ) : null}
+
+        {combatState?.status === 'awaiting-reaction-result' ? (
+          <div className="combat-flow">
+            <div className="combat-flow__summary">
+              <Badge tone="primary">Reação usada</Badge>
+              <p className="muted-text">
+                Resolva o teste físico e, se tiver sucesso, libere a carta de resposta.
+              </p>
+            </div>
+
+            <div className="combat-flow__actions">
+              <Button disabled={isSubmitting} onClick={() => handleAction('match:resolveAttack', { resolution: 'reaction-success' })} type="button">
+                Superou o ataque
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {combatState?.status === 'awaiting-counter-response' ? (
+          <div className="combat-flow">
+            <div className="combat-flow__summary">
+              <Badge tone="primary">Resposta liberada</Badge>
+              <p className="muted-text">
+                Escolha uma carta para jogar ou descartar em resposta ao ataque de {combatState.attackerUsername}.
+              </p>
+            </div>
+
+            {counterResponseCards.length ? (
+              <div className="combat-flow__card-grid">
+                {counterResponseCards.map((card) => (
+                  <CardItem
+                    category={card.category}
+                    cost={card.category === 'imo' ? card.imoCost || 0 : undefined}
+                    costLabel="Custo Imo"
+                    description={card.effect}
+                    footer={
+                      <div className="row-wrap">
+                        <Button
+                          disabled={isSubmitting || card.combatRole === 'reaction'}
+                          onClick={() => handleOpenCounterResponse('match:playCard', card.instanceId)}
+                          size="sm"
+                          type="button"
+                        >
+                          Jogar em resposta
+                        </Button>
+
+                        <Button
+                          disabled={isSubmitting || card.canDiscard === false}
+                          onClick={() => handleOpenCounterResponse('match:discardCard', card.instanceId)}
+                          size="sm"
+                          type="button"
+                          variant="secondary"
+                        >
+                          Descartar em resposta
+                        </Button>
+                      </div>
+                    }
+                    imageSrc={resolveCardImageUrl(card.imagePath)}
+                    key={`counter-response-${card.instanceId}`}
+                    name={card.name}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state">Nenhuma carta disponivel para responder ao ataque.</div>
+            )}
+          </div>
+        ) : null}
       </Modal>
 
       <Modal

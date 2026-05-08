@@ -15,11 +15,20 @@ const cardActionSchema = z.object({
   pairedTargetUserId: z.coerce.number().int().positive().optional(),
   pairedSelectedExileCardId: z.string().trim().min(1).optional(),
   pairedSelectedTargetHandCardId: z.string().trim().min(1).optional(),
+  asCounterResponse: z.coerce.boolean().optional(),
 });
 
 const revealTopDeckSchema = z.object({
   targetUserId: z.coerce.number().int().positive(),
   topDeckInstanceId: z.string().trim().min(1),
+});
+
+const reactToAttackSchema = z.object({
+  reactionCardId: z.string().trim().min(1),
+});
+
+const resolveAttackSchema = z.object({
+  resolution: z.enum(['skip-reaction', 'reaction-success', 'reaction-fail', 'skip-counter-response']),
 });
 
 async function getMatchSnapshot(req, res) {
@@ -66,6 +75,7 @@ async function playCard(req, res) {
     pairedTargetUserId: payload.pairedTargetUserId,
     pairedSelectedExileCardId: payload.pairedSelectedExileCardId,
     pairedSelectedTargetHandCardId: payload.pairedSelectedTargetHandCardId,
+    asCounterResponse: payload.asCounterResponse,
   });
 
   return res.status(200).json(data);
@@ -81,6 +91,7 @@ async function discardCard(req, res) {
     targetUserId: payload.targetUserId,
     selectedExileCardId: payload.selectedExileCardId,
     selectedTargetHandCardId: payload.selectedTargetHandCardId,
+    asCounterResponse: payload.asCounterResponse,
   });
 
   return res.status(200).json(data);
@@ -109,12 +120,38 @@ async function revealTopDeck(req, res) {
   return res.status(200).json(data);
 }
 
+async function reactToAttack(req, res) {
+  const { roomId } = roomIdParamSchema.parse(req.params);
+  const payload = reactToAttackSchema.parse(req.body);
+  const data = await matchService.reactToAttackForPlayer({
+    roomId,
+    userId: req.user.id,
+    reactionCardId: payload.reactionCardId,
+  });
+
+  return res.status(200).json(data);
+}
+
+async function resolveAttack(req, res) {
+  const { roomId } = roomIdParamSchema.parse(req.params);
+  const payload = resolveAttackSchema.parse(req.body);
+  const data = await matchService.resolveAttackForPlayer({
+    roomId,
+    userId: req.user.id,
+    resolution: payload.resolution,
+  });
+
+  return res.status(200).json(data);
+}
+
 module.exports = {
   getMatchSnapshot,
   startMatch,
   drawCard,
   playCard,
   discardCard,
+  reactToAttack,
+  resolveAttack,
   revealTopDeck,
   endTurn,
 };

@@ -25,6 +25,7 @@ export const matchApi = {
     pairedTargetUserId,
     pairedSelectedExileCardId,
     pairedSelectedTargetHandCardId,
+    asCounterResponse,
     token,
   }) =>
     request(`/match/${roomId}/play-card`, {
@@ -39,14 +40,37 @@ export const matchApi = {
         pairedTargetUserId,
         pairedSelectedExileCardId,
         pairedSelectedTargetHandCardId,
+        asCounterResponse,
       },
     }),
 
-  discardCard: ({ roomId, cardId, targetUserId, selectedExileCardId, selectedTargetHandCardId, token }) =>
+  discardCard: ({
+    roomId,
+    cardId,
+    targetUserId,
+    selectedExileCardId,
+    selectedTargetHandCardId,
+    asCounterResponse,
+    token,
+  }) =>
     request(`/match/${roomId}/discard-card`, {
       method: 'POST',
       token,
-      body: { cardId, targetUserId, selectedExileCardId, selectedTargetHandCardId },
+      body: { cardId, targetUserId, selectedExileCardId, selectedTargetHandCardId, asCounterResponse },
+    }),
+
+  reactToAttack: ({ roomId, reactionCardId, token }) =>
+    request(`/match/${roomId}/react-to-attack`, {
+      method: 'POST',
+      token,
+      body: { reactionCardId },
+    }),
+
+  resolveAttack: ({ roomId, resolution, token }) =>
+    request(`/match/${roomId}/resolve-attack`, {
+      method: 'POST',
+      token,
+      body: { resolution },
     }),
 
   revealTopDeck: ({ roomId, targetUserId, topDeckInstanceId, token }) =>
