@@ -227,6 +227,25 @@ const CARD_CATALOG = [
     effect:
       'Ao jogar, gaste 1 de Imo para passar uma carta de sua mao, a sua escolha, para um alvo. Ao descartar, visualize uma carta aleatoria da mao de um alvo.',
     imagePath: '/cartas/11.png',
+    playAutomation: {
+      targetScope: 'selected-player',
+      selection: 'own-hand-card',
+      effects: [
+        {
+          type: 'moveSelectedOwnHandCardToTargetHand',
+          target: 'selected-player',
+        },
+      ],
+    },
+    discardAutomation: {
+      targetScope: 'selected-player',
+      effects: [
+        {
+          type: 'revealRandomHandCard',
+          target: 'selected-player',
+        },
+      ],
+    },
   }),
   defineCard({
     id: 'maldicao',
@@ -315,6 +334,7 @@ function mapImoCardRecordToCatalogCard(record) {
   return {
     id: `imo:${record.id}`,
     sourceId: record.id,
+    catalogOwnerId: record.owner_id,
     name: record.name,
     category: CARD_CATEGORIES.IMO,
     maxCopies: record.max_copies,

@@ -10,10 +10,12 @@ const cardActionSchema = z.object({
   cardId: z.string().trim().min(1),
   targetUserId: z.coerce.number().int().positive().optional(),
   selectedExileCardId: z.string().trim().min(1).optional(),
+  selectedOwnHandCardId: z.string().trim().min(1).optional(),
   selectedTargetHandCardId: z.string().trim().min(1).optional(),
   pairedCardId: z.string().trim().min(1).optional(),
   pairedTargetUserId: z.coerce.number().int().positive().optional(),
   pairedSelectedExileCardId: z.string().trim().min(1).optional(),
+  pairedSelectedOwnHandCardId: z.string().trim().min(1).optional(),
   pairedSelectedTargetHandCardId: z.string().trim().min(1).optional(),
   asCounterResponse: z.coerce.boolean().optional(),
 });
@@ -70,10 +72,12 @@ async function playCard(req, res) {
     cardId: payload.cardId,
     targetUserId: payload.targetUserId,
     selectedExileCardId: payload.selectedExileCardId,
+    selectedOwnHandCardId: payload.selectedOwnHandCardId,
     selectedTargetHandCardId: payload.selectedTargetHandCardId,
     pairedCardId: payload.pairedCardId,
     pairedTargetUserId: payload.pairedTargetUserId,
     pairedSelectedExileCardId: payload.pairedSelectedExileCardId,
+    pairedSelectedOwnHandCardId: payload.pairedSelectedOwnHandCardId,
     pairedSelectedTargetHandCardId: payload.pairedSelectedTargetHandCardId,
     asCounterResponse: payload.asCounterResponse,
   });
@@ -90,6 +94,7 @@ async function discardCard(req, res) {
     cardId: payload.cardId,
     targetUserId: payload.targetUserId,
     selectedExileCardId: payload.selectedExileCardId,
+    selectedOwnHandCardId: payload.selectedOwnHandCardId,
     selectedTargetHandCardId: payload.selectedTargetHandCardId,
     asCounterResponse: payload.asCounterResponse,
   });

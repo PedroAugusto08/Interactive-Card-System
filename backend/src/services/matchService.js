@@ -79,7 +79,14 @@ async function startMatchForRoom({ roomId, userId, includeSnapshot = true }) {
       ownerId: player.user_id,
     });
 
-    const shuffledDeck = shuffleCards(expandedCards);
+    const normalizedDeckEntries = expandedCards.map((card) =>
+      createMatchCardEntry({
+        card,
+        ownerId: player.user_id,
+        instanceId: card.instanceId,
+      })
+    );
+    const shuffledDeck = shuffleCards(normalizedDeckEntries);
     const handCards = shuffledDeck.splice(0, MAX_HAND_SIZE);
 
     await upsertMatchPlayer({
@@ -336,11 +343,18 @@ async function buildPlayerState({ activeMatch, matchPlayer, requesterUserId, car
   let exileCards = [];
 
   if (isRequester) {
-    const cardCatalogMap = await getCardCatalogMapForUser(matchPlayer.user_id, cardCatalogCache);
-    [handCards, exileCards] = [
-      hydrateCards(cardCatalogMap, matchPlayer.hand_cards_json || []),
-      hydrateCards(cardCatalogMap, matchPlayer.exile_cards_json || []),
-    ];
+    [handCards, exileCards] = await Promise.all([
+      hydrateCards({
+        currentOwnerId: matchPlayer.user_id,
+        cardEntries: matchPlayer.hand_cards_json || [],
+        cardCatalogCache,
+      }),
+      hydrateCards({
+        currentOwnerId: matchPlayer.user_id,
+        cardEntries: matchPlayer.exile_cards_json || [],
+        cardCatalogCache,
+      }),
+    ]);
   } else {
     handCards = buildHiddenHandCards(matchPlayer.hand_cards_json || []);
   }
@@ -488,10 +502,12 @@ async function playCardForPlayer({
   cardId,
   targetUserId = null,
   selectedExileCardId = null,
+  selectedOwnHandCardId = null,
   selectedTargetHandCardId = null,
   pairedCardId = null,
   pairedTargetUserId = null,
   pairedSelectedExileCardId = null,
+  pairedSelectedOwnHandCardId = null,
   pairedSelectedTargetHandCardId = null,
   asCounterResponse = false,
   includeSnapshot = true,
@@ -587,6 +603,7 @@ async function playCardForPlayer({
       playerStatesByUserId,
       targetUserId,
       selectedExileCardId,
+      selectedOwnHandCardId,
       selectedTargetHandCardId,
     })
   );
@@ -604,6 +621,7 @@ async function playCardForPlayer({
         playerStatesByUserId,
         targetUserId: pairedTargetUserId,
         selectedExileCardId: pairedSelectedExileCardId,
+        selectedOwnHandCardId: pairedSelectedOwnHandCardId,
         selectedTargetHandCardId: pairedSelectedTargetHandCardId,
       })
     );
@@ -663,10 +681,12 @@ async function playCardForPlayer({
       cardId: primaryPlay.cardEntry.cardId,
       imoCost: totalImoCost,
       targetUserId: targetUserId || null,
+      selectedOwnHandCardId: selectedOwnHandCardId || null,
       asCounterResponse: isCounterResponse,
       selectedTargetHandCardId: selectedTargetHandCardId || null,
       pairedCardId: pairedPlay?.cardEntry.cardId || null,
       pairedTargetUserId: pairedTargetUserId || null,
+      pairedSelectedOwnHandCardId: pairedSelectedOwnHandCardId || null,
       pairedSelectedTargetHandCardId: pairedSelectedTargetHandCardId || null,
     },
   });
@@ -692,6 +712,7 @@ async function discardCardForPlayer({
   cardId,
   targetUserId = null,
   selectedExileCardId = null,
+  selectedOwnHandCardId = null,
   selectedTargetHandCardId = null,
   asCounterResponse = false,
   includeSnapshot = true,
@@ -731,7 +752,10 @@ async function discardCardForPlayer({
   }
 
   const [discardedCard] = handCards.splice(cardIndex, 1);
-  const resolvedCard = await resolveCardById({ ownerId: userId, cardId: discardedCard.cardId });
+  const resolvedCard = await resolveMatchCardEntry({
+    cardEntry: discardedCard,
+    fallbackOwnerId: userId,
+  });
   if (!resolvedCard) {
     throw new AppError('Carta descartada nao encontrada no catalogo.', 404);
   }
@@ -755,6 +779,7 @@ async function discardCardForPlayer({
     playerStatesByUserId,
     targetUserId,
     selectedExileCardId,
+    selectedOwnHandCardId,
     selectedTargetHandCardId,
   });
   const notice = automationOutcome.notices.join(' ');
@@ -782,6 +807,7 @@ async function discardCardForPlayer({
       userId,
       cardId: discardedCard.cardId,
       targetUserId: targetUserId || null,
+      selectedOwnHandCardId: selectedOwnHandCardId || null,
       asCounterResponse: isCounterResponse,
       selectedTargetHandCardId: selectedTargetHandCardId || null,
     },
@@ -1003,9 +1029,9 @@ async function revealViewedTopDeckCardForPlayer({
     throw new AppError('O topo do deck mudou antes da revelacao.', 409);
   }
 
-  const resolvedCard = await resolveCardById({
-    ownerId: targetState.user_id,
-    cardId: currentTopDeckCard.cardId,
+  const resolvedCard = await resolveMatchCardEntry({
+    cardEntry: currentTopDeckCard,
+    fallbackOwnerId: targetState.user_id,
   });
 
   if (!resolvedCard) {
@@ -1235,7 +1261,10 @@ async function consumeCardFromHand({ ownerId, handCards, instanceId, notFoundMes
   }
 
   const [cardEntry] = handCards.splice(cardIndex, 1);
-  const resolvedCard = await resolveCardById({ ownerId, cardId: cardEntry.cardId });
+  const resolvedCard = await resolveMatchCardEntry({
+    cardEntry,
+    fallbackOwnerId: ownerId,
+  });
   if (!resolvedCard) {
     throw new AppError(unresolvedMessage, 404);
   }
@@ -1255,6 +1284,7 @@ async function applyCardAutomation({
   playerStatesByUserId,
   targetUserId,
   selectedExileCardId,
+  selectedOwnHandCardId,
   selectedTargetHandCardId,
 }) {
   const automation = phase === 'play' ? card.playAutomation : card.discardAutomation;
@@ -1381,9 +1411,9 @@ async function applyCardAutomation({
         continue;
       }
 
-      const revealedCard = await resolveCardById({
-        ownerId: targetState.user_id,
-        cardId: targetState.deck_cards_json[0].cardId,
+      const revealedCard = await resolveMatchCardEntry({
+        cardEntry: targetState.deck_cards_json[0],
+        fallbackOwnerId: targetState.user_id,
       });
 
       if (!revealedCard) {
@@ -1401,6 +1431,85 @@ async function applyCardAutomation({
         card: {
           ...revealedCard,
           instanceId: targetState.deck_cards_json[0].instanceId,
+        },
+      });
+      continue;
+    }
+
+    if (effect.type === 'moveSelectedOwnHandCardToTargetHand') {
+      const targetState = resolveEffectTargetState({
+        effect,
+        actingPlayerState,
+        selectedTargetState,
+      });
+
+      if (!actingPlayerState.hand_cards_json.length) {
+        outcome.notices.push('Efeito sem alvo valido: nao havia outra carta na sua mao para passar.');
+        continue;
+      }
+
+      if (!selectedOwnHandCardId) {
+        throw new AppError('Escolha uma carta da sua mao para passar ao alvo.', 400);
+      }
+
+      const ownHandIndex = actingPlayerState.hand_cards_json.findIndex(
+        (entry) => entry.instanceId === selectedOwnHandCardId
+      );
+      if (ownHandIndex < 0) {
+        throw new AppError('A carta selecionada nao esta disponivel na sua mao.', 400);
+      }
+
+      const [passedCard] = actingPlayerState.hand_cards_json.splice(ownHandIndex, 1);
+      const reassignedCard = reassignMatchCardEntryOwner({
+        cardEntry: passedCard,
+        nextOwnerId: targetState.user_id,
+      });
+      targetState.hand_cards_json = [...targetState.hand_cards_json, reassignedCard];
+      const passedResolvedCard = await resolveMatchCardEntry({
+        cardEntry: reassignedCard,
+        fallbackOwnerId: targetState.user_id,
+      });
+      outcome.notices.push(
+        passedResolvedCard
+          ? `Efeito resolvido: ${passedResolvedCard.name} foi passada para a mao de ${targetState.username}.`
+          : `Efeito resolvido: uma carta da sua mao foi passada para ${targetState.username}.`
+      );
+      continue;
+    }
+
+    if (effect.type === 'revealRandomHandCard') {
+      const targetState = resolveEffectTargetState({
+        effect,
+        actingPlayerState,
+        selectedTargetState,
+      });
+
+      if (!targetState.hand_cards_json.length) {
+        outcome.notices.push(`Efeito sem alvo valido: a mao de ${targetState.username} estava vazia.`);
+        continue;
+      }
+
+      const randomIndex = Math.floor(Math.random() * targetState.hand_cards_json.length);
+      const revealedHandEntry = targetState.hand_cards_json[randomIndex];
+      const revealedHandCard = await resolveMatchCardEntry({
+        cardEntry: revealedHandEntry,
+        fallbackOwnerId: targetState.user_id,
+      });
+
+      outcome.notices.push(`Voce visualizou uma carta aleatoria da mao de ${targetState.username}.`);
+      if (!revealedHandCard) {
+        continue;
+      }
+
+      outcome.effects.push({
+        type: 'viewRandomHandCard',
+        actorUserId: actingPlayerState.user_id,
+        targetUserId: targetState.user_id,
+        targetUsername: targetState.username,
+        canReveal: false,
+        card: {
+          ...revealedHandCard,
+          instanceId: revealedHandEntry.instanceId,
         },
       });
       continue;
@@ -1430,9 +1539,9 @@ async function applyCardAutomation({
       }
 
       const [destroyedCard] = targetState.hand_cards_json.splice(targetHandIndex, 1);
-      const destroyedResolvedCard = await resolveCardById({
-        ownerId: targetState.user_id,
-        cardId: destroyedCard.cardId,
+      const destroyedResolvedCard = await resolveMatchCardEntry({
+        cardEntry: destroyedCard,
+        fallbackOwnerId: targetState.user_id,
       });
       outcome.notices.push(
         destroyedResolvedCard
@@ -1456,9 +1565,9 @@ async function applyCardAutomation({
 
       const randomIndex = Math.floor(Math.random() * targetState.hand_cards_json.length);
       const [destroyedCard] = targetState.hand_cards_json.splice(randomIndex, 1);
-      const destroyedResolvedCard = await resolveCardById({
-        ownerId: targetState.user_id,
-        cardId: destroyedCard.cardId,
+      const destroyedResolvedCard = await resolveMatchCardEntry({
+        cardEntry: destroyedCard,
+        fallbackOwnerId: targetState.user_id,
       });
       outcome.notices.push(
         destroyedResolvedCard
@@ -1528,14 +1637,62 @@ async function createGeneratedCardEntry({ ownerId, cardId }) {
     throw new AppError(`Carta ${cardId} nao encontrada no catalogo.`, 404);
   }
 
-  return {
-    cardId: generatedCard.id,
-    instanceId: createCardInstanceId(generatedCard.id),
-  };
+  return createMatchCardEntry({
+    card: generatedCard,
+    ownerId,
+  });
 }
 
 function createCardInstanceId(cardId) {
   return `${cardId}::generated::${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function createMatchCardEntry({ card, ownerId, instanceId = null }) {
+  const entry = {
+    cardId: card.id,
+    instanceId: instanceId || createCardInstanceId(card.id),
+    ownerId,
+  };
+  const catalogOwnerId = Number(card?.catalogOwnerId);
+  if (Number.isInteger(catalogOwnerId)) {
+    entry.catalogOwnerId = catalogOwnerId;
+  } else if (card?.isCustom) {
+    entry.catalogOwnerId = ownerId;
+  }
+
+  return entry;
+}
+
+function reassignMatchCardEntryOwner({ cardEntry, nextOwnerId }) {
+  return {
+    ...cardEntry,
+    ownerId: nextOwnerId,
+  };
+}
+
+function getMatchCardCatalogOwnerId(cardEntry, fallbackOwnerId) {
+  const normalizedCatalogOwnerId = Number(cardEntry?.catalogOwnerId);
+  if (Number.isInteger(normalizedCatalogOwnerId)) {
+    return normalizedCatalogOwnerId;
+  }
+
+  const normalizedOwnerId = Number(cardEntry?.ownerId);
+  if (Number.isInteger(normalizedOwnerId)) {
+    return normalizedOwnerId;
+  }
+
+  return fallbackOwnerId;
+}
+
+async function resolveMatchCardEntry({ cardEntry, fallbackOwnerId }) {
+  if (!cardEntry?.cardId) {
+    return null;
+  }
+
+  return resolveCardById({
+    ownerId: getMatchCardCatalogOwnerId(cardEntry, fallbackOwnerId),
+    cardId: cardEntry.cardId,
+  });
 }
 
 function shuffleCardEntries(cards) {
@@ -1676,10 +1833,12 @@ async function getCardCatalogMapForUser(ownerId, cache) {
   return map;
 }
 
-function hydrateCards(cardCatalogMap, cardEntries) {
+async function hydrateCards({ currentOwnerId, cardEntries, cardCatalogCache }) {
   const hydrated = [];
 
   for (const entry of cardEntries || []) {
+    const catalogOwnerId = getMatchCardCatalogOwnerId(entry, currentOwnerId);
+    const cardCatalogMap = await getCardCatalogMapForUser(catalogOwnerId, cardCatalogCache);
     const baseCard = cardCatalogMap.get(entry.cardId);
     if (!baseCard) {
       continue;
@@ -1688,6 +1847,8 @@ function hydrateCards(cardCatalogMap, cardEntries) {
     hydrated.push({
       ...baseCard,
       instanceId: entry.instanceId,
+      ownerId: Number(entry?.ownerId) || currentOwnerId,
+      catalogOwnerId,
     });
   }
 

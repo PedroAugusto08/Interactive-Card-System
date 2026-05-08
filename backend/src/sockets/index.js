@@ -179,10 +179,12 @@ function createSocketServer(httpServer) {
           cardId,
           targetUserId,
           selectedExileCardId,
+          selectedOwnHandCardId,
           selectedTargetHandCardId,
           pairedCardId,
           pairedTargetUserId,
           pairedSelectedExileCardId,
+          pairedSelectedOwnHandCardId,
           pairedSelectedTargetHandCardId,
           asCounterResponse,
         },
@@ -196,10 +198,12 @@ function createSocketServer(httpServer) {
           cardId,
           targetUserId: targetUserId ? Number(targetUserId) : undefined,
           selectedExileCardId,
+          selectedOwnHandCardId,
           selectedTargetHandCardId,
           pairedCardId,
           pairedTargetUserId: pairedTargetUserId ? Number(pairedTargetUserId) : undefined,
           pairedSelectedExileCardId,
+          pairedSelectedOwnHandCardId,
           pairedSelectedTargetHandCardId,
           asCounterResponse: Boolean(asCounterResponse),
           includeSnapshot: false,
@@ -239,7 +243,15 @@ function createSocketServer(httpServer) {
     socket.on(
       'match:discardCard',
       async (
-        { roomId, cardId, targetUserId, selectedExileCardId, selectedTargetHandCardId, asCounterResponse },
+        {
+          roomId,
+          cardId,
+          targetUserId,
+          selectedExileCardId,
+          selectedOwnHandCardId,
+          selectedTargetHandCardId,
+          asCounterResponse,
+        },
         acknowledge
       ) => {
       try {
@@ -250,6 +262,7 @@ function createSocketServer(httpServer) {
           cardId,
           targetUserId: targetUserId ? Number(targetUserId) : undefined,
           selectedExileCardId,
+          selectedOwnHandCardId,
           selectedTargetHandCardId,
           asCounterResponse: Boolean(asCounterResponse),
           includeSnapshot: false,

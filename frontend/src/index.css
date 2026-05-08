@@ -1160,12 +1160,17 @@ ul {
 }
 
 .player-hand {
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
   align-items: end;
   min-height: 340px;
 }
 
 .player-hand__slot {
+  flex: 0 0 200px;
+  max-width: 200px;
+  width: 100%;
   transition: transform 220ms ease;
 }
 

@@ -143,6 +143,37 @@
     }),
   },
   {
+    id: 'moveSelectedOwnHandCardToTargetHand',
+    label: 'Passar carta da mão para um alvo',
+    description: 'Escolhe uma carta da própria mão e a entrega para a mão de um alvo selecionado.',
+    phases: ['play', 'discard'],
+    build: () => ({
+      targetScope: 'selected-player',
+      selection: 'own-hand-card',
+      effects: [
+        {
+          type: 'moveSelectedOwnHandCardToTargetHand',
+          target: 'selected-player',
+        },
+      ],
+    }),
+  },
+  {
+    id: 'revealRandomHandCardOther',
+    label: 'Visualizar carta aleatória da mão de um alvo',
+    description: 'Escolhe um jogador e revela privadamente uma carta aleatória da mão dele.',
+    phases: ['play', 'discard'],
+    build: () => ({
+      targetScope: 'selected-player',
+      effects: [
+        {
+          type: 'revealRandomHandCard',
+          target: 'selected-player',
+        },
+      ],
+    }),
+  },
+  {
     id: 'destroySelectedHandCardOther',
     label: 'Destruir carta escolhida da mão de um alvo',
     description: 'Escolhe outro jogador e destrói uma carta específica da mão dele.',
