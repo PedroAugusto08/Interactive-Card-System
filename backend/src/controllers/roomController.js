@@ -40,6 +40,7 @@ async function joinRoom(req, res) {
   const data = await roomService.joinRoomByCode({
     code: payload.code,
     userId: req.user.id,
+    requesterUser: req.user,
   });
 
   return res.status(200).json(data);
@@ -50,6 +51,7 @@ async function leaveRoom(req, res) {
   const data = await roomService.leaveRoom({
     roomId: payload.roomId,
     userId: req.user.id,
+    requesterUser: req.user,
   });
 
   return res.status(200).json(data);
@@ -60,13 +62,17 @@ async function listPlayers(req, res) {
   const data = await roomService.getRoomPlayers({
     roomId,
     userId: req.user.id,
+    requesterUser: req.user,
   });
 
   return res.status(200).json(data);
 }
 
 async function getCurrentRoom(req, res) {
-  const data = await roomService.getCurrentRoomForUser(req.user.id);
+  const data = await roomService.getCurrentRoomForUser({
+    userId: req.user.id,
+    requesterUser: req.user,
+  });
   return res.status(200).json(data);
 }
 
@@ -77,6 +83,7 @@ async function selectDeck(req, res) {
     roomId,
     userId: req.user.id,
     deckId: payload.deckId,
+    requesterUser: req.user,
   });
 
   return res.status(200).json(data);
@@ -89,6 +96,7 @@ async function setReadyState(req, res) {
     roomId,
     userId: req.user.id,
     isReady: payload.isReady,
+    requesterUser: req.user,
   });
 
   return res.status(200).json(data);
@@ -101,6 +109,7 @@ async function replaceMasterDecks(req, res) {
     roomId,
     userId: req.user.id,
     deckIds: payload.deckIds,
+    requesterUser: req.user,
   });
 
   return res.status(200).json(data);
@@ -113,6 +122,7 @@ async function updateTurnOrderDraft(req, res) {
     roomId,
     userId: req.user.id,
     draftEntryIds: payload.draftEntryIds,
+    requesterUser: req.user,
   });
 
   return res.status(200).json(data);

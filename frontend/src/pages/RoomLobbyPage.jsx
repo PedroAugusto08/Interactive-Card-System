@@ -93,7 +93,6 @@ export function RoomLobbyPage() {
     () => players.find((player) => player.user_id === user?.id) || null,
     [players, user?.id]
   );
-  const isHost = currentRoom?.host_id === user?.id;
   const isMaster = Boolean(currentPlayer?.is_master);
   const selectedUserDeck = useMemo(
     () => getDeckById(availableDecks, currentPlayer?.selected_deck_id),
@@ -216,7 +215,7 @@ export function RoomLobbyPage() {
       return 'Crie ou entre em uma sala para abrir a partida.';
     }
 
-    if (!isHost) {
+    if (!isMaster) {
       return 'Somente o mestre pode iniciar a partida.';
     }
 
@@ -245,7 +244,7 @@ export function RoomLobbyPage() {
     }
 
     return '';
-  }, [currentRoom, everyoneReady, hasValidDraft, isHost, players, selectedMasterDeckIds.length]);
+  }, [currentRoom, everyoneReady, hasValidDraft, isMaster, players, selectedMasterDeckIds.length]);
 
   const canStartMatch = !isLoading && !startMatchDisabledReason;
 

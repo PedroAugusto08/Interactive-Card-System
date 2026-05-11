@@ -43,13 +43,33 @@ async function login({ email, password }) {
   return buildAuthResponse(user);
 }
 
+// Desenvolvimento: habilita/desabilita um modo mestre temporario na propria sessao.
+async function setMasterOverrideForDevelopment({ requesterUser, enabled }) {
+  if (!env.isDevelopment) {
+    throw new AppError('Atalho de desenvolvimento indisponivel fora do ambiente local.', 404);
+  }
+
+  const requesterEmail = String(requesterUser?.email || '').trim().toLowerCase();
+  if (!requesterEmail || !env.devAllowMasterOverrideAs.includes(requesterEmail)) {
+    throw new AppError('Seu usuario nao esta liberado para ativar o mestre temporario em desenvolvimento.', 403);
+  }
+
+  return buildAuthResponse(requesterUser, {
+    devMasterOverride: Boolean(enabled),
+  });
+}
+
 // Gera JWT e devolve payload publico do usuario.
-function buildAuthResponse(user) {
+function buildAuthResponse(user, options = {}) {
   const payload = {
     sub: String(user.id),
     username: user.username,
     email: user.email,
   };
+
+  if (options.devMasterOverride) {
+    payload.devMasterOverride = true;
+  }
 
   const token = jwt.sign(payload, env.jwtSecret, {
     expiresIn: env.jwtExpiresIn,
@@ -61,6 +81,12 @@ function buildAuthResponse(user) {
       id: user.id,
       username: user.username,
       email: user.email,
+      ...(options.devMasterOverride
+        ? {
+            devMasterOverride: true,
+            isDevMasterOverride: true,
+          }
+        : {}),
     },
   };
 }
@@ -68,4 +94,5 @@ function buildAuthResponse(user) {
 module.exports = {
   register,
   login,
+  setMasterOverrideForDevelopment,
 };

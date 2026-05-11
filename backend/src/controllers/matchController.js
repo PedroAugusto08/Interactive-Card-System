@@ -56,6 +56,7 @@ async function startMatch(req, res) {
   const data = await matchService.startMatchForRoom({
     roomId,
     userId: req.user.id,
+    requesterUser: req.user,
   });
 
   return res.status(200).json(data);

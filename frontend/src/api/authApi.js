@@ -13,4 +13,11 @@ export const authApi = {
       method: 'POST',
       body: payload,
     }),
+
+  setMasterOverrideDev: ({ token, enabled }) =>
+    request('/auth/dev/master-override', {
+      method: 'POST',
+      token,
+      body: { enabled },
+    }),
 };

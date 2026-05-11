@@ -28,7 +28,11 @@ async function requireAuth(req, res, next) {
     }
 
     // Salva o usuario no request para uso nas proximas camadas.
-    req.user = user;
+    req.user = {
+      ...user,
+      devMasterOverride: Boolean(payload.devMasterOverride),
+      isDevMasterOverride: Boolean(payload.devMasterOverride),
+    };
     return next();
   } catch (error) {
     return res.status(401).json({ message: 'Token invalido ou expirado.' });

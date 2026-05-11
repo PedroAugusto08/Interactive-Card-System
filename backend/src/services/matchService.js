@@ -15,6 +15,7 @@ const {
 const { listDecksByIds } = require('../models/deckModel');
 const { AppError } = require('../utils/AppError');
 const { getDeckCatalog, getResolvedDeckForUser, resolveCardById } = require('./deckService');
+const { resolveRoomMasterUserId } = require('./masterOverride');
 const {
   buildLobbyParticipantEntries,
   buildViewerMetadata,
@@ -41,13 +42,14 @@ function normalizeCombatState(combatState) {
   return combatState && typeof combatState === 'object' && Object.keys(combatState).length ? combatState : null;
 }
 
-async function startMatchForRoom({ roomId, userId, includeSnapshot = true }) {
+async function startMatchForRoom({ roomId, userId, requesterUser = null, includeSnapshot = true }) {
   const room = await findRoomById(roomId);
   if (!room) {
     throw new AppError('Sala nao encontrada.', 404);
   }
 
-  if (room.host_id !== userId) {
+  const masterUserId = resolveRoomMasterUserId({ room, requesterUser });
+  if (masterUserId !== userId) {
     throw new AppError('Somente o mestre pode iniciar a partida.', 403);
   }
 
@@ -60,8 +62,8 @@ async function startMatchForRoom({ roomId, userId, includeSnapshot = true }) {
     throw new AppError('A partida precisa de ao menos 2 jogadores.', 409);
   }
 
-  const normalizedPlayers = await buildNormalizedRoomPlayers({ room, players });
-  const masterPlayer = normalizedPlayers.find((player) => player.user_id === room.host_id);
+  const normalizedPlayers = await buildNormalizedRoomPlayers({ room, players, masterUserId });
+  const masterPlayer = normalizedPlayers.find((player) => player.user_id === masterUserId);
   if (!masterPlayer?.selected_deck_ids.length) {
     throw new AppError('O mestre precisa selecionar ao menos um deck.', 409);
   }
@@ -82,6 +84,7 @@ async function startMatchForRoom({ roomId, userId, includeSnapshot = true }) {
     room,
     players: normalizedPlayers,
     deckMap: buildDeckMapFromPlayers(normalizedPlayers),
+    masterUserId,
   });
   const validation = validateTurnOrderDraft({
     lobbyEntries: lobbyParticipants,
@@ -1866,17 +1869,19 @@ function mapLogRecord(item) {
   };
 }
 
-async function buildNormalizedRoomPlayers({ room, players }) {
+async function buildNormalizedRoomPlayers({ room, players, masterUserId = null }) {
   const allSelectedDeckIds = players.flatMap((player) => normalizeSelectedDeckIds(player));
   const selectedDecks = await listDecksByIds(allSelectedDeckIds);
   const deckMap = new Map(selectedDecks.map((deck) => [deck.id, deck]));
+  const resolvedMasterUserId =
+    Number.isInteger(Number(masterUserId)) && Number(masterUserId) > 0 ? Number(masterUserId) : room.host_id;
 
   return players.map((player) => {
     const selectedDeckIds = normalizeSelectedDeckIds(player);
     return {
       ...player,
-      role: player.user_id === room.host_id ? 'master' : 'player',
-      is_master: player.user_id === room.host_id,
+      role: player.user_id === resolvedMasterUserId ? 'master' : 'player',
+      is_master: player.user_id === resolvedMasterUserId,
       selected_deck_ids: selectedDeckIds,
       selected_decks: selectedDeckIds
         .map((deckId) => deckMap.get(deckId))

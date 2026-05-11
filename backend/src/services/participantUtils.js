@@ -23,15 +23,17 @@ function normalizeSelectedDeckIds(player) {
   return Number.isInteger(fallbackDeckId) && fallbackDeckId > 0 ? [fallbackDeckId] : [];
 }
 
-function buildLobbyParticipantEntries({ room, players = [], deckMap = new Map() }) {
-  const hostId = Number(room?.host_id);
+function buildLobbyParticipantEntries({ room, players = [], deckMap = new Map(), masterUserId = null }) {
+  const resolvedMasterUserId = Number.isInteger(Number(masterUserId))
+    ? Number(masterUserId)
+    : Number(room?.host_id);
   const entries = [];
 
   for (const player of players) {
     const playerUserId = Number(player.user_id);
     const selectedDeckIds = normalizeSelectedDeckIds(player);
 
-    if (playerUserId === hostId) {
+    if (playerUserId === resolvedMasterUserId) {
       for (const deckId of selectedDeckIds) {
         const selectedDeck = deckMap.get(deckId);
         entries.push({
@@ -67,8 +69,8 @@ function buildLobbyParticipantEntries({ room, players = [], deckMap = new Map() 
   return entries;
 }
 
-function buildDefaultTurnOrderDraft({ room, players = [], deckMap = new Map() }) {
-  return buildLobbyParticipantEntries({ room, players, deckMap }).map((entry) => entry.entryId);
+function buildDefaultTurnOrderDraft({ room, players = [], deckMap = new Map(), masterUserId = null }) {
+  return buildLobbyParticipantEntries({ room, players, deckMap, masterUserId }).map((entry) => entry.entryId);
 }
 
 function validateTurnOrderDraft({ lobbyEntries = [], draftEntryIds = [] }) {

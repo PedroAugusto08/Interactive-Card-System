@@ -40,7 +40,11 @@ function createSocketServer(httpServer) {
         return next(new Error('Usuario nao encontrado.'));
       }
 
-      socket.data.user = user;
+      socket.data.user = {
+        ...user,
+        devMasterOverride: Boolean(payload.devMasterOverride),
+        isDevMasterOverride: Boolean(payload.devMasterOverride),
+      };
       return next();
     } catch (error) {
       return next(new Error('Falha de autenticacao.'));
@@ -55,6 +59,7 @@ function createSocketServer(httpServer) {
         const { room } = await roomService.joinRoomByCode({
           code,
           userId: user.id,
+          requesterUser: user,
         });
 
         const roomChannel = getRoomChannel(room.id);
@@ -74,6 +79,7 @@ function createSocketServer(httpServer) {
         const data = await roomService.leaveRoom({
           roomId: targetRoomId,
           userId: user.id,
+          requesterUser: user,
         });
 
         socket.leave(getRoomChannel(targetRoomId));
@@ -93,6 +99,7 @@ function createSocketServer(httpServer) {
           roomId: Number(roomId),
           userId: user.id,
           deckId: Number(deckId),
+          requesterUser: user,
         });
 
         await syncSocketRoomOnly(socket, Number(roomId));
@@ -107,6 +114,7 @@ function createSocketServer(httpServer) {
         await roomService.replaceMasterDeckSelection({
           roomId: Number(roomId),
           userId: user.id,
+          requesterUser: user,
           deckIds: Array.isArray(deckIds) ? deckIds.map((value) => Number(value)) : [],
         });
 
@@ -122,6 +130,7 @@ function createSocketServer(httpServer) {
         await roomService.updateTurnOrderDraftForRoom({
           roomId: Number(roomId),
           userId: user.id,
+          requesterUser: user,
           draftEntryIds: Array.isArray(draftEntryIds) ? draftEntryIds : [],
         });
 
@@ -137,6 +146,7 @@ function createSocketServer(httpServer) {
         await roomService.setPlayerReadyState({
           roomId: Number(roomId),
           userId: user.id,
+          requesterUser: user,
           isReady: Boolean(isReady),
         });
 
@@ -152,6 +162,7 @@ function createSocketServer(httpServer) {
         await matchService.startMatchForRoom({
           roomId: Number(roomId),
           userId: user.id,
+          requesterUser: user,
           includeSnapshot: false,
         });
 
@@ -513,6 +524,7 @@ async function syncSocketRoomOnly(socket, roomId) {
   const roomData = await roomService.getRoomPlayers({
     roomId,
     userId: socket.data.user.id,
+    requesterUser: socket.data.user,
   });
 
   socket.emit('room:update', roomData);

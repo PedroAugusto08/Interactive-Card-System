@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate, useOutlet } from 'react-router-dom';
 
+import { authApi } from '../api/authApi';
 import { useAuthStore } from '../stores/authStore';
+import { useRoomStore } from '../stores/roomStore';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
 
@@ -10,9 +12,12 @@ export function ProtectedLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const outlet = useOutlet();
+  const token = useAuthStore((state) => state.token);
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
+  const setAuth = useAuthStore((state) => state.setAuth);
   const updateUser = useAuthStore((state) => state.updateUser);
+  const clearRoom = useRoomStore((state) => state.clearRoom);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('');
   const [username, setUsername] = useState(user?.username || '');
@@ -21,8 +26,12 @@ export function ProtectedLayout() {
   const [displayedOutlet, setDisplayedOutlet] = useState(outlet);
   const [displayedPath, setDisplayedPath] = useState(location.pathname);
   const [pageTransitionStage, setPageTransitionStage] = useState('enter');
+  const [isTogglingMasterOverride, setIsTogglingMasterOverride] = useState(false);
+  const [devSessionMessage, setDevSessionMessage] = useState('');
   const userInitial = (user?.username || user?.email || 'J').trim().charAt(0).toUpperCase();
   const fileInputRef = useRef(null);
+  const canUseDevMasterShortcut = import.meta.env.DEV;
+  const isDevMasterOverrideEnabled = Boolean(user?.isDevMasterOverride || user?.devMasterOverride);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -146,6 +155,45 @@ export function ProtectedLayout() {
     });
     setPassword('');
     setActiveSection('');
+  }
+
+  async function handleToggleMasterOverrideDev() {
+    if (!token) {
+      return;
+    }
+
+    setIsTogglingMasterOverride(true);
+    setDevSessionMessage('');
+
+    try {
+      const nextEnabled = !isDevMasterOverrideEnabled;
+      const authResult = await authApi.setMasterOverrideDev({
+        token,
+        enabled: nextEnabled,
+      });
+      setAuth(authResult.token, authResult.user);
+      clearRoom();
+      setDevSessionMessage(
+        nextEnabled
+          ? 'Modo mestre temporario ativado para esta sessao de desenvolvimento.'
+          : 'Modo mestre temporario desativado para esta sessao.'
+      );
+      setDevSessionMessage('Sessão trocada para a conta do mestre de desenvolvimento.');
+      setDevSessionMessage(
+        nextEnabled
+          ? 'Modo mestre temporario ativado para esta sessao de desenvolvimento.'
+          : 'Modo mestre temporario desativado para esta sessao.'
+      );
+      setActiveSection('');
+      setIsProfileOpen(false);
+      navigate('/lobby', { replace: true });
+    } catch (error) {
+      setDevSessionMessage(error?.message || 'Nao foi possivel alterar o mestre temporario.');
+      setDevSessionMessage(error?.message || 'Não foi possível assumir a sessão do mestre.');
+      setDevSessionMessage(error?.message || 'Nao foi possivel alterar o mestre temporario.');
+    } finally {
+      setIsTogglingMasterOverride(false);
+    }
   }
 
   return (
@@ -376,6 +424,35 @@ export function ProtectedLayout() {
           <span className="profile-section-label">Sessão</span>
 
           <div className="profile-sidebar__actions">
+            {canUseDevMasterShortcut ? (
+              <>
+                <Button
+                  className="profile-action"
+                  loading={isTogglingMasterOverride}
+                  onClick={handleToggleMasterOverrideDev}
+                  variant="secondary"
+                >
+                  {isDevMasterOverrideEnabled ? 'Desativar mestre temporario (dev)' : 'Ativar mestre temporario (dev)'}
+                </Button>
+
+                {isDevMasterOverrideEnabled ? (
+                  <div className="profile-form profile-form--compact">
+                    <span className="status-label">Sessão de desenvolvimento</span>
+                    <span className="muted-text compact">
+                      Você está usando a conta do mestre
+                      para teste local com a sua propria conta.
+                    </span>
+                  </div>
+                ) : null}
+
+                {devSessionMessage ? (
+                  <div className="profile-form profile-form--compact">
+                    <span className="muted-text compact">{devSessionMessage}</span>
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+
             <Button className="profile-action" onClick={handleLogout} variant="danger">
               Sair
             </Button>

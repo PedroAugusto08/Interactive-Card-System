@@ -15,6 +15,10 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+const masterOverrideSchema = z.object({
+  enabled: z.boolean(),
+});
+
 // Cria usuario e devolve token + dados basicos.
 async function register(req, res) {
   const payload = registerSchema.parse(req.body);
@@ -31,7 +35,19 @@ async function login(req, res) {
   return res.status(200).json(authResult);
 }
 
+// Desenvolvimento: ativa ou desativa o mestre temporario na propria sessao.
+async function setMasterOverrideDev(req, res) {
+  const payload = masterOverrideSchema.parse(req.body);
+  const authResult = await authService.setMasterOverrideForDevelopment({
+    requesterUser: req.user,
+    enabled: payload.enabled,
+  });
+
+  return res.status(200).json(authResult);
+}
+
 module.exports = {
   register,
   login,
+  setMasterOverrideDev,
 };

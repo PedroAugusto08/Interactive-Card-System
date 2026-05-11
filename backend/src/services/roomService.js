@@ -14,6 +14,7 @@ const {
 const { findDeckById, listDecksByIds } = require('../models/deckModel');
 const { AppError } = require('../utils/AppError');
 const { getMatchSnapshot, forfeitMatchByLeavingRoom } = require('./matchService');
+const { resolveRoomMasterUserId } = require('./masterOverride');
 const {
   buildDefaultTurnOrderDraft,
   buildLobbyParticipantEntries,
@@ -35,7 +36,7 @@ async function createRoomForHost(hostId) {
   return buildRoomPayload(room.id, hostId);
 }
 
-async function joinRoomByCode({ code, userId }) {
+async function joinRoomByCode({ code, userId, requesterUser = null }) {
   const normalizedCode = String(code || '').trim().toUpperCase();
   if (!normalizedCode) {
     throw new AppError('Codigo da sala e obrigatorio.', 400);
@@ -61,10 +62,10 @@ async function joinRoomByCode({ code, userId }) {
     await rebuildLobbyConfiguration({ roomId: room.id });
   }
 
-  return buildRoomPayload(room.id, userId);
+  return buildRoomPayload(room.id, requesterUser || { id: userId });
 }
 
-async function leaveRoom({ roomId, userId }) {
+async function leaveRoom({ roomId, userId, requesterUser = null }) {
   let room = await findRoomById(roomId);
   if (!room) {
     throw new AppError('Sala nao encontrada.', 404);
@@ -75,7 +76,8 @@ async function leaveRoom({ roomId, userId }) {
     throw new AppError('Jogador nao esta na sala.', 409);
   }
 
-  if (room.host_id === userId && ['lobby', 'in_match'].includes(room.status)) {
+  const activeMasterUserId = resolveRoomMasterUserId({ room, requesterUser });
+  if (activeMasterUserId === userId && ['lobby', 'in_match'].includes(room.status)) {
     throw new AppError('O mestre nao pode sair enquanto a sala estiver ativa.', 409);
   }
 
@@ -98,11 +100,15 @@ async function leaveRoom({ roomId, userId }) {
     return { room: { ...room, status: 'finished', turn_order_draft_json: [] }, players: [], lobbyParticipants: [] };
   }
 
-  await rebuildLobbyConfiguration({ roomId, preserveExistingDraft: true });
-  return buildRoomPayload(roomId, remainingPlayers[0].user_id);
+  await rebuildLobbyConfiguration({
+    roomId,
+    preserveExistingDraft: true,
+    masterUserId: activeMasterUserId,
+  });
+  return buildRoomPayload(roomId, requesterUser || { id: remainingPlayers[0].user_id });
 }
 
-async function getRoomPlayers({ roomId, userId }) {
+async function getRoomPlayers({ roomId, userId, requesterUser = null }) {
   const room = await findRoomById(roomId);
   if (!room) {
     throw new AppError('Sala nao encontrada.', 404);
@@ -113,10 +119,10 @@ async function getRoomPlayers({ roomId, userId }) {
     throw new AppError('Voce nao pertence a esta sala.', 403);
   }
 
-  return buildRoomPayload(roomId, userId);
+  return buildRoomPayload(roomId, requesterUser || { id: userId });
 }
 
-async function getCurrentRoomForUser(userId) {
+async function getCurrentRoomForUser({ userId, requesterUser = null }) {
   const room = await findActiveRoomForUser(userId);
   if (!room) {
     return {
@@ -127,7 +133,7 @@ async function getCurrentRoomForUser(userId) {
     };
   }
 
-  const roomPayload = await buildRoomPayload(room.id, userId);
+  const roomPayload = await buildRoomPayload(room.id, requesterUser || { id: userId });
   if (room.status === 'in_match') {
     const matchSnapshot = await getMatchSnapshot({ roomId: room.id, userId });
     return {
@@ -142,7 +148,7 @@ async function getCurrentRoomForUser(userId) {
   };
 }
 
-async function selectDeckForPlayer({ roomId, userId, deckId }) {
+async function selectDeckForPlayer({ roomId, userId, deckId, requesterUser = null }) {
   const room = await findRoomById(roomId);
   if (!room) {
     throw new AppError('Sala nao encontrada.', 404);
@@ -152,7 +158,8 @@ async function selectDeckForPlayer({ roomId, userId, deckId }) {
     throw new AppError('Nao e possivel trocar deck fora do lobby.', 409);
   }
 
-  if (room.host_id === userId) {
+  const activeMasterUserId = resolveRoomMasterUserId({ room, requesterUser });
+  if (activeMasterUserId === userId) {
     throw new AppError('O mestre deve usar a selecao multipla de criaturas.', 409);
   }
 
@@ -174,11 +181,15 @@ async function selectDeckForPlayer({ roomId, userId, deckId }) {
     isReady: false,
   });
 
-  await rebuildLobbyConfiguration({ roomId, preserveExistingDraft: true });
-  return buildRoomPayload(roomId, userId);
+  await rebuildLobbyConfiguration({
+    roomId,
+    preserveExistingDraft: true,
+    masterUserId: activeMasterUserId,
+  });
+  return buildRoomPayload(roomId, requesterUser || { id: userId });
 }
 
-async function replaceMasterDeckSelection({ roomId, userId, deckIds }) {
+async function replaceMasterDeckSelection({ roomId, userId, deckIds, requesterUser = null }) {
   const room = await findRoomById(roomId);
   if (!room) {
     throw new AppError('Sala nao encontrada.', 404);
@@ -188,7 +199,8 @@ async function replaceMasterDeckSelection({ roomId, userId, deckIds }) {
     throw new AppError('Nao e possivel trocar criaturas fora do lobby.', 409);
   }
 
-  if (room.host_id !== userId) {
+  const activeMasterUserId = resolveRoomMasterUserId({ room, requesterUser });
+  if (activeMasterUserId !== userId) {
     throw new AppError('Somente o mestre pode definir as criaturas.', 403);
   }
 
@@ -210,11 +222,15 @@ async function replaceMasterDeckSelection({ roomId, userId, deckIds }) {
     isReady: false,
   });
 
-  await rebuildLobbyConfiguration({ roomId, preserveExistingDraft: true });
-  return buildRoomPayload(roomId, userId);
+  await rebuildLobbyConfiguration({
+    roomId,
+    preserveExistingDraft: true,
+    masterUserId: activeMasterUserId,
+  });
+  return buildRoomPayload(roomId, requesterUser || { id: userId });
 }
 
-async function updateTurnOrderDraftForRoom({ roomId, userId, draftEntryIds }) {
+async function updateTurnOrderDraftForRoom({ roomId, userId, draftEntryIds, requesterUser = null }) {
   const room = await findRoomById(roomId);
   if (!room) {
     throw new AppError('Sala nao encontrada.', 404);
@@ -224,11 +240,12 @@ async function updateTurnOrderDraftForRoom({ roomId, userId, draftEntryIds }) {
     throw new AppError('Nao e possivel editar a ordem fora do lobby.', 409);
   }
 
-  if (room.host_id !== userId) {
+  const activeMasterUserId = resolveRoomMasterUserId({ room, requesterUser });
+  if (activeMasterUserId !== userId) {
     throw new AppError('Somente o mestre pode definir a ordem da rodada.', 403);
   }
 
-  const roomPayload = await buildRoomPayload(roomId, userId);
+  const roomPayload = await buildRoomPayload(roomId, requesterUser || { id: userId });
   const validation = validateTurnOrderDraft({
     lobbyEntries: roomPayload.lobbyParticipants,
     draftEntryIds,
@@ -245,10 +262,10 @@ async function updateTurnOrderDraftForRoom({ roomId, userId, draftEntryIds }) {
   });
   await resetRoomPlayersReady(roomId);
 
-  return buildRoomPayload(roomId, userId);
+  return buildRoomPayload(roomId, requesterUser || { id: userId });
 }
 
-async function setPlayerReadyState({ roomId, userId, isReady }) {
+async function setPlayerReadyState({ roomId, userId, isReady, requesterUser = null }) {
   const room = await findRoomById(roomId);
   if (!room) {
     throw new AppError('Sala nao encontrada.', 404);
@@ -263,7 +280,7 @@ async function setPlayerReadyState({ roomId, userId, isReady }) {
     throw new AppError('Voce nao pertence a esta sala.', 403);
   }
 
-  const roomPayload = await buildRoomPayload(roomId, userId);
+  const roomPayload = await buildRoomPayload(roomId, requesterUser || { id: userId });
   const player = roomPayload.players.find((item) => item.user_id === userId);
   if (!player) {
     throw new AppError('Jogador nao encontrado na sala.', 404);
@@ -294,10 +311,10 @@ async function setPlayerReadyState({ roomId, userId, isReady }) {
     turnOrder: player.turn_order,
   });
 
-  return buildRoomPayload(roomId, userId);
+  return buildRoomPayload(roomId, requesterUser || { id: userId });
 }
 
-async function rebuildLobbyConfiguration({ roomId, preserveExistingDraft = true }) {
+async function rebuildLobbyConfiguration({ roomId, preserveExistingDraft = true, masterUserId = null }) {
   const room = await findRoomById(roomId);
   if (!room) {
     return null;
@@ -305,13 +322,25 @@ async function rebuildLobbyConfiguration({ roomId, preserveExistingDraft = true 
 
   const players = await listRoomPlayers(roomId);
   const deckMap = await buildSelectedDeckMap(players);
-  const lobbyParticipants = buildLobbyParticipantEntries({ room, players, deckMap });
+  const resolvedMasterUserId =
+    Number.isInteger(Number(masterUserId)) && Number(masterUserId) > 0
+      ? Number(masterUserId)
+      : room.host_id;
+  const normalizedPlayers = players.map((player) =>
+    normalizeRoomPlayer({ player, room, deckMap, masterUserId: resolvedMasterUserId })
+  );
+  const lobbyParticipants = buildLobbyParticipantEntries({
+    room,
+    players: normalizedPlayers,
+    deckMap,
+    masterUserId: resolvedMasterUserId,
+  });
   const nextTurnOrderDraft = preserveExistingDraft
     ? reconcileTurnOrderDraft({
         draftEntryIds: room.turn_order_draft_json || [],
         lobbyEntries: lobbyParticipants,
       })
-    : buildDefaultTurnOrderDraft({ room, players, deckMap });
+    : buildDefaultTurnOrderDraft({ room, players: normalizedPlayers, deckMap, masterUserId: resolvedMasterUserId });
 
   await updateRoomState({
     roomId,
@@ -326,12 +355,12 @@ async function rebuildLobbyConfiguration({ roomId, preserveExistingDraft = true 
       ...room,
       turn_order_draft_json: nextTurnOrderDraft,
     },
-    players,
+    players: normalizedPlayers,
     lobbyParticipants,
   };
 }
 
-async function buildRoomPayload(roomId, requesterUserId) {
+async function buildRoomPayload(roomId, requesterUser = null) {
   const room = await findRoomById(roomId);
   if (!room) {
     throw new AppError('Sala nao encontrada.', 404);
@@ -339,17 +368,21 @@ async function buildRoomPayload(roomId, requesterUserId) {
 
   const players = await listRoomPlayers(roomId);
   const deckMap = await buildSelectedDeckMap(players);
-  const normalizedPlayers = players.map((player) => normalizeRoomPlayer({ player, room, deckMap }));
+  const masterUserId = resolveRoomMasterUserId({ room, requesterUser });
+  const normalizedPlayers = players.map((player) =>
+    normalizeRoomPlayer({ player, room, deckMap, masterUserId })
+  );
   const lobbyParticipants = buildLobbyParticipantEntries({
     room,
     players: normalizedPlayers,
     deckMap,
+    masterUserId,
   });
 
   return {
     room: {
       ...room,
-      master_user_id: room.host_id,
+      master_user_id: masterUserId,
       turn_order_draft_json: reconcileTurnOrderDraft({
         draftEntryIds: room.turn_order_draft_json || [],
         lobbyEntries: lobbyParticipants,
@@ -360,8 +393,10 @@ async function buildRoomPayload(roomId, requesterUserId) {
   };
 }
 
-function normalizeRoomPlayer({ player, room, deckMap }) {
+function normalizeRoomPlayer({ player, room, deckMap, masterUserId = null }) {
   const selectedDeckIds = normalizeSelectedDeckIds(player);
+  const resolvedMasterUserId =
+    Number.isInteger(Number(masterUserId)) && Number(masterUserId) > 0 ? Number(masterUserId) : room.host_id;
   const selectedDecks = selectedDeckIds.map((deckId) => {
     const deck = deckMap.get(deckId);
     return deck
@@ -379,8 +414,8 @@ function normalizeRoomPlayer({ player, room, deckMap }) {
 
   return {
     ...player,
-    role: player.user_id === room.host_id ? 'master' : 'player',
-    is_master: player.user_id === room.host_id,
+    role: player.user_id === resolvedMasterUserId ? 'master' : 'player',
+    is_master: player.user_id === resolvedMasterUserId,
     selected_deck_ids: selectedDeckIds,
     selected_decks: selectedDecks,
   };
