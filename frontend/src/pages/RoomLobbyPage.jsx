@@ -81,6 +81,12 @@ export function RoomLobbyPage() {
   const [pendingMasterDeckIds, setPendingMasterDeckIds] = useState([]);
   const [pendingTurnOrder, setPendingTurnOrder] = useState([]);
   const [isLeaveRoomModalOpen, setIsLeaveRoomModalOpen] = useState(false);
+  const canActAsMaster = Boolean(
+    user?.canManageMultipleDecks ||
+      user?.isMasterAccount ||
+      user?.isDevMasterOverride ||
+      user?.devMasterOverride
+  );
 
   const syncRoomState = useCallback((payload) => {
     setRoomData(payload);
@@ -516,7 +522,7 @@ export function RoomLobbyPage() {
         <div className="stack-gap lobby-left-column">
           <Card className="lobby-control-panel" title="Controle da sala">
             <div className="lobby-action-grid">
-              <Button loading={isLoading} onClick={handleCreateRoom}>
+              <Button disabled={!canActAsMaster} loading={isLoading} onClick={handleCreateRoom}>
                 Criar sala
               </Button>
 
@@ -528,6 +534,12 @@ export function RoomLobbyPage() {
                 Atualizar
               </Button>
             </div>
+
+            {!canActAsMaster ? (
+              <p className="muted-text compact">
+                Somente o mestre fixo pode criar salas. Contas de jogador entram usando o codigo da sala.
+              </p>
+            ) : null}
 
             <form className="lobby-join-form" onSubmit={handleJoinRoom}>
               <Input

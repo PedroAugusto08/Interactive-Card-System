@@ -24,9 +24,8 @@ function normalizeSelectedDeckIds(player) {
 }
 
 function buildLobbyParticipantEntries({ room, players = [], deckMap = new Map(), masterUserId = null }) {
-  const resolvedMasterUserId = Number.isInteger(Number(masterUserId))
-    ? Number(masterUserId)
-    : Number(room?.host_id);
+  const resolvedMasterUserId =
+    Number.isInteger(Number(masterUserId)) && Number(masterUserId) > 0 ? Number(masterUserId) : null;
   const entries = [];
 
   for (const player of players) {

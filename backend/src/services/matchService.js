@@ -48,7 +48,7 @@ async function startMatchForRoom({ roomId, userId, requesterUser = null, include
     throw new AppError('Sala nao encontrada.', 404);
   }
 
-  const masterUserId = resolveRoomMasterUserId({ room, requesterUser });
+  const masterUserId = resolveRoomMasterUserId({ room, requesterUser, players });
   if (masterUserId !== userId) {
     throw new AppError('Somente o mestre pode iniciar a partida.', 403);
   }
@@ -1911,7 +1911,7 @@ async function buildNormalizedRoomPlayers({ room, players, masterUserId = null }
   const selectedDecks = await listDecksByIds(allSelectedDeckIds);
   const deckMap = new Map(selectedDecks.map((deck) => [deck.id, deck]));
   const resolvedMasterUserId =
-    Number.isInteger(Number(masterUserId)) && Number(masterUserId) > 0 ? Number(masterUserId) : room.host_id;
+    Number.isInteger(Number(masterUserId)) && Number(masterUserId) > 0 ? Number(masterUserId) : null;
 
   return players.map((player) => {
     const selectedDeckIds = normalizeSelectedDeckIds(player);

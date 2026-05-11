@@ -14,7 +14,7 @@ const {
 const { findDeckById, listDecksByIds } = require('../models/deckModel');
 const { AppError } = require('../utils/AppError');
 const { getMatchSnapshot, forfeitMatchByLeavingRoom } = require('./matchService');
-const { resolveRoomMasterUserId } = require('./masterOverride');
+const { canUserActAsMaster, resolveRoomMasterUserId } = require('./masterOverride');
 const {
   buildDefaultTurnOrderDraft,
   buildLobbyParticipantEntries,
@@ -26,14 +26,17 @@ const {
 const ROOM_CODE_LENGTH = 6;
 const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
-async function createRoomForHost(hostId) {
+async function createRoomForHost({ hostId, requesterUser = null }) {
   await assertUserHasNoConflictingRoom(hostId);
+  if (!canUserActAsMaster(requesterUser || { id: hostId })) {
+    throw new AppError('Somente o mestre fixo pode criar salas.', 403);
+  }
 
   const code = await generateUniqueRoomCode();
   const room = await createRoom({ code, hostId, status: 'lobby', turnOrderDraft: [] });
 
   await addPlayerToRoom({ roomId: room.id, userId: hostId });
-  return buildRoomPayload(room.id, hostId);
+  return buildRoomPayload(room.id, requesterUser || { id: hostId });
 }
 
 async function joinRoomByCode({ code, userId, requesterUser = null }) {
@@ -59,7 +62,7 @@ async function joinRoomByCode({ code, userId, requesterUser = null }) {
     }
 
     await addPlayerToRoom({ roomId: room.id, userId });
-    await rebuildLobbyConfiguration({ roomId: room.id });
+    await rebuildLobbyConfiguration({ roomId: room.id, masterUserId: resolveRoomMasterUserId({ room, requesterUser }) });
   }
 
   return buildRoomPayload(room.id, requesterUser || { id: userId });
@@ -76,7 +79,11 @@ async function leaveRoom({ roomId, userId, requesterUser = null }) {
     throw new AppError('Jogador nao esta na sala.', 409);
   }
 
-  const activeMasterUserId = resolveRoomMasterUserId({ room, requesterUser });
+  const activeMasterUserId = resolveRoomMasterUserId({
+    room,
+    requesterUser,
+    players: await listRoomPlayers(roomId),
+  });
   const isMasterLeavingActiveRoom = activeMasterUserId === userId && ['lobby', 'in_match'].includes(room.status);
 
   if (room.status === 'in_match') {
@@ -175,7 +182,11 @@ async function selectDeckForPlayer({ roomId, userId, deckId, requesterUser = nul
     throw new AppError('Nao e possivel trocar deck fora do lobby.', 409);
   }
 
-  const activeMasterUserId = resolveRoomMasterUserId({ room, requesterUser });
+  const activeMasterUserId = resolveRoomMasterUserId({
+    room,
+    requesterUser,
+    players: await listRoomPlayers(roomId),
+  });
   if (activeMasterUserId === userId) {
     throw new AppError('O mestre deve usar a selecao multipla de criaturas.', 409);
   }
@@ -216,7 +227,11 @@ async function replaceMasterDeckSelection({ roomId, userId, deckIds, requesterUs
     throw new AppError('Nao e possivel trocar criaturas fora do lobby.', 409);
   }
 
-  const activeMasterUserId = resolveRoomMasterUserId({ room, requesterUser });
+  const activeMasterUserId = resolveRoomMasterUserId({
+    room,
+    requesterUser,
+    players: await listRoomPlayers(roomId),
+  });
   if (activeMasterUserId !== userId) {
     throw new AppError('Somente o mestre pode definir as criaturas.', 403);
   }
@@ -257,7 +272,11 @@ async function updateTurnOrderDraftForRoom({ roomId, userId, draftEntryIds, requ
     throw new AppError('Nao e possivel editar a ordem fora do lobby.', 409);
   }
 
-  const activeMasterUserId = resolveRoomMasterUserId({ room, requesterUser });
+  const activeMasterUserId = resolveRoomMasterUserId({
+    room,
+    requesterUser,
+    players: await listRoomPlayers(roomId),
+  });
   if (activeMasterUserId !== userId) {
     throw new AppError('Somente o mestre pode definir a ordem da rodada.', 403);
   }
@@ -342,7 +361,7 @@ async function rebuildLobbyConfiguration({ roomId, preserveExistingDraft = true,
   const resolvedMasterUserId =
     Number.isInteger(Number(masterUserId)) && Number(masterUserId) > 0
       ? Number(masterUserId)
-      : room.host_id;
+      : resolveRoomMasterUserId({ room, players });
   const normalizedPlayers = players.map((player) =>
     normalizeRoomPlayer({ player, room, deckMap, masterUserId: resolvedMasterUserId })
   );
@@ -385,7 +404,7 @@ async function buildRoomPayload(roomId, requesterUser = null) {
 
   const players = await listRoomPlayers(roomId);
   const deckMap = await buildSelectedDeckMap(players);
-  const masterUserId = resolveRoomMasterUserId({ room, requesterUser });
+  const masterUserId = resolveRoomMasterUserId({ room, requesterUser, players });
   const normalizedPlayers = players.map((player) =>
     normalizeRoomPlayer({ player, room, deckMap, masterUserId })
   );
@@ -413,7 +432,7 @@ async function buildRoomPayload(roomId, requesterUser = null) {
 function normalizeRoomPlayer({ player, room, deckMap, masterUserId = null }) {
   const selectedDeckIds = normalizeSelectedDeckIds(player);
   const resolvedMasterUserId =
-    Number.isInteger(Number(masterUserId)) && Number(masterUserId) > 0 ? Number(masterUserId) : room.host_id;
+    Number.isInteger(Number(masterUserId)) && Number(masterUserId) > 0 ? Number(masterUserId) : null;
   const selectedDecks = selectedDeckIds.map((deckId) => {
     const deck = deckMap.get(deckId);
     return deck

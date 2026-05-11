@@ -31,7 +31,10 @@ const readyStateSchema = z.object({
 });
 
 async function createRoom(req, res) {
-  const data = await roomService.createRoomForHost(req.user.id);
+  const data = await roomService.createRoomForHost({
+    hostId: req.user.id,
+    requesterUser: req.user,
+  });
   return res.status(201).json(data);
 }
 

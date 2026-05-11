@@ -21,6 +21,10 @@ function canUserManageMultipleDecks(user) {
   return isMasterAccount(user) || isDevMasterOverrideEnabled(user);
 }
 
+function canUserActAsMaster(user) {
+  return isMasterAccount(user) || isDevMasterOverrideEnabled(user);
+}
+
 function buildUserCapabilityFlags(user) {
   const devMasterOverride = isDevMasterOverrideEnabled(user);
   const masterAccount = isMasterAccount(user);
@@ -33,18 +37,25 @@ function buildUserCapabilityFlags(user) {
   };
 }
 
-function resolveRoomMasterUserId({ room, requesterUser = null }) {
+function resolveRoomMasterUserId({ room, requesterUser = null, players = [] }) {
   const overriddenUserId = Number(requesterUser?.id);
   if (isDevMasterOverrideEnabled(requesterUser) && Number.isInteger(overriddenUserId) && overriddenUserId > 0) {
     return overriddenUserId;
   }
 
-  const hostUserId = Number(room?.host_id);
-  return Number.isInteger(hostUserId) && hostUserId > 0 ? hostUserId : null;
+  const requesterUserId = Number(requesterUser?.id);
+  if (isMasterAccount(requesterUser) && Number.isInteger(requesterUserId) && requesterUserId > 0) {
+    return requesterUserId;
+  }
+
+  const masterPlayer = (players || []).find((player) => isMasterAccount(player));
+  const masterPlayerUserId = Number(masterPlayer?.user_id ?? masterPlayer?.id);
+  return Number.isInteger(masterPlayerUserId) && masterPlayerUserId > 0 ? masterPlayerUserId : null;
 }
 
 module.exports = {
   buildUserCapabilityFlags,
+  canUserActAsMaster,
   canUserManageMultipleDecks,
   isDevMasterOverrideEnabled,
   isMasterAccount,

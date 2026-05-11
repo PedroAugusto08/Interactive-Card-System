@@ -852,7 +852,7 @@ export function MatchPage() {
                       {player.is_master ? 'Mestre' : 'Jogador'} • {player.is_ready ? 'Pronto' : 'Nao pronto'}
                     </span>
                   </div>
-                  {player.is_master ? <Badge tone="accent">Host</Badge> : null}
+                  {player.user_id === currentRoom?.host_id ? <Badge tone="accent">Host</Badge> : null}
                 </div>
               ))}
             </div>
