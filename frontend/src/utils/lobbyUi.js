@@ -18,16 +18,36 @@ export function getDeckById(decks, deckId) {
   return decks.find((deck) => Number(deck.id) === Number(deckId)) || null;
 }
 
+export function getPlayerSelectedDeckIds(player) {
+  if (Array.isArray(player?.selected_deck_ids)) {
+    return player.selected_deck_ids;
+  }
+
+  return player?.selected_deck_id ? [player.selected_deck_id] : [];
+}
+
 export function getHostPlayer(players, hostId) {
   return players.find((player) => player.user_id === hostId) || null;
 }
 
 export function countReadyPlayers(players) {
-  return players.filter((player) => player.selected_deck_id && player.is_ready).length;
+  return players.filter((player) => {
+    if (player?.is_master) {
+      return getPlayerSelectedDeckIds(player).length > 0 && player.is_ready;
+    }
+
+    return player.selected_deck_id && player.is_ready;
+  }).length;
 }
 
 export function areAllPlayersReady(players) {
-  return players.length >= 2 && players.every((player) => player.selected_deck_id && player.is_ready);
+  return players.length >= 2 && players.every((player) => {
+    if (player?.is_master) {
+      return getPlayerSelectedDeckIds(player).length > 0 && player.is_ready;
+    }
+
+    return player.selected_deck_id && player.is_ready;
+  });
 }
 
 export function translateMatchStatus(status) {

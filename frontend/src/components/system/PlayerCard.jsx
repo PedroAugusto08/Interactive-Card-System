@@ -18,7 +18,13 @@ export function PlayerCard({
   isHost = false,
   selectedDeck = null,
 }) {
-  const deckCardCount = getDeckCardCount(selectedDeck);
+  const selectedDecks = Array.isArray(player?.selected_decks)
+    ? player.selected_decks
+    : selectedDeck
+      ? [selectedDeck]
+      : [];
+  const deckCardCount = selectedDeck ? getDeckCardCount(selectedDeck) : 0;
+  const isMaster = Boolean(player?.is_master);
 
   return (
     <Card
@@ -37,10 +43,11 @@ export function PlayerCard({
               <strong className="player-card__name">{player.username}</strong>
               {isCurrentUser ? <Badge tone="primary">Você</Badge> : null}
               {isHost ? <Badge tone="accent">Host</Badge> : null}
+              {isMaster ? <Badge tone="accent">Mestre</Badge> : null}
               {isActiveTurn ? <Badge tone="accent">Turno ativo</Badge> : null}
             </div>
             <span className="muted-text compact">
-              {isHost ? 'Controla o início da sala' : 'Aguardando a abertura da partida'}
+              {isMaster ? 'Controla criaturas e a ordem da rodada' : 'Aguardando a abertura da partida'}
             </span>
           </div>
         </div>
@@ -68,11 +75,28 @@ export function PlayerCard({
         </div>
 
         <div className="player-card__deck">
-          <span className="status-label">Deck selecionado</span>
-          <strong>{selectedDeck?.name || 'Deck não selecionado'}</strong>
-          <span className="muted-text compact">
-            {deckCardCount ? `${deckCardCount} cartas` : 'Selecione um deck para liberar o pronto.'}
-          </span>
+          <span className="status-label">{isMaster ? 'Criaturas selecionadas' : 'Deck selecionado'}</span>
+          {isMaster ? (
+            selectedDecks.length ? (
+              <div className="stack-gap" style={{ gap: '4px' }}>
+                {selectedDecks.map((deck) => (
+                  <strong key={`master-deck-${deck.id}`}>{deck.name}</strong>
+                ))}
+                <span className="muted-text compact">
+                  {selectedDecks.length} criatura{selectedDecks.length === 1 ? '' : 's'} selecionada{selectedDecks.length === 1 ? '' : 's'}.
+                </span>
+              </div>
+            ) : (
+              <span className="muted-text compact">Selecione ao menos um deck para liberar o pronto.</span>
+            )
+          ) : (
+            <>
+              <strong>{selectedDeck?.name || 'Deck não selecionado'}</strong>
+              <span className="muted-text compact">
+                {deckCardCount ? `${deckCardCount} cartas` : 'Selecione um deck para liberar o pronto.'}
+              </span>
+            </>
+          )}
         </div>
       </div>
     </Card>

@@ -330,11 +330,9 @@ function mapImoCardRecordToCatalogCard(record) {
   }
 
   const automationConfig = normalizeCardAutomationConfig(record.automation_json);
-
-  return {
+  const card = {
     id: `imo:${record.id}`,
     sourceId: record.id,
-    catalogOwnerId: record.owner_id,
     name: record.name,
     category: CARD_CATEGORIES.IMO,
     maxCopies: record.max_copies,
@@ -344,6 +342,12 @@ function mapImoCardRecordToCatalogCard(record) {
     isCustom: true,
     ...automationConfig,
   };
+
+  if (Number.isInteger(Number(record.owner_id))) {
+    card.catalogOwnerId = Number(record.owner_id);
+  }
+
+  return card;
 }
 
 module.exports = {

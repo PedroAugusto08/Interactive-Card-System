@@ -32,6 +32,20 @@ export const roomApi = {
       body: { deckId },
     }),
 
+  replaceMasterDecks: ({ roomId, deckIds, token }) =>
+    request(`/rooms/${roomId}/master-decks`, {
+      method: 'POST',
+      token,
+      body: { deckIds },
+    }),
+
+  updateTurnOrderDraft: ({ roomId, draftEntryIds, token }) =>
+    request(`/rooms/${roomId}/turn-order`, {
+      method: 'POST',
+      token,
+      body: { draftEntryIds },
+    }),
+
   setReady: ({ roomId, isReady, token }) =>
     request(`/rooms/${roomId}/ready`, {
       method: 'POST',

@@ -8,23 +8,24 @@ export const useRoomStore = create(
     (set) => ({
       currentRoom: null,
       players: [],
+      lobbyParticipants: [],
       currentMatch: null,
-      currentUserState: null,
-      playerStates: [],
+      viewer: null,
+      participantStates: [],
       logs: [],
 
-      setRoomData: ({ room, players }) =>
+      setRoomData: ({ room, players, lobbyParticipants }) =>
         set({
           currentRoom: room || null,
           players: players || [],
+          lobbyParticipants: lobbyParticipants || [],
         }),
 
       setMatchData: (snapshot) =>
         set((state) => ({
           currentMatch: snapshot?.match !== undefined ? snapshot.match || null : state.currentMatch,
-          currentUserState:
-            snapshot?.currentUserState !== undefined ? snapshot.currentUserState || null : state.currentUserState,
-          playerStates: Array.isArray(snapshot?.playerStates) ? snapshot.playerStates : state.playerStates,
+          viewer: snapshot?.viewer !== undefined ? snapshot.viewer || null : state.viewer,
+          participantStates: Array.isArray(snapshot?.participantStates) ? snapshot.participantStates : state.participantStates,
           logs: Array.isArray(snapshot?.logs) ? snapshot.logs : state.logs,
         })),
 
@@ -40,9 +41,10 @@ export const useRoomStore = create(
         set({
           currentRoom: null,
           players: [],
+          lobbyParticipants: [],
           currentMatch: null,
-          currentUserState: null,
-          playerStates: [],
+          viewer: null,
+          participantStates: [],
           logs: [],
         }),
     }),

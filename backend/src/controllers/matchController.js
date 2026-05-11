@@ -7,29 +7,37 @@ const roomIdParamSchema = z.object({
 });
 
 const cardActionSchema = z.object({
+  actingParticipantId: z.coerce.number().int().positive(),
   cardId: z.string().trim().min(1),
-  targetUserId: z.coerce.number().int().positive().optional(),
+  targetParticipantId: z.coerce.number().int().positive().optional(),
   selectedExileCardId: z.string().trim().min(1).optional(),
   selectedOwnHandCardId: z.string().trim().min(1).optional(),
   selectedTargetHandCardId: z.string().trim().min(1).optional(),
   pairedCardId: z.string().trim().min(1).optional(),
-  pairedTargetUserId: z.coerce.number().int().positive().optional(),
+  pairedTargetParticipantId: z.coerce.number().int().positive().optional(),
   pairedSelectedExileCardId: z.string().trim().min(1).optional(),
   pairedSelectedOwnHandCardId: z.string().trim().min(1).optional(),
   pairedSelectedTargetHandCardId: z.string().trim().min(1).optional(),
   asCounterResponse: z.coerce.boolean().optional(),
 });
 
+const actingParticipantSchema = z.object({
+  actingParticipantId: z.coerce.number().int().positive(),
+});
+
 const revealTopDeckSchema = z.object({
-  targetUserId: z.coerce.number().int().positive(),
+  actingParticipantId: z.coerce.number().int().positive(),
+  targetParticipantId: z.coerce.number().int().positive(),
   topDeckInstanceId: z.string().trim().min(1),
 });
 
 const reactToAttackSchema = z.object({
+  actingParticipantId: z.coerce.number().int().positive(),
   reactionCardId: z.string().trim().min(1),
 });
 
 const resolveAttackSchema = z.object({
+  actingParticipantId: z.coerce.number().int().positive(),
   resolution: z.enum(['skip-reaction', 'reaction-success', 'reaction-fail', 'skip-counter-response']),
 });
 
@@ -55,9 +63,11 @@ async function startMatch(req, res) {
 
 async function drawCard(req, res) {
   const { roomId } = roomIdParamSchema.parse(req.params);
+  const payload = actingParticipantSchema.parse(req.body);
   const data = await matchService.drawCardForPlayer({
     roomId,
     userId: req.user.id,
+    actingParticipantId: payload.actingParticipantId,
   });
 
   return res.status(200).json(data);
@@ -69,13 +79,14 @@ async function playCard(req, res) {
   const data = await matchService.playCardForPlayer({
     roomId,
     userId: req.user.id,
+    actingParticipantId: payload.actingParticipantId,
     cardId: payload.cardId,
-    targetUserId: payload.targetUserId,
+    targetParticipantId: payload.targetParticipantId,
     selectedExileCardId: payload.selectedExileCardId,
     selectedOwnHandCardId: payload.selectedOwnHandCardId,
     selectedTargetHandCardId: payload.selectedTargetHandCardId,
     pairedCardId: payload.pairedCardId,
-    pairedTargetUserId: payload.pairedTargetUserId,
+    pairedTargetParticipantId: payload.pairedTargetParticipantId,
     pairedSelectedExileCardId: payload.pairedSelectedExileCardId,
     pairedSelectedOwnHandCardId: payload.pairedSelectedOwnHandCardId,
     pairedSelectedTargetHandCardId: payload.pairedSelectedTargetHandCardId,
@@ -91,8 +102,9 @@ async function discardCard(req, res) {
   const data = await matchService.discardCardForPlayer({
     roomId,
     userId: req.user.id,
+    actingParticipantId: payload.actingParticipantId,
     cardId: payload.cardId,
-    targetUserId: payload.targetUserId,
+    targetParticipantId: payload.targetParticipantId,
     selectedExileCardId: payload.selectedExileCardId,
     selectedOwnHandCardId: payload.selectedOwnHandCardId,
     selectedTargetHandCardId: payload.selectedTargetHandCardId,
@@ -104,9 +116,11 @@ async function discardCard(req, res) {
 
 async function endTurn(req, res) {
   const { roomId } = roomIdParamSchema.parse(req.params);
+  const payload = actingParticipantSchema.parse(req.body);
   const data = await matchService.endTurnForPlayer({
     roomId,
     userId: req.user.id,
+    actingParticipantId: payload.actingParticipantId,
   });
 
   return res.status(200).json(data);
@@ -118,7 +132,8 @@ async function revealTopDeck(req, res) {
   const data = await matchService.revealViewedTopDeckCardForPlayer({
     roomId,
     userId: req.user.id,
-    targetUserId: payload.targetUserId,
+    actingParticipantId: payload.actingParticipantId,
+    targetParticipantId: payload.targetParticipantId,
     topDeckInstanceId: payload.topDeckInstanceId,
   });
 
@@ -131,6 +146,7 @@ async function reactToAttack(req, res) {
   const data = await matchService.reactToAttackForPlayer({
     roomId,
     userId: req.user.id,
+    actingParticipantId: payload.actingParticipantId,
     reactionCardId: payload.reactionCardId,
   });
 
@@ -143,6 +159,7 @@ async function resolveAttack(req, res) {
   const data = await matchService.resolveAttackForPlayer({
     roomId,
     userId: req.user.id,
+    actingParticipantId: payload.actingParticipantId,
     resolution: payload.resolution,
   });
 

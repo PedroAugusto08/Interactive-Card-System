@@ -9,21 +9,23 @@ export const matchApi = {
       token,
     }),
 
-  draw: ({ roomId, token }) =>
+  draw: ({ roomId, actingParticipantId, token }) =>
     request(`/match/${roomId}/draw`, {
       method: 'POST',
       token,
+      body: { actingParticipantId },
     }),
 
   playCard: ({
     roomId,
+    actingParticipantId,
     cardId,
-    targetUserId,
+    targetParticipantId,
     selectedExileCardId,
     selectedOwnHandCardId,
     selectedTargetHandCardId,
     pairedCardId,
-    pairedTargetUserId,
+    pairedTargetParticipantId,
     pairedSelectedExileCardId,
     pairedSelectedOwnHandCardId,
     pairedSelectedTargetHandCardId,
@@ -34,13 +36,14 @@ export const matchApi = {
       method: 'POST',
       token,
       body: {
+        actingParticipantId,
         cardId,
-        targetUserId,
+        targetParticipantId,
         selectedExileCardId,
         selectedOwnHandCardId,
         selectedTargetHandCardId,
         pairedCardId,
-        pairedTargetUserId,
+        pairedTargetParticipantId,
         pairedSelectedExileCardId,
         pairedSelectedOwnHandCardId,
         pairedSelectedTargetHandCardId,
@@ -50,8 +53,9 @@ export const matchApi = {
 
   discardCard: ({
     roomId,
+    actingParticipantId,
     cardId,
-    targetUserId,
+    targetParticipantId,
     selectedExileCardId,
     selectedOwnHandCardId,
     selectedTargetHandCardId,
@@ -62,8 +66,9 @@ export const matchApi = {
       method: 'POST',
       token,
       body: {
+        actingParticipantId,
         cardId,
-        targetUserId,
+        targetParticipantId,
         selectedExileCardId,
         selectedOwnHandCardId,
         selectedTargetHandCardId,
@@ -71,30 +76,31 @@ export const matchApi = {
       },
     }),
 
-  reactToAttack: ({ roomId, reactionCardId, token }) =>
+  reactToAttack: ({ roomId, actingParticipantId, reactionCardId, token }) =>
     request(`/match/${roomId}/react-to-attack`, {
       method: 'POST',
       token,
-      body: { reactionCardId },
+      body: { actingParticipantId, reactionCardId },
     }),
 
-  resolveAttack: ({ roomId, resolution, token }) =>
+  resolveAttack: ({ roomId, actingParticipantId, resolution, token }) =>
     request(`/match/${roomId}/resolve-attack`, {
       method: 'POST',
       token,
-      body: { resolution },
+      body: { actingParticipantId, resolution },
     }),
 
-  revealTopDeck: ({ roomId, targetUserId, topDeckInstanceId, token }) =>
+  revealTopDeck: ({ roomId, actingParticipantId, targetParticipantId, topDeckInstanceId, token }) =>
     request(`/match/${roomId}/reveal-top-deck`, {
       method: 'POST',
       token,
-      body: { targetUserId, topDeckInstanceId },
+      body: { actingParticipantId, targetParticipantId, topDeckInstanceId },
     }),
 
-  endTurn: ({ roomId, token }) =>
+  endTurn: ({ roomId, actingParticipantId, token }) =>
     request(`/match/${roomId}/end-turn`, {
       method: 'POST',
       token,
+      body: { actingParticipantId },
     }),
 };

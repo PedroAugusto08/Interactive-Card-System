@@ -102,6 +102,36 @@ function createSocketServer(httpServer) {
       }
     });
 
+    socket.on('room:setMasterDecks', async ({ roomId, deckIds }) => {
+      try {
+        await roomService.replaceMasterDeckSelection({
+          roomId: Number(roomId),
+          userId: user.id,
+          deckIds: Array.isArray(deckIds) ? deckIds.map((value) => Number(value)) : [],
+        });
+
+        await syncSocketRoomOnly(socket, Number(roomId));
+        await broadcastRoomOnly(io, Number(roomId));
+      } catch (error) {
+        emitSocketError(socket, error.message);
+      }
+    });
+
+    socket.on('room:setTurnOrder', async ({ roomId, draftEntryIds }) => {
+      try {
+        await roomService.updateTurnOrderDraftForRoom({
+          roomId: Number(roomId),
+          userId: user.id,
+          draftEntryIds: Array.isArray(draftEntryIds) ? draftEntryIds : [],
+        });
+
+        await syncSocketRoomOnly(socket, Number(roomId));
+        await broadcastRoomOnly(io, Number(roomId));
+      } catch (error) {
+        emitSocketError(socket, error.message);
+      }
+    });
+
     socket.on('room:setReady', async ({ roomId, isReady }) => {
       try {
         await roomService.setPlayerReadyState({
@@ -133,12 +163,13 @@ function createSocketServer(httpServer) {
       }
     });
 
-    socket.on('match:draw', async ({ roomId }, acknowledge) => {
+    socket.on('match:draw', async ({ roomId, actingParticipantId }, acknowledge) => {
       try {
         const actionStartedAt = performance.now();
         const actionState = await matchService.drawCardForPlayer({
           roomId: Number(roomId),
           userId: user.id,
+          actingParticipantId: Number(actingParticipantId),
           includeSnapshot: false,
         });
         const mutateMs = performance.now() - actionStartedAt;
@@ -176,13 +207,14 @@ function createSocketServer(httpServer) {
       async (
         {
           roomId,
+          actingParticipantId,
           cardId,
-          targetUserId,
+          targetParticipantId,
           selectedExileCardId,
           selectedOwnHandCardId,
           selectedTargetHandCardId,
           pairedCardId,
-          pairedTargetUserId,
+          pairedTargetParticipantId,
           pairedSelectedExileCardId,
           pairedSelectedOwnHandCardId,
           pairedSelectedTargetHandCardId,
@@ -195,13 +227,14 @@ function createSocketServer(httpServer) {
         const actionState = await matchService.playCardForPlayer({
           roomId: Number(roomId),
           userId: user.id,
+          actingParticipantId: Number(actingParticipantId),
           cardId,
-          targetUserId: targetUserId ? Number(targetUserId) : undefined,
+          targetParticipantId: targetParticipantId ? Number(targetParticipantId) : undefined,
           selectedExileCardId,
           selectedOwnHandCardId,
           selectedTargetHandCardId,
           pairedCardId,
-          pairedTargetUserId: pairedTargetUserId ? Number(pairedTargetUserId) : undefined,
+          pairedTargetParticipantId: pairedTargetParticipantId ? Number(pairedTargetParticipantId) : undefined,
           pairedSelectedExileCardId,
           pairedSelectedOwnHandCardId,
           pairedSelectedTargetHandCardId,
@@ -245,8 +278,9 @@ function createSocketServer(httpServer) {
       async (
         {
           roomId,
+          actingParticipantId,
           cardId,
-          targetUserId,
+          targetParticipantId,
           selectedExileCardId,
           selectedOwnHandCardId,
           selectedTargetHandCardId,
@@ -259,8 +293,9 @@ function createSocketServer(httpServer) {
         const actionState = await matchService.discardCardForPlayer({
           roomId: Number(roomId),
           userId: user.id,
+          actingParticipantId: Number(actingParticipantId),
           cardId,
-          targetUserId: targetUserId ? Number(targetUserId) : undefined,
+          targetParticipantId: targetParticipantId ? Number(targetParticipantId) : undefined,
           selectedExileCardId,
           selectedOwnHandCardId,
           selectedTargetHandCardId,
@@ -299,12 +334,13 @@ function createSocketServer(httpServer) {
       }
     });
 
-    socket.on('match:reactToAttack', async ({ roomId, reactionCardId }, acknowledge) => {
+    socket.on('match:reactToAttack', async ({ roomId, actingParticipantId, reactionCardId }, acknowledge) => {
       try {
         const actionStartedAt = performance.now();
         const actionState = await matchService.reactToAttackForPlayer({
           roomId: Number(roomId),
           userId: user.id,
+          actingParticipantId: Number(actingParticipantId),
           reactionCardId,
           includeSnapshot: false,
         });
@@ -338,12 +374,13 @@ function createSocketServer(httpServer) {
       }
     });
 
-    socket.on('match:resolveAttack', async ({ roomId, resolution }, acknowledge) => {
+    socket.on('match:resolveAttack', async ({ roomId, actingParticipantId, resolution }, acknowledge) => {
       try {
         const actionStartedAt = performance.now();
         const actionState = await matchService.resolveAttackForPlayer({
           roomId: Number(roomId),
           userId: user.id,
+          actingParticipantId: Number(actingParticipantId),
           resolution,
           includeSnapshot: false,
         });
@@ -377,12 +414,13 @@ function createSocketServer(httpServer) {
       }
     });
 
-    socket.on('match:endTurn', async ({ roomId }, acknowledge) => {
+    socket.on('match:endTurn', async ({ roomId, actingParticipantId }, acknowledge) => {
       try {
         const actionStartedAt = performance.now();
         const actionState = await matchService.endTurnForPlayer({
           roomId: Number(roomId),
           userId: user.id,
+          actingParticipantId: Number(actingParticipantId),
           includeSnapshot: false,
         });
         const mutateMs = performance.now() - actionStartedAt;
@@ -415,12 +453,15 @@ function createSocketServer(httpServer) {
       }
     });
 
-    socket.on('match:revealTopDeck', async ({ roomId, targetUserId, topDeckInstanceId }, acknowledge) => {
+    socket.on(
+      'match:revealTopDeck',
+      async ({ roomId, actingParticipantId, targetParticipantId, topDeckInstanceId }, acknowledge) => {
       try {
         const actionState = await matchService.revealViewedTopDeckCardForPlayer({
           roomId: Number(roomId),
           userId: user.id,
-          targetUserId: Number(targetUserId),
+          actingParticipantId: Number(actingParticipantId),
+          targetParticipantId: Number(targetParticipantId),
           topDeckInstanceId,
         });
 

@@ -1,8 +1,7 @@
-﻿import { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { ActionLogItem } from '../components/system/ActionLogItem';
 import { CardItem } from '../components/system/CardItem';
-import { PlayerCard } from '../components/system/PlayerCard';
 import { PlayerHand } from '../components/system/PlayerHand';
 import { TurnBanner } from '../components/system/TurnBanner';
 import { ZoneContainer } from '../components/system/ZoneContainer';
@@ -47,24 +46,17 @@ function getCardActionAutomation(card, action) {
   return action === 'match:playCard' ? card.playAutomation || null : card.discardAutomation || null;
 }
 
-function getPlayerId(player) {
-  return player?.user_id ?? player?.userId ?? null;
-}
-
-function getTargetOptions(players, currentUserId, targetScope) {
-  if (!Array.isArray(players)) {
+function getTargetOptions(participants, actingParticipantId, targetScope) {
+  if (!Array.isArray(participants)) {
     return [];
   }
 
   if (targetScope === 'other-player') {
-    return players.filter((player) => {
-      const playerId = getPlayerId(player);
-      return playerId !== currentUserId && !player?.isDefeated && !player?.is_defeated;
-    });
+    return participants.filter((participant) => participant.participantId !== actingParticipantId && !participant.isDefeated);
   }
 
   if (targetScope === 'selected-player') {
-    return players.filter((player) => !player?.isDefeated && !player?.is_defeated);
+    return participants.filter((participant) => !participant.isDefeated);
   }
 
   return [];
@@ -78,12 +70,12 @@ function automationRequiresOwnHandSelection(automation) {
   return automation?.selection === 'own-hand-card';
 }
 
-function getTargetHandCards(playerStates, targetUserId) {
-  if (!Array.isArray(playerStates) || !targetUserId) {
+function getTargetHandCards(participantStates, targetParticipantId) {
+  if (!Array.isArray(participantStates) || !targetParticipantId) {
     return [];
   }
 
-  return playerStates.find((player) => player.userId === targetUserId)?.handCards || [];
+  return participantStates.find((participant) => participant.participantId === targetParticipantId)?.handCards || [];
 }
 
 function getSelectableOwnHandCards(cards, excludedInstanceIds = []) {
@@ -114,20 +106,18 @@ function getPrivateCardViewEffects(effectResults) {
   }
 
   return effectResults.filter(
-    (effect) =>
-      (effect?.type === 'viewTopDeck' || effect?.type === 'viewRandomHandCard') && effect?.card
+    (effect) => (effect?.type === 'viewTopDeck' || effect?.type === 'viewRandomHandCard') && effect?.card
   );
 }
 
 export function MatchPage() {
   const token = useAuthStore((state) => state.token);
-  const user = useAuthStore((state) => state.user);
 
   const currentRoom = useRoomStore((state) => state.currentRoom);
   const players = useRoomStore((state) => state.players);
   const currentMatch = useRoomStore((state) => state.currentMatch);
-  const currentUserState = useRoomStore((state) => state.currentUserState);
-  const playerStates = useRoomStore((state) => state.playerStates);
+  const viewer = useRoomStore((state) => state.viewer);
+  const participantStates = useRoomStore((state) => state.participantStates);
   const logs = useRoomStore((state) => state.logs);
   const setRoomData = useRoomStore((state) => state.setRoomData);
   const setMatchData = useRoomStore((state) => state.setMatchData);
@@ -139,6 +129,7 @@ export function MatchPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [localError, setLocalError] = useState('');
   const [syncMessage, setSyncMessage] = useState('');
+  const [manualFocusedParticipantId, setManualFocusedParticipantId] = useState(null);
   const [selectedHandCardId, setSelectedHandCardId] = useState(null);
   const [isEndTurnConfirmOpen, setIsEndTurnConfirmOpen] = useState(false);
   const [isExileModalOpen, setIsExileModalOpen] = useState(false);
@@ -147,7 +138,11 @@ export function MatchPage() {
   const [revealedTopDeckModal, setRevealedTopDeckModal] = useState(null);
 
   const isSocketConnected = Boolean(socket?.connected);
-  const activeTurnPlayerId = currentMatch?.currentTurnPlayerId;
+  const controlledParticipantIds = viewer?.controlledParticipantIds || [];
+  const controlledParticipants = participantStates.filter((participant) =>
+    controlledParticipantIds.includes(participant.participantId)
+  );
+  const combatState = currentMatch?.combatState || null;
 
   useEffect(() => {
     let isMounted = true;
@@ -171,7 +166,6 @@ export function MatchPage() {
     }
 
     hydrateFromApi();
-
     return () => {
       isMounted = false;
     };
@@ -187,10 +181,7 @@ export function MatchPage() {
     }
 
     function handleMatchSync(payload) {
-      setMatchData({
-        ...payload,
-        matchPlayers: payload.playerStates || [],
-      });
+      setMatchData(payload);
     }
 
     function handleLog(payload) {
@@ -226,6 +217,45 @@ export function MatchPage() {
     }
   }, [currentRoom?.code, currentRoom?.id, isSocketConnected, socket]);
 
+  const focusedParticipantId =
+    !controlledParticipantIds.length
+      ? null
+      : combatState?.defenderParticipantId && controlledParticipantIds.includes(combatState.defenderParticipantId)
+        ? combatState.defenderParticipantId
+        : manualFocusedParticipantId && controlledParticipantIds.includes(manualFocusedParticipantId)
+          ? manualFocusedParticipantId
+          : controlledParticipantIds.includes(currentMatch?.currentTurnParticipantId)
+            ? currentMatch.currentTurnParticipantId
+            : controlledParticipantIds.includes(viewer?.focusedParticipantId)
+              ? viewer.focusedParticipantId
+              : controlledParticipantIds[0];
+
+  const focusedParticipant = controlledParticipants.find(
+    (participant) => participant.participantId === focusedParticipantId
+  ) || controlledParticipants[0] || null;
+  const activeTurnParticipant = participantStates.find(
+    (participant) => participant.participantId === currentMatch?.currentTurnParticipantId
+  ) || null;
+  const isViewerTurn = controlledParticipantIds.includes(currentMatch?.currentTurnParticipantId);
+  const focusedZones = focusedParticipant?.zones || {
+    deckCount: 0,
+    handCount: 0,
+    exileCount: 0,
+  };
+  const handCards = focusedParticipant?.handCards || [];
+  const exileCards = focusedParticipant?.exileCards || [];
+  const availableActions = focusedParticipant?.availableActions || [];
+  const hasDrawnThisTurn = Boolean(focusedParticipant?.hasDrawnThisTurn);
+  const reactionCards = getReactionCards(handCards);
+  const activeTopDeckView = pendingCardViews[0] || null;
+  const connectionState = !socket ? 'offline' : isSocketConnected ? 'connected' : 'reconnecting';
+  const connectionLabel =
+    connectionState === 'connected'
+      ? 'Conectado'
+      : connectionState === 'reconnecting'
+        ? 'Reconectando...'
+        : 'Desconectado';
+
   async function handleLeaveRoom() {
     if (!currentRoom?.id) {
       return;
@@ -255,12 +285,8 @@ export function MatchPage() {
     try {
       const response = await roomApi.listPlayers({ roomId: currentRoom.id, token });
       setRoomData(response);
-
       const snapshot = await matchApi.getSnapshot({ roomId: currentRoom.id, token });
-      setMatchData({
-        ...snapshot,
-        matchPlayers: snapshot.playerStates || [],
-      });
+      setMatchData(snapshot);
     } catch (error) {
       setLocalError(formatErrorMessage(error));
     } finally {
@@ -295,62 +321,51 @@ export function MatchPage() {
         } else if (response?.notice) {
           setSyncMessage(buildActionFeedback('', response.notice, response.metrics));
         }
-        if (import.meta.env.DEV && response?.metrics) {
-          console.info('[match perf][client]', action, response.metrics);
-        }
       } else {
         let snapshot = null;
 
         if (action === 'match:draw') {
-          snapshot = await matchApi.draw({ roomId: currentRoom.id, token });
+          snapshot = await matchApi.draw({
+            roomId: currentRoom.id,
+            actingParticipantId: payload.actingParticipantId,
+            token,
+          });
         } else if (action === 'match:playCard') {
           snapshot = await matchApi.playCard({
             roomId: currentRoom.id,
             token,
-            cardId: payload.cardId,
-            targetUserId: payload.targetUserId,
-            selectedExileCardId: payload.selectedExileCardId,
-            selectedOwnHandCardId: payload.selectedOwnHandCardId,
-            selectedTargetHandCardId: payload.selectedTargetHandCardId,
-            pairedCardId: payload.pairedCardId,
-            pairedTargetUserId: payload.pairedTargetUserId,
-            pairedSelectedExileCardId: payload.pairedSelectedExileCardId,
-            pairedSelectedOwnHandCardId: payload.pairedSelectedOwnHandCardId,
-            pairedSelectedTargetHandCardId: payload.pairedSelectedTargetHandCardId,
-            asCounterResponse: payload.asCounterResponse,
+            ...payload,
           });
         } else if (action === 'match:discardCard') {
           snapshot = await matchApi.discardCard({
             roomId: currentRoom.id,
             token,
-            cardId: payload.cardId,
-            targetUserId: payload.targetUserId,
-            selectedExileCardId: payload.selectedExileCardId,
-            selectedOwnHandCardId: payload.selectedOwnHandCardId,
-            selectedTargetHandCardId: payload.selectedTargetHandCardId,
-            asCounterResponse: payload.asCounterResponse,
+            ...payload,
           });
         } else if (action === 'match:reactToAttack') {
           snapshot = await matchApi.reactToAttack({
             roomId: currentRoom.id,
+            actingParticipantId: payload.actingParticipantId,
             reactionCardId: payload.reactionCardId,
             token,
           });
         } else if (action === 'match:resolveAttack') {
           snapshot = await matchApi.resolveAttack({
             roomId: currentRoom.id,
+            actingParticipantId: payload.actingParticipantId,
             resolution: payload.resolution,
             token,
           });
         } else if (action === 'match:endTurn') {
-          snapshot = await matchApi.endTurn({ roomId: currentRoom.id, token });
+          snapshot = await matchApi.endTurn({
+            roomId: currentRoom.id,
+            actingParticipantId: payload.actingParticipantId,
+            token,
+          });
         }
 
         if (snapshot) {
-          setMatchData({
-            ...snapshot,
-            matchPlayers: snapshot.playerStates || [],
-          });
+          setMatchData(snapshot);
           setSyncMessage(snapshot.actionNotice || '');
           const effectResults = getPrivateCardViewEffects(snapshot.actionEffects);
           if (effectResults.length) {
@@ -366,7 +381,6 @@ export function MatchPage() {
   }
 
   async function handleRevealTopDeck() {
-    const activeTopDeckView = pendingCardViews[0];
     if (!activeTopDeckView || !currentRoom?.id) {
       return;
     }
@@ -378,13 +392,15 @@ export function MatchPage() {
       if (isSocketConnected) {
         await emitSocketAction(socket, 'match:revealTopDeck', {
           roomId: currentRoom.id,
-          targetUserId: activeTopDeckView.targetUserId,
+          actingParticipantId: activeTopDeckView.actorParticipantId,
+          targetParticipantId: activeTopDeckView.targetParticipantId,
           topDeckInstanceId: activeTopDeckView.card.instanceId,
         });
       } else {
         const response = await matchApi.revealTopDeck({
           roomId: currentRoom.id,
-          targetUserId: activeTopDeckView.targetUserId,
+          actingParticipantId: activeTopDeckView.actorParticipantId,
+          targetParticipantId: activeTopDeckView.targetParticipantId,
           topDeckInstanceId: activeTopDeckView.card.instanceId,
           token,
         });
@@ -406,57 +422,40 @@ export function MatchPage() {
     }
   }
 
-  function handleOpenCounterResponse(action, cardId) {
-    openCardAction(action, cardId, { asCounterResponse: true });
-  }
-
-  const currentTurnPlayer = players.find((player) => player.user_id === activeTurnPlayerId);
-  const isCurrentUserTurn = Boolean(user?.id && activeTurnPlayerId === user.id);
-  const currentZones = currentUserState?.zones || {
-    deckCount: 0,
-    handCount: 0,
-    exileCount: 0,
-  };
-  const handCards = currentUserState?.handCards || [];
-  const exileCards = currentUserState?.exileCards || [];
-  const availableActions = currentUserState?.availableActions || [];
-  const hasDrawnThisTurn = Boolean(currentUserState?.hasDrawnThisTurn);
-  const targetablePlayers = playerStates.length ? playerStates : players;
-  const combatState = currentMatch?.combatState || null;
-  const isCurrentUserCombatDefender = Boolean(combatState?.defenderUserId && combatState.defenderUserId === user?.id);
-  const reactionCards = getReactionCards(handCards);
-  const counterResponseCards = handCards;
-  const activeTopDeckView = pendingCardViews[0] || null;
-  const connectionState = !socket ? 'offline' : isSocketConnected ? 'connected' : 'reconnecting';
-  const connectionLabel =
-    connectionState === 'connected'
-      ? 'Conectado'
-      : connectionState === 'reconnecting'
-        ? 'Reconectando...'
-        : 'Desconectado';
-
   function handleEndTurnClick() {
+    if (!focusedParticipant?.participantId) {
+      return;
+    }
+
     if (!hasDrawnThisTurn) {
       setIsEndTurnConfirmOpen(true);
       return;
     }
 
-    handleAction('match:endTurn');
+    handleAction('match:endTurn', {
+      actingParticipantId: focusedParticipant.participantId,
+    });
   }
 
   function handleConfirmEndTurn() {
     setIsEndTurnConfirmOpen(false);
-    handleAction('match:endTurn');
+    handleAction('match:endTurn', {
+      actingParticipantId: focusedParticipant?.participantId,
+    });
   }
 
   function openCardAction(action, cardId, options = {}) {
+    if (!focusedParticipant) {
+      return;
+    }
+
     const targetCard = handCards.find((card) => card.instanceId === cardId);
     if (!targetCard) {
       return;
     }
 
     const automation = getCardActionAutomation(targetCard, action);
-    const targetOptions = getTargetOptions(targetablePlayers, user?.id, automation?.targetScope);
+    const targetOptions = getTargetOptions(participantStates, focusedParticipant.participantId, automation?.targetScope);
     const pairedCandidates =
       action === 'match:playCard' && targetCard.canPlayTogether && !options.asCounterResponse
         ? getPlayableTogetherCandidates(handCards, cardId)
@@ -466,12 +465,12 @@ export function MatchPage() {
     const requiresOwnHandSelection = automationRequiresOwnHandSelection(automation);
     const requiresTargetHandSelection = automationRequiresTargetHandSelection(automation);
     const allowsPairedCard = action === 'match:playCard' && pairedCandidates.length > 0;
-    const initialTargetUserId = getPlayerId(targetOptions[0]) || null;
+    const initialTargetParticipantId = targetOptions[0]?.participantId || null;
     const initialOwnHandCards = requiresOwnHandSelection
       ? getSelectableOwnHandCards(handCards, [cardId])
       : [];
     const initialTargetHandCards = requiresTargetHandSelection
-      ? getTargetHandCards(playerStates, initialTargetUserId)
+      ? getTargetHandCards(participantStates, initialTargetParticipantId)
       : [];
 
     if (
@@ -482,6 +481,7 @@ export function MatchPage() {
       !allowsPairedCard
     ) {
       handleAction(action, {
+        actingParticipantId: focusedParticipant.participantId,
         cardId,
         asCounterResponse: options.asCounterResponse || undefined,
       });
@@ -491,10 +491,11 @@ export function MatchPage() {
     setLocalError('');
     setPendingCardAction({
       action,
+      actingParticipantId: focusedParticipant.participantId,
       cardId,
       cardName: targetCard.name,
       automation,
-      targetUserId: initialTargetUserId,
+      targetParticipantId: initialTargetParticipantId,
       selectedExileCardId: requiresExileSelection ? exileCards[0]?.instanceId || null : null,
       selectedOwnHandCardId: initialOwnHandCards[0]?.instanceId || null,
       selectedTargetHandCardId: initialTargetHandCards[0]?.instanceId || null,
@@ -502,7 +503,7 @@ export function MatchPage() {
       pairedCardId: null,
       pairedCardName: '',
       pairedAutomation: null,
-      pairedTargetUserId: null,
+      pairedTargetParticipantId: null,
       pairedSelectedExileCardId: null,
       pairedSelectedOwnHandCardId: null,
       pairedSelectedTargetHandCardId: null,
@@ -513,6 +514,34 @@ export function MatchPage() {
     setPendingCardAction(null);
   }
 
+  const pendingTargetOptions = getTargetOptions(
+    participantStates,
+    pendingCardAction?.actingParticipantId,
+    pendingCardAction?.automation?.targetScope
+  );
+  const pendingTargetHandCards = getTargetHandCards(participantStates, pendingCardAction?.targetParticipantId);
+  const pendingOwnHandCards = getSelectableOwnHandCards(handCards, [
+    pendingCardAction?.cardId,
+    pendingCardAction?.pairedCardId,
+  ]);
+  const pendingPairedTargetOptions = getTargetOptions(
+    participantStates,
+    pendingCardAction?.actingParticipantId,
+    pendingCardAction?.pairedAutomation?.targetScope
+  );
+  const pendingPairedOwnHandCards = getSelectableOwnHandCards(handCards, [
+    pendingCardAction?.cardId,
+    pendingCardAction?.pairedCardId,
+    pendingCardAction?.selectedOwnHandCardId,
+  ]);
+  const pendingPairedTargetHandCards = getTargetHandCards(
+    participantStates,
+    pendingCardAction?.pairedTargetParticipantId
+  );
+  const pairedCandidates = pendingCardAction
+    ? getPlayableTogetherCandidates(handCards, pendingCardAction.cardId)
+    : [];
+
   async function handleConfirmPendingCardAction() {
     if (!pendingCardAction) {
       return;
@@ -521,15 +550,12 @@ export function MatchPage() {
     const requiresTarget = Boolean(pendingCardAction.automation?.targetScope);
     const requiresExileSelection =
       pendingCardAction.automation?.selection === 'own-exile-card' && exileCards.length > 0;
-    const requiresOwnHandSelection = automationRequiresOwnHandSelection(
-      pendingCardAction.automation
-    ) && pendingOwnHandCards.length > 0;
-    const requiresTargetHandSelection = automationRequiresTargetHandSelection(
-      pendingCardAction.automation
-    ) && pendingTargetHandCards.length > 0;
+    const requiresOwnHandSelection =
+      automationRequiresOwnHandSelection(pendingCardAction.automation) && pendingOwnHandCards.length > 0;
+    const requiresTargetHandSelection =
+      automationRequiresTargetHandSelection(pendingCardAction.automation) && pendingTargetHandCards.length > 0;
     const requiresPairedTarget =
-      Boolean(pendingCardAction.pairedCardId) &&
-      Boolean(pendingCardAction.pairedAutomation?.targetScope);
+      Boolean(pendingCardAction.pairedCardId) && Boolean(pendingCardAction.pairedAutomation?.targetScope);
     const requiresPairedExileSelection =
       Boolean(pendingCardAction.pairedCardId) &&
       pendingCardAction.pairedAutomation?.selection === 'own-exile-card' &&
@@ -543,13 +569,13 @@ export function MatchPage() {
       automationRequiresTargetHandSelection(pendingCardAction.pairedAutomation) &&
       pendingPairedTargetHandCards.length > 0;
 
-    if (requiresTarget && !pendingCardAction.targetUserId) {
+    if (requiresTarget && !pendingCardAction.targetParticipantId) {
       setLocalError('Selecione um alvo para essa carta.');
       return;
     }
 
     if (requiresExileSelection && !pendingCardAction.selectedExileCardId) {
-      setLocalError('Selecione uma carta do seu exílio.');
+      setLocalError('Selecione uma carta do seu exilio.');
       return;
     }
 
@@ -563,13 +589,13 @@ export function MatchPage() {
       return;
     }
 
-    if (requiresPairedTarget && !pendingCardAction.pairedTargetUserId) {
+    if (requiresPairedTarget && !pendingCardAction.pairedTargetParticipantId) {
       setLocalError('Selecione um alvo para a carta jogada junto.');
       return;
     }
 
     if (requiresPairedExileSelection && !pendingCardAction.pairedSelectedExileCardId) {
-      setLocalError('Selecione uma carta do seu exílio para a carta jogada junto.');
+      setLocalError('Selecione uma carta do exilio para a carta jogada junto.');
       return;
     }
 
@@ -579,818 +605,631 @@ export function MatchPage() {
     }
 
     if (requiresPairedTargetHandSelection && !pendingCardAction.pairedSelectedTargetHandCardId) {
-      setLocalError('Selecione uma carta da mao do alvo para a carta jogada junto.');
+      setLocalError('Selecione uma carta da mao do alvo da carta jogada junto.');
       return;
     }
 
     const payload = {
+      actingParticipantId: pendingCardAction.actingParticipantId,
       cardId: pendingCardAction.cardId,
-      targetUserId: pendingCardAction.targetUserId || undefined,
-      selectedExileCardId: pendingCardAction.selectedExileCardId || undefined,
-      selectedOwnHandCardId: pendingCardAction.selectedOwnHandCardId || undefined,
-      selectedTargetHandCardId: pendingCardAction.selectedTargetHandCardId || undefined,
-      asCounterResponse: pendingCardAction.asCounterResponse || undefined,
-      pairedCardId: pendingCardAction.pairedCardId || undefined,
-      pairedTargetUserId: pendingCardAction.pairedTargetUserId || undefined,
-      pairedSelectedExileCardId: pendingCardAction.pairedSelectedExileCardId || undefined,
-      pairedSelectedOwnHandCardId: pendingCardAction.pairedSelectedOwnHandCardId || undefined,
-      pairedSelectedTargetHandCardId: pendingCardAction.pairedSelectedTargetHandCardId || undefined,
+      targetParticipantId: pendingCardAction.targetParticipantId,
+      selectedExileCardId: pendingCardAction.selectedExileCardId,
+      selectedOwnHandCardId: pendingCardAction.selectedOwnHandCardId,
+      selectedTargetHandCardId: pendingCardAction.selectedTargetHandCardId,
+      pairedCardId: pendingCardAction.pairedCardId,
+      pairedTargetParticipantId: pendingCardAction.pairedTargetParticipantId,
+      pairedSelectedExileCardId: pendingCardAction.pairedSelectedExileCardId,
+      pairedSelectedOwnHandCardId: pendingCardAction.pairedSelectedOwnHandCardId,
+      pairedSelectedTargetHandCardId: pendingCardAction.pairedSelectedTargetHandCardId,
+      asCounterResponse: pendingCardAction.asCounterResponse,
     };
 
     closePendingCardAction();
     await handleAction(pendingCardAction.action, payload);
   }
 
-  const pendingTargetOptions = getTargetOptions(
-    targetablePlayers,
-    user?.id,
-    pendingCardAction?.automation?.targetScope
+  const currentCombatDefender = combatState?.defenderParticipantId
+    ? participantStates.find((participant) => participant.participantId === combatState.defenderParticipantId)
+    : null;
+  const isCurrentUserCombatDefender = Boolean(
+    currentCombatDefender && controlledParticipantIds.includes(currentCombatDefender.participantId)
   );
-  const pendingPairedTargetOptions = getTargetOptions(
-    targetablePlayers,
-    user?.id,
-    pendingCardAction?.pairedAutomation?.targetScope
-  );
-  const pendingPairedCandidates = pendingCardAction?.asCounterResponse
-    ? []
-    : getPlayableTogetherCandidates(handCards, pendingCardAction?.cardId);
-  const pendingPrimaryCard = handCards.find((card) => card.instanceId === pendingCardAction?.cardId) || null;
-  const pendingSecondaryCard = handCards.find((card) => card.instanceId === pendingCardAction?.pairedCardId) || null;
-  const pendingOwnHandCards = getSelectableOwnHandCards(handCards, [
-    pendingCardAction?.cardId,
-    pendingCardAction?.pairedCardId,
-    pendingCardAction?.pairedSelectedOwnHandCardId,
-  ]);
-  const pendingPairedOwnHandCards = getSelectableOwnHandCards(handCards, [
-    pendingCardAction?.cardId,
-    pendingCardAction?.pairedCardId,
-    pendingCardAction?.selectedOwnHandCardId,
-  ]);
-  const pendingTargetHandCards = getTargetHandCards(playerStates, pendingCardAction?.targetUserId);
-  const pendingPairedTargetHandCards = getTargetHandCards(
-    playerStates,
-    pendingCardAction?.pairedTargetUserId
-  );
+  const counterResponseCards = currentCombatDefender?.handCards || [];
+
+  if (!currentRoom) {
+    return (
+      <section className="stack-gap-lg">
+        <Card title="Partida">
+          <div className="empty-state">Nenhuma sala ativa carregada.</div>
+        </Card>
+      </section>
+    );
+  }
 
   return (
-    <section className="match-shell">
-      <div className="match-header">
-        <div className="match-header__meta">
-          <div className="match-header__room">
-            <span className="status-label">Sala</span>
-            <strong>{currentRoom?.code || 'Sem sala'}</strong>
-          </div>
-
-          <Badge tone={connectionState === 'connected' ? 'success' : connectionState === 'reconnecting' ? 'accent' : 'danger'}>
-            <span className={['status-dot', `status-dot--${connectionState}`].join(' ')} aria-hidden="true" />
-            {connectionLabel}
-          </Badge>
+    <section className="stack-gap-lg">
+      <div className="section-header">
+        <div className="stack-gap" style={{ gap: '8px' }}>
+          <h1 className="page-title">Partida</h1>
+          <span className="muted-text compact">Sala {currentRoom.code}</span>
         </div>
 
-        <TurnBanner isCurrentUser={isCurrentUserTurn} playerName={currentTurnPlayer?.username} />
-
-        <div className="match-header__utility">
-          <div className="match-header__stats">
-            <div className="match-header__round-row">
-              <div className="status-item">
-                <span className="status-label">Rodada</span>
-                <span className="status-value">{currentMatch?.round ?? '-'}</span>
-              </div>
-
-              <div className="match-header__player-chips">
-                {players.length ? (
-                  players.map((player) => (
-                    <span
-                      className={[
-                        'match-header__player-chip',
-                        player.user_id === activeTurnPlayerId ? 'match-header__player-chip--active' : '',
-                        player.user_id === user?.id ? 'match-header__player-chip--current' : '',
-                      ]
-                        .filter(Boolean)
-                        .join(' ')}
-                      key={`${player.room_id}-${player.user_id}`}
-                    >
-                      {player.username}
-                    </span>
-                  ))
-                ) : (
-                  <span className="muted-text compact">Sem jogadores sincronizados.</span>
-                )}
-              </div>
-            </div>
-
-            <div className="match-header__actions">
-              <Button disabled={isSubmitting || !currentRoom} onClick={handleLeaveRoom} type="button" variant="secondary">
-                Sair da sala
-              </Button>
-
-              <Button disabled={isSubmitting || !currentRoom} onClick={handleRefreshMatch} type="button" variant="secondary">
-                Atualizar
-              </Button>
-            </div>
-          </div>
+        <div className="row-wrap">
+          <Badge tone="secondary">{connectionLabel}</Badge>
+          <Button disabled={isSubmitting} onClick={handleRefreshMatch} variant="secondary">
+            Atualizar
+          </Button>
+          <Button disabled={isSubmitting} onClick={handleLeaveRoom} variant="danger">
+            Sair
+          </Button>
         </div>
       </div>
 
-      {(syncMessage || localError) ? (
-        <div className="match-feedback">
-          {syncMessage ? <p className="success-text">{syncMessage}</p> : null}
-          {localError ? <p className="error-text">{localError}</p> : null}
-        </div>
-      ) : null}
+      <TurnBanner
+        isCurrentUser={isViewerTurn}
+        playerName={activeTurnParticipant?.displayName || 'Participante'}
+      />
 
-      {combatState ? (
-        <Card
-          className="combat-status-card"
-          description={
-            combatState.status === 'awaiting-reaction'
-              ? `${combatState.defenderUsername} pode usar Reacao agora.`
-              : combatState.status === 'awaiting-reaction-result'
-                ? `${combatState.defenderUsername} esta resolvendo o teste fisico de defesa.`
-                : `${combatState.defenderUsername} pode jogar ou descartar uma carta em resposta.`
-          }
-          title={`Ataque em andamento: ${combatState.attackerUsername} -> ${combatState.defenderUsername}`}
-        >
-          <div className="combat-status-card__row">
-            <Badge tone="accent">{combatState.attackCard?.name || 'Ataque'}</Badge>
-            <Badge tone="secondary">
-              {combatState.status === 'awaiting-reaction'
-                ? 'Aguardando reação'
-                : combatState.status === 'awaiting-reaction-result'
-                  ? 'Teste de reação'
-                  : 'Carta de resposta'}
-            </Badge>
-          </div>
-        </Card>
-      ) : null}
+      {syncMessage ? <p className="success-text">{syncMessage}</p> : null}
+      {localError ? <p className="error-text">{localError}</p> : null}
 
-      <div className="match-grid">
-        <main className="match-main-column">
-          <Card className="match-board-card" description="Zonas do jogador organizadas como tabuleiro." title="Seu campo">
-            <div className="match-board">
-              <div className="match-board__summary">
-                <div className="status-item">
-                  <span className="status-label">Vida</span>
-                  <span className="status-value">{currentUserState?.health ?? '-'}</span>
-                </div>
-
-                <div className="status-item">
-                  <span className="status-label">Imo</span>
-                  <span className="status-value">
-                    {currentUserState ? `${currentUserState.imo}/${currentUserState.maxImo}` : '-'}
-                  </span>
-                </div>
-
-                <div className="status-item">
-                  <span className="status-label">Cartas na mão</span>
-                  <span className="status-value">{currentZones.handCount}</span>
-                </div>
-              </div>
-
-              <div className="zones-grid">
-                <ZoneContainer count={currentZones.deckCount} description="Fonte principal de compra." title="Deck" tone="primary" />
-                <ZoneContainer
-                  count={currentZones.exileCount}
-                  description="Cartas exiladas."
-                  onClick={() => setIsExileModalOpen(true)}
-                  previewCards={exileCards}
-                  title="Exílio"
-                  tone="accent"
-                />
-              </div>
-            </div>
-          </Card>
-
+      <div className="grid-2">
+        <div className="stack-gap">
           <Card
-            className="player-hand-panel"
-            description="Sua mão é o foco da mesa: selecione e jogue suas cartas daqui."
-            title="Sua mão"
-            actions={
-              <div className="match-action-bar">
-                <Button
-                  disabled={isSubmitting || !currentRoom || !availableActions.includes('drawCard')}
-                  onClick={() => handleAction('match:draw')}
-                  variant="secondary"
-                >
-                  Comprar carta
-                </Button>
-
-                <Button
-                  disabled={isSubmitting || !currentRoom || !availableActions.includes('endTurn')}
-                  onClick={handleEndTurnClick}
-                  variant="primary"
-                >
-                  Encerrar turno
-                </Button>
-              </div>
-            }
+            actions={<Badge tone="accent">{participantStates.length} participantes</Badge>}
+            title={viewer?.role === 'master' ? 'Criaturas e jogadores' : 'Participantes'}
           >
-            <PlayerHand
-              cards={handCards}
-              canDiscard={availableActions.includes('discardCard')}
-              canPlay={availableActions.includes('playCard')}
-              isSubmitting={isSubmitting}
-              onDiscardCard={(cardId) => openCardAction('match:discardCard', cardId)}
-              onPlayCard={(cardId) => openCardAction('match:playCard', cardId)}
-              onSelectCard={setSelectedHandCardId}
-              selectedCardId={selectedHandCardId}
-            />
-          </Card>
-        </main>
+            {controlledParticipants.length > 1 ? (
+              <div className="row-wrap" style={{ marginBottom: '16px' }}>
+                {controlledParticipants.map((participant) => (
+                  <Button
+                    key={`focus-participant-${participant.participantId}`}
+                    onClick={() => setManualFocusedParticipantId(participant.participantId)}
+                    type="button"
+                    variant={focusedParticipantId === participant.participantId ? 'primary' : 'secondary'}
+                  >
+                    {participant.displayName}
+                  </Button>
+                ))}
+              </div>
+            ) : null}
 
-        <aside className="match-right-column">
-          <Card className="match-side-panel" description="Feed dos eventos mais recentes." title="Log de ações">
-            <div className="log-list">
-              {logs.length ? (
-                logs.map((item, index) => <ActionLogItem item={item} key={`${item.id || 'log'}-${index}`} />)
-              ) : (
-                <div className="empty-state">Sem eventos por enquanto.</div>
-              )}
+            <div className="stack-gap" style={{ gap: '12px' }}>
+              {participantStates.map((participant) => (
+                <div
+                  key={`participant-state-${participant.participantId}`}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '12px',
+                    padding: '14px',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    borderRadius: '18px',
+                    background:
+                      participant.participantId === focusedParticipant?.participantId
+                        ? 'rgba(255,255,255,0.06)'
+                        : 'transparent',
+                  }}
+                >
+                  <div className="stack-gap" style={{ gap: '4px' }}>
+                    <div className="row-wrap">
+                      <strong>{participant.displayName}</strong>
+                      {participant.isControlledByViewer ? <Badge tone="primary">Seu controle</Badge> : null}
+                      {participant.participantType === 'master-creature' ? <Badge tone="accent">Criatura</Badge> : null}
+                      {participant.isCurrentTurn ? <Badge tone="accent">Turno</Badge> : null}
+                      {participant.isDefeated ? <Badge tone="danger">Derrotado</Badge> : null}
+                    </div>
+                    <span className="muted-text compact">
+                      Vida {participant.health} • Imo {participant.imo}/{participant.maxImo} • Mao {participant.zones.handCount}
+                    </span>
+                  </div>
+
+                  {participant.isControlledByViewer ? (
+                    <Button
+                      onClick={() => setManualFocusedParticipantId(participant.participantId)}
+                      size="sm"
+                      type="button"
+                      variant={focusedParticipantId === participant.participantId ? 'primary' : 'secondary'}
+                    >
+                      Focar
+                    </Button>
+                  ) : null}
+                </div>
+              ))}
             </div>
           </Card>
-        </aside>
+
+          <Card title="Log da partida">
+            {logs.length ? (
+              <div className="stack-gap" style={{ gap: '10px' }}>
+                {logs.map((item) => (
+                  <ActionLogItem item={item} key={`match-log-${item.id || item.timestamp}`} />
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state">Ainda nao ha eventos registrados.</div>
+            )}
+          </Card>
+        </div>
+
+        <div className="stack-gap">
+          <Card
+            actions={
+              focusedParticipant ? (
+                <Badge tone={focusedParticipant.isCurrentTurn ? 'success' : 'secondary'}>
+                  {focusedParticipant.displayName}
+                </Badge>
+              ) : null
+            }
+            title="Participante em foco"
+          >
+            {focusedParticipant ? (
+              <div className="stack-gap" style={{ gap: '18px' }}>
+                <div className="row-wrap">
+                  <Badge tone="primary">Vida {focusedParticipant.health}</Badge>
+                  <Badge tone="accent">Imo {focusedParticipant.imo}/{focusedParticipant.maxImo}</Badge>
+                  <Badge tone="secondary">Turno {focusedParticipant.turnOrder}</Badge>
+                </div>
+
+                <div className="grid-2">
+                  <ZoneContainer
+                    count={focusedZones.deckCount}
+                    description="Cartas restantes"
+                    title="Deck"
+                  />
+                  <ZoneContainer
+                    count={focusedZones.exileCount}
+                    description="Cartas removidas"
+                    onClick={() => setIsExileModalOpen(true)}
+                    previewCards={exileCards}
+                    title="Exilio"
+                    tone="accent"
+                  />
+                </div>
+
+                <div className="row-wrap">
+                  <Button
+                    disabled={!availableActions.includes('drawCard') || isSubmitting}
+                    onClick={() =>
+                      handleAction('match:draw', { actingParticipantId: focusedParticipant.participantId })
+                    }
+                    type="button"
+                  >
+                    Comprar carta
+                  </Button>
+
+                  <Button
+                    disabled={!availableActions.includes('endTurn') || isSubmitting}
+                    onClick={handleEndTurnClick}
+                    type="button"
+                    variant="secondary"
+                  >
+                    Encerrar turno
+                  </Button>
+                </div>
+
+                <div className="stack-gap" style={{ gap: '10px' }}>
+                  <div className="row-wrap">
+                    <strong>Mao</strong>
+                    <Badge tone="secondary">{focusedZones.handCount} cartas</Badge>
+                  </div>
+                  <PlayerHand
+                    canDiscard={availableActions.includes('discardCard')}
+                    canPlay={availableActions.includes('playCard')}
+                    cards={handCards}
+                    isSubmitting={isSubmitting}
+                    onDiscardCard={(cardId) => openCardAction('match:discardCard', cardId)}
+                    onPlayCard={(cardId) => openCardAction('match:playCard', cardId)}
+                    onSelectCard={setSelectedHandCardId}
+                    selectedCardId={selectedHandCardId}
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="empty-state">Nenhum participante sob seu controle nesta partida.</div>
+            )}
+          </Card>
+
+          <Card title="Usuarios na sala">
+            <div className="stack-gap" style={{ gap: '10px' }}>
+              {players.map((player) => (
+                <div
+                  key={`room-player-${player.user_id}`}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '12px',
+                    padding: '12px',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    borderRadius: '16px',
+                  }}
+                >
+                  <div className="stack-gap" style={{ gap: '2px' }}>
+                    <strong>{player.username}</strong>
+                    <span className="muted-text compact">
+                      {player.is_master ? 'Mestre' : 'Jogador'} • {player.is_ready ? 'Pronto' : 'Nao pronto'}
+                    </span>
+                  </div>
+                  {player.is_master ? <Badge tone="accent">Host</Badge> : null}
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
       </div>
 
       <Modal
-        cancelLabel="Continuar turno"
-        confirmLabel="Encerrar assim mesmo"
-        description="Você ainda não comprou nenhuma carta neste turno. Tem certeza que quer encerrar?"
+        confirmLabel="Encerrar turno"
+        description="Essa criatura ainda nao comprou carta neste turno. Encerrar mesmo assim?"
         isLoading={isSubmitting}
         onClose={() => setIsEndTurnConfirmOpen(false)}
         onConfirm={handleConfirmEndTurn}
         open={isEndTurnConfirmOpen}
-        title="Confirmar encerramento"
+        title="Confirmar turno"
       >
-        <p className="muted-text">Se quiser seguir a sequência completa do turno, jogue ou descarte uma carta e depois compre.</p>
+        <p className="muted-text">Voce pode confirmar agora ou voltar e comprar uma carta antes de encerrar o turno.</p>
       </Modal>
 
       <Modal
-        cancelLabel="Cancelar"
-        confirmLabel={pendingCardAction?.action === 'match:discardCard' ? 'Descartar carta' : 'Jogar carta'}
-        description="Organize a jogada, escolha a carta extra se quiser e resolva os parâmetros automáticos em uma ordem mais clara."
+        confirmLabel={pendingCardAction ? 'Confirmar acao' : 'Fechar'}
+        description={
+          pendingCardAction
+            ? `Complete as escolhas necessarias para ${pendingCardAction.cardName}.`
+            : ''
+        }
         isLoading={isSubmitting}
         onClose={closePendingCardAction}
         onConfirm={handleConfirmPendingCardAction}
         open={Boolean(pendingCardAction)}
-        title={pendingCardAction ? `${pendingCardAction.cardName}: resolver efeito` : 'Resolver efeito'}
+        title="Resolver carta"
       >
-        <div className="combo-modal">
-          <section className="combo-modal__hero">
-            <div className="combo-modal__hero-card">
-              {pendingPrimaryCard ? (
-                <CardItem
-                  category={pendingPrimaryCard.category}
-                  cost={pendingPrimaryCard.category === 'imo' ? pendingPrimaryCard.imoCost || 0 : undefined}
-                  costLabel="Custo Imo"
-                  description={pendingPrimaryCard.effect}
-                  imageSrc={resolveCardImageUrl(pendingPrimaryCard.imagePath)}
-                  name={pendingPrimaryCard.name}
-                  selected
-                />
-              ) : null}
-            </div>
+        {pendingCardAction ? (
+          <div className="stack-gap" style={{ gap: '18px' }}>
+            {pendingCardAction.automation?.targetScope ? (
+              <section className="stack-gap" style={{ gap: '10px' }}>
+                <span className="status-label">Escolha o alvo</span>
+                {pendingTargetOptions.length ? (
+                  <div className="row-wrap">
+                    {pendingTargetOptions.map((participant) => (
+                      <Button
+                        key={`target-option-${participant.participantId}`}
+                        onClick={() =>
+                          setPendingCardAction((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  targetParticipantId: participant.participantId,
+                                  selectedTargetHandCardId: automationRequiresTargetHandSelection(current.automation)
+                                    ? getTargetHandCards(participantStates, participant.participantId)[0]?.instanceId || null
+                                    : current.selectedTargetHandCardId,
+                                }
+                              : current
+                          )
+                        }
+                        type="button"
+                        variant={
+                          pendingCardAction.targetParticipantId === participant.participantId ? 'primary' : 'secondary'
+                        }
+                      >
+                        {participant.displayName}
+                      </Button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="muted-text">Nenhum alvo disponivel para esta carta.</p>
+                )}
+              </section>
+            ) : null}
 
-            <div className="combo-modal__hero-copy">
-              <Badge tone="primary">Carta principal</Badge>
-              <h3>{pendingCardAction?.cardName}</h3>
-              <p className="muted-text">
-                {pendingPrimaryCard?.canPlayTogether
-                  ? 'Esta carta permite montar um combo. Escolha uma segunda carta se quiser ampliar a jogada.'
-                  : 'Resolva os parâmetros automáticos desta jogada antes de confirmar.'}
-              </p>
+            {pendingCardAction.automation?.selection === 'own-exile-card' ? (
+              <section className="stack-gap" style={{ gap: '10px' }}>
+                <span className="status-label">Escolha a carta do exilio</span>
+                {exileCards.length ? (
+                  <div className="row-wrap">
+                    {exileCards.map((card) => (
+                      <Button
+                        key={`exile-option-${card.instanceId}`}
+                        onClick={() =>
+                          setPendingCardAction((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  selectedExileCardId: card.instanceId,
+                                }
+                              : current
+                          )
+                        }
+                        type="button"
+                        variant={
+                          pendingCardAction.selectedExileCardId === card.instanceId ? 'primary' : 'secondary'
+                        }
+                      >
+                        {card.name}
+                      </Button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="muted-text">Seu exilio esta vazio.</p>
+                )}
+              </section>
+            ) : null}
 
-              <div className="combo-modal__summary">
-                <div className="combo-modal__summary-item">
-                  <span className="status-label">Carta extra</span>
-                  <strong>{pendingSecondaryCard?.name || 'Nenhuma selecionada'}</strong>
-                </div>
+            {automationRequiresOwnHandSelection(pendingCardAction.automation) ? (
+              <section className="stack-gap" style={{ gap: '10px' }}>
+                <span className="status-label">Escolha outra carta da sua mao</span>
+                {pendingOwnHandCards.length ? (
+                  <div className="row-wrap">
+                    {pendingOwnHandCards.map((card) => (
+                      <Button
+                        key={`own-hand-option-${card.instanceId}`}
+                        onClick={() =>
+                          setPendingCardAction((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  selectedOwnHandCardId: card.instanceId,
+                                }
+                              : current
+                          )
+                        }
+                        type="button"
+                        variant={
+                          pendingCardAction.selectedOwnHandCardId === card.instanceId ? 'primary' : 'secondary'
+                        }
+                      >
+                        {card.name}
+                      </Button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="muted-text">Nao ha outra carta disponivel na sua mao.</p>
+                )}
+              </section>
+            ) : null}
 
-                <div className="combo-modal__summary-item">
-                  <span className="status-label">Alvos</span>
-                  <strong>
-                    {pendingCardAction?.targetUserId || pendingCardAction?.pairedTargetUserId
-                      ? 'Configurados'
-                      : 'Não exigidos'}
-                  </strong>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          {pendingCardAction?.action === 'match:playCard' && pendingPrimaryCard?.canPlayTogether ? (
-            <section className="combo-modal__section">
-              <div className="combo-modal__section-head">
-                <div>
-                  <Badge tone="accent">Etapa 1</Badge>
-                  <h4>Escolha a carta jogada junto</h4>
-                </div>
-                <p className="muted-text">A permissão vem da carta principal, então aqui você pode anexar qualquer outra carta da mão.</p>
-              </div>
-
-              <div className="combo-modal__choice-grid">
-                <button
-                  className={['combo-modal__choice-card', !pendingCardAction.pairedCardId ? 'is-selected' : ''].filter(Boolean).join(' ')}
-                  onClick={() =>
-                    setPendingCardAction((current) =>
-                      current
-                        ? {
-                            ...current,
-                            pairedCardId: null,
-                            pairedCardName: '',
-                            pairedAutomation: null,
-                            pairedTargetUserId: null,
-                            pairedSelectedExileCardId: null,
-                            pairedSelectedOwnHandCardId: null,
-                            pairedSelectedTargetHandCardId: null,
-                            selectedOwnHandCardId: automationRequiresOwnHandSelection(current.automation)
-                              ? getSelectableOwnHandCards(handCards, [current.cardId]).find(
-                                  (candidate) => candidate.instanceId === current.selectedOwnHandCardId
-                                )?.instanceId ||
-                                getSelectableOwnHandCards(handCards, [current.cardId])[0]?.instanceId ||
-                                null
-                              : current.selectedOwnHandCardId,
+            {automationRequiresTargetHandSelection(pendingCardAction.automation) ? (
+              <section className="stack-gap" style={{ gap: '10px' }}>
+                <span className="status-label">Escolha a carta da mao do alvo</span>
+                {pendingCardAction.targetParticipantId ? (
+                  pendingTargetHandCards.length ? (
+                    <div className="row-wrap">
+                      {pendingTargetHandCards.map((card) => (
+                        <Button
+                          key={`target-hand-option-${card.instanceId}`}
+                          onClick={() =>
+                            setPendingCardAction((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    selectedTargetHandCardId: card.instanceId,
+                                  }
+                                : current
+                            )
                           }
-                        : current
-                    )
-                  }
-                  type="button"
-                >
-                  <Badge tone={!pendingCardAction.pairedCardId ? 'primary' : 'secondary'}>Sem combo</Badge>
-                  <strong>Jogar só a carta principal</strong>
-                  <span className="muted-text">Use esta opção se quiser uma jogada simples.</span>
-                </button>
+                          type="button"
+                          variant={
+                            pendingCardAction.selectedTargetHandCardId === card.instanceId ? 'primary' : 'secondary'
+                          }
+                        >
+                          {card.name}
+                        </Button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="muted-text">A mao do alvo esta vazia.</p>
+                  )
+                ) : (
+                  <p className="muted-text">Escolha um alvo primeiro.</p>
+                )}
+              </section>
+            ) : null}
 
-                {pendingPairedCandidates.map((card) => (
-                  <button
-                    className={['combo-modal__choice-card', pendingCardAction.pairedCardId === card.instanceId ? 'is-selected' : '']
-                      .filter(Boolean)
-                      .join(' ')}
-                    key={card.instanceId}
-                    onClick={() => {
-                      const pairedAutomation = getCardActionAutomation(card, 'match:playCard');
-                      const pairedTargetOptions = getTargetOptions(
-                        targetablePlayers,
-                        user?.id,
-                        pairedAutomation?.targetScope
-                      );
-                      const pairedNeedsExile =
-                        pairedAutomation?.selection === 'own-exile-card' && exileCards.length > 0;
-                      const pairedNeedsOwnHandSelection =
-                        automationRequiresOwnHandSelection(pairedAutomation);
-                      const pairedNeedsTargetHandSelection =
-                        automationRequiresTargetHandSelection(pairedAutomation);
-                      const initialPairedTargetUserId = getPlayerId(pairedTargetOptions[0]) || null;
-                      const initialPairedOwnHandCards = getSelectableOwnHandCards(handCards, [
-                        pendingCardAction?.cardId,
-                        card.instanceId,
-                      ]);
-                      const initialPairedTargetHandCards = pairedNeedsTargetHandSelection
-                        ? getTargetHandCards(playerStates, initialPairedTargetUserId)
-                        : [];
-
+            {pairedCandidates.length ? (
+              <section className="stack-gap" style={{ gap: '10px' }}>
+                <span className="status-label">Carta jogada junto (opcional)</span>
+                <div className="row-wrap">
+                  <Button
+                    onClick={() =>
                       setPendingCardAction((current) =>
                         current
                           ? {
                               ...current,
-                              pairedCardId: card.instanceId,
-                              pairedCardName: card.name,
-                              pairedAutomation: pairedAutomation,
-                              pairedTargetUserId: initialPairedTargetUserId,
-                              pairedSelectedExileCardId: pairedNeedsExile ? exileCards[0]?.instanceId || null : null,
-                              pairedSelectedOwnHandCardId: pairedNeedsOwnHandSelection
-                                ? initialPairedOwnHandCards.find(
-                                    (candidate) => candidate.instanceId === current.pairedSelectedOwnHandCardId
-                                  )?.instanceId ||
-                                  initialPairedOwnHandCards[0]?.instanceId ||
-                                  null
-                                : null,
-                              pairedSelectedTargetHandCardId: pairedNeedsTargetHandSelection
-                                ? initialPairedTargetHandCards[0]?.instanceId || null
-                                : null,
-                              selectedOwnHandCardId: automationRequiresOwnHandSelection(current.automation)
-                                ? initialPairedOwnHandCards.find(
-                                    (candidate) => candidate.instanceId === current.selectedOwnHandCardId
-                                  )?.instanceId ||
-                                  initialPairedOwnHandCards[0]?.instanceId ||
-                                  null
-                                : current.selectedOwnHandCardId,
+                              pairedCardId: null,
+                              pairedCardName: '',
+                              pairedAutomation: null,
+                              pairedTargetParticipantId: null,
+                              pairedSelectedExileCardId: null,
+                              pairedSelectedOwnHandCardId: null,
+                              pairedSelectedTargetHandCardId: null,
                             }
                           : current
-                      );
-                    }}
+                      )
+                    }
                     type="button"
+                    variant={!pendingCardAction.pairedCardId ? 'primary' : 'secondary'}
                   >
-                    <div className="combo-modal__choice-card-top">
-                      <Badge tone={pendingCardAction.pairedCardId === card.instanceId ? 'primary' : 'secondary'}>
-                        {card.category}
-                      </Badge>
-                      {card.category === 'imo' ? <Badge tone="accent">Imo {card.imoCost || 0}</Badge> : null}
-                    </div>
-                    <strong>{card.name}</strong>
-                    <span className="muted-text">{card.effect}</span>
-                  </button>
-                ))}
-              </div>
-            </section>
-          ) : null}
-
-          {pendingCardAction?.automation?.targetScope ||
-          pendingCardAction?.automation?.selection === 'own-exile-card' ||
-          automationRequiresOwnHandSelection(pendingCardAction?.automation) ||
-          automationRequiresTargetHandSelection(pendingCardAction?.automation) ? (
-            <section className="combo-modal__section">
-              <div className="combo-modal__section-head">
-                <div>
-                  <Badge tone="secondary">Etapa 2</Badge>
-                  <h4>Resolva a carta principal</h4>
+                    Sem carta extra
+                  </Button>
+                  {pairedCandidates.map((card) => (
+                    <Button
+                      key={`paired-card-option-${card.instanceId}`}
+                      onClick={() =>
+                        setPendingCardAction((current) =>
+                          current
+                            ? {
+                                ...current,
+                                pairedCardId: card.instanceId,
+                                pairedCardName: card.name,
+                                pairedAutomation: card.playAutomation || null,
+                                pairedTargetParticipantId: card.playAutomation?.targetScope
+                                  ? getTargetOptions(participantStates, current.actingParticipantId, card.playAutomation.targetScope)[0]?.participantId || null
+                                  : null,
+                                pairedSelectedExileCardId: null,
+                                pairedSelectedOwnHandCardId: null,
+                                pairedSelectedTargetHandCardId: null,
+                              }
+                            : current
+                        )
+                      }
+                      type="button"
+                      variant={pendingCardAction.pairedCardId === card.instanceId ? 'primary' : 'secondary'}
+                    >
+                      {card.name}
+                    </Button>
+                  ))}
                 </div>
-                <p className="muted-text">Defina os parâmetros automáticos exigidos pela carta que iniciou a jogada.</p>
-              </div>
+              </section>
+            ) : null}
 
-              {pendingCardAction?.automation?.targetScope ? (
-                <div className="combo-modal__subsection">
-                  <span className="status-label">Escolha o alvo</span>
-                  {pendingTargetOptions.length ? (
-                    <div className="combo-modal__chip-row">
-                      {pendingTargetOptions.map((player) => (
-                        <Button
-                          key={getPlayerId(player)}
-                          onClick={() => {
-                            const nextTargetUserId = getPlayerId(player);
-                            const nextTargetHandCards = getTargetHandCards(playerStates, nextTargetUserId);
-                            setPendingCardAction((current) =>
-                              current
-                                ? {
-                                    ...current,
-                                    targetUserId: nextTargetUserId,
-                                    selectedTargetHandCardId: automationRequiresTargetHandSelection(
-                                      current.automation
-                                    )
-                                      ? nextTargetHandCards[0]?.instanceId || null
-                                      : current.selectedTargetHandCardId,
-                                  }
-                                : current
-                            );
-                          }}
-                          type="button"
-                          variant={pendingCardAction.targetUserId === getPlayerId(player) ? 'primary' : 'secondary'}
-                        >
-                          {player.username}
-                        </Button>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="muted-text">Nenhum alvo disponível para essa carta.</p>
-                  )}
+            {pendingCardAction.pairedAutomation?.targetScope ? (
+              <section className="stack-gap" style={{ gap: '10px' }}>
+                <span className="status-label">Escolha o alvo da carta extra</span>
+                <div className="row-wrap">
+                  {pendingPairedTargetOptions.map((participant) => (
+                    <Button
+                      key={`paired-target-option-${participant.participantId}`}
+                      onClick={() =>
+                        setPendingCardAction((current) =>
+                          current
+                            ? {
+                                ...current,
+                                pairedTargetParticipantId: participant.participantId,
+                                pairedSelectedTargetHandCardId: automationRequiresTargetHandSelection(current.pairedAutomation)
+                                  ? getTargetHandCards(participantStates, participant.participantId)[0]?.instanceId || null
+                                  : current.pairedSelectedTargetHandCardId,
+                              }
+                            : current
+                        )
+                      }
+                      type="button"
+                      variant={
+                        pendingCardAction.pairedTargetParticipantId === participant.participantId ? 'primary' : 'secondary'
+                      }
+                    >
+                      {participant.displayName}
+                    </Button>
+                  ))}
                 </div>
-              ) : null}
+              </section>
+            ) : null}
 
-              {pendingCardAction?.automation?.selection === 'own-exile-card' ? (
-                <div className="combo-modal__subsection">
-                  <span className="status-label">Escolha a carta do exílio</span>
-                  {exileCards.length ? (
-                    <div className="exile-modal-grid combo-modal__card-grid">
-                      {exileCards.map((card) => (
-                        <CardItem
-                          category={card.category}
-                          cost={card.category === 'imo' ? card.imoCost || 0 : undefined}
-                          costLabel="Custo Imo"
-                          description={card.effect}
-                          footer={
-                            <div className="row-wrap">
-                              <Button
-                                onClick={() =>
-                                  setPendingCardAction((current) =>
-                                    current
-                                      ? {
-                                          ...current,
-                                          selectedExileCardId: card.instanceId,
-                                        }
-                                      : current
-                                  )
+            {pendingCardAction.pairedAutomation?.selection === 'own-exile-card' ? (
+              <section className="stack-gap" style={{ gap: '10px' }}>
+                <span className="status-label">Escolha a carta do exilio para a carta extra</span>
+                <div className="row-wrap">
+                  {exileCards.map((card) => (
+                    <Button
+                      key={`paired-exile-option-${card.instanceId}`}
+                      onClick={() =>
+                        setPendingCardAction((current) =>
+                          current
+                            ? {
+                                ...current,
+                                pairedSelectedExileCardId: card.instanceId,
+                              }
+                            : current
+                        )
+                      }
+                      type="button"
+                      variant={
+                        pendingCardAction.pairedSelectedExileCardId === card.instanceId ? 'primary' : 'secondary'
+                      }
+                    >
+                      {card.name}
+                    </Button>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {automationRequiresOwnHandSelection(pendingCardAction.pairedAutomation) ? (
+              <section className="stack-gap" style={{ gap: '10px' }}>
+                <span className="status-label">Escolha a carta da sua mao para a carta extra</span>
+                <div className="row-wrap">
+                  {pendingPairedOwnHandCards.map((card) => (
+                    <Button
+                      key={`paired-own-hand-option-${card.instanceId}`}
+                      onClick={() =>
+                        setPendingCardAction((current) =>
+                          current
+                            ? {
+                                ...current,
+                                pairedSelectedOwnHandCardId: card.instanceId,
+                              }
+                            : current
+                        )
+                      }
+                      type="button"
+                      variant={
+                        pendingCardAction.pairedSelectedOwnHandCardId === card.instanceId ? 'primary' : 'secondary'
+                      }
+                    >
+                      {card.name}
+                    </Button>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {automationRequiresTargetHandSelection(pendingCardAction.pairedAutomation) ? (
+              <section className="stack-gap" style={{ gap: '10px' }}>
+                <span className="status-label">Escolha a carta da mao do alvo da carta extra</span>
+                {pendingCardAction.pairedTargetParticipantId ? (
+                  <div className="row-wrap">
+                    {pendingPairedTargetHandCards.map((card) => (
+                      <Button
+                        key={`paired-target-hand-option-${card.instanceId}`}
+                        onClick={() =>
+                          setPendingCardAction((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  pairedSelectedTargetHandCardId: card.instanceId,
                                 }
-                                size="sm"
-                                type="button"
-                                variant={pendingCardAction.selectedExileCardId === card.instanceId ? 'primary' : 'secondary'}
-                              >
-                                {pendingCardAction.selectedExileCardId === card.instanceId ? 'Selecionada' : 'Selecionar'}
-                              </Button>
-                            </div>
-                          }
-                          imageSrc={resolveCardImageUrl(card.imagePath)}
-                          key={card.instanceId}
-                          name={card.name}
-                          selected={pendingCardAction.selectedExileCardId === card.instanceId}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="muted-text">Seu exílio está vazio; o efeito será resolvido sem recuperar carta.</p>
-                  )}
-                </div>
-              ) : null}
-
-              {automationRequiresOwnHandSelection(pendingCardAction?.automation) ? (
-                <div className="combo-modal__subsection">
-                  <span className="status-label">Escolha a carta da sua mao</span>
-                  {pendingOwnHandCards.length ? (
-                    <div className="combo-modal__chip-row">
-                      {pendingOwnHandCards.map((card) => (
-                        <Button
-                          key={`own-hand-${card.instanceId}`}
-                          onClick={() =>
-                            setPendingCardAction((current) =>
-                              current
-                                ? {
-                                    ...current,
-                                    selectedOwnHandCardId: card.instanceId,
-                                    pairedSelectedOwnHandCardId:
-                                      current.pairedSelectedOwnHandCardId === card.instanceId
-                                        ? getSelectableOwnHandCards(handCards, [
-                                            current.cardId,
-                                            current.pairedCardId,
-                                            card.instanceId,
-                                          ])[0]?.instanceId || null
-                                        : current.pairedSelectedOwnHandCardId,
-                                  }
-                                : current
-                            )
-                          }
-                          type="button"
-                          variant={
-                            pendingCardAction.selectedOwnHandCardId === card.instanceId
-                              ? 'primary'
-                              : 'secondary'
-                          }
-                        >
-                          {card.name}
-                        </Button>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="muted-text">Nao ha outra carta disponivel na sua mao para esse efeito.</p>
-                  )}
-                </div>
-              ) : null}
-
-              {automationRequiresTargetHandSelection(pendingCardAction?.automation) ? (
-                <div className="combo-modal__subsection">
-                  <span className="status-label">Escolha a carta da mao do alvo</span>
-                  {pendingCardAction?.targetUserId ? (
-                    pendingTargetHandCards.length ? (
-                      <div className="combo-modal__chip-row">
-                        {pendingTargetHandCards.map((card) => (
-                          <Button
-                            key={`target-hand-${card.instanceId}`}
-                            onClick={() =>
-                              setPendingCardAction((current) =>
-                                current
-                                  ? {
-                                      ...current,
-                                      selectedTargetHandCardId: card.instanceId,
-                                    }
-                                  : current
-                              )
-                            }
-                            type="button"
-                            variant={
-                              pendingCardAction.selectedTargetHandCardId === card.instanceId
-                                ? 'primary'
-                                : 'secondary'
-                            }
-                          >
-                            {card.name}
-                          </Button>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="muted-text">A mao do alvo esta vazia.</p>
-                    )
-                  ) : (
-                    <p className="muted-text">Escolha um alvo primeiro.</p>
-                  )}
-                </div>
-              ) : null}
-            </section>
-          ) : null}
-
-          {pendingCardAction?.pairedCardId ? (
-            <section className="combo-modal__section">
-              <div className="combo-modal__section-head">
-                <div>
-                  <Badge tone="primary">Carta extra</Badge>
-                  <h4>{pendingCardAction.pairedCardName}</h4>
-                </div>
-                <p className="muted-text">Se a carta jogada junto exigir parâmetros automáticos, resolva-os aqui.</p>
-              </div>
-
-              <div className="combo-modal__secondary-preview">
-                {pendingSecondaryCard ? (
-                  <CardItem
-                    category={pendingSecondaryCard.category}
-                    cost={pendingSecondaryCard.category === 'imo' ? pendingSecondaryCard.imoCost || 0 : undefined}
-                    costLabel="Custo Imo"
-                    description={pendingSecondaryCard.effect}
-                    imageSrc={resolveCardImageUrl(pendingSecondaryCard.imagePath)}
-                    name={pendingSecondaryCard.name}
-                    selected
-                  />
-                ) : null}
-              </div>
-
-              {pendingCardAction?.pairedAutomation?.targetScope ? (
-                <div className="combo-modal__subsection">
-                  <span className="status-label">Escolha o alvo da carta extra</span>
-                  {pendingPairedTargetOptions.length ? (
-                    <div className="combo-modal__chip-row">
-                      {pendingPairedTargetOptions.map((player) => (
-                        <Button
-                          key={`paired-target-${getPlayerId(player)}`}
-                          onClick={() => {
-                            const nextTargetUserId = getPlayerId(player);
-                            const nextTargetHandCards = getTargetHandCards(playerStates, nextTargetUserId);
-                            setPendingCardAction((current) =>
-                              current
-                                ? {
-                                    ...current,
-                                    pairedTargetUserId: nextTargetUserId,
-                                    pairedSelectedTargetHandCardId: automationRequiresTargetHandSelection(
-                                      current.pairedAutomation
-                                    )
-                                      ? nextTargetHandCards[0]?.instanceId || null
-                                      : current.pairedSelectedTargetHandCardId,
-                                  }
-                                : current
-                            );
-                          }}
-                          type="button"
-                          variant={
-                            pendingCardAction.pairedTargetUserId === getPlayerId(player)
-                              ? 'primary'
-                              : 'secondary'
-                          }
-                        >
-                          {player.username}
-                        </Button>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="muted-text">Nenhum alvo disponível para a carta jogada junto.</p>
-                  )}
-                </div>
-              ) : null}
-
-              {pendingCardAction?.pairedAutomation?.selection === 'own-exile-card' ? (
-                <div className="combo-modal__subsection">
-                  <span className="status-label">Escolha a carta do exílio para a carta extra</span>
-                  {exileCards.length ? (
-                    <div className="exile-modal-grid combo-modal__card-grid">
-                      {exileCards.map((card) => (
-                        <CardItem
-                          category={card.category}
-                          cost={card.category === 'imo' ? card.imoCost || 0 : undefined}
-                          costLabel="Custo Imo"
-                          description={card.effect}
-                          footer={
-                            <div className="row-wrap">
-                              <Button
-                                onClick={() =>
-                                  setPendingCardAction((current) =>
-                                    current
-                                      ? {
-                                          ...current,
-                                          pairedSelectedExileCardId: card.instanceId,
-                                        }
-                                      : current
-                                  )
-                                }
-                                size="sm"
-                                type="button"
-                                variant={pendingCardAction.pairedSelectedExileCardId === card.instanceId ? 'primary' : 'secondary'}
-                              >
-                                {pendingCardAction.pairedSelectedExileCardId === card.instanceId ? 'Selecionada' : 'Selecionar'}
-                              </Button>
-                            </div>
-                          }
-                          imageSrc={resolveCardImageUrl(card.imagePath)}
-                          key={`paired-exile-${card.instanceId}`}
-                          name={card.name}
-                          selected={pendingCardAction.pairedSelectedExileCardId === card.instanceId}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="muted-text">Seu exílio está vazio; a carta jogada junto não poderá recuperar carta.</p>
-                  )}
-                </div>
-              ) : null}
-
-              {automationRequiresOwnHandSelection(pendingCardAction?.pairedAutomation) ? (
-                <div className="combo-modal__subsection">
-                  <span className="status-label">Escolha a carta da sua mao para a carta extra</span>
-                  {pendingPairedOwnHandCards.length ? (
-                    <div className="combo-modal__chip-row">
-                      {pendingPairedOwnHandCards.map((card) => (
-                        <Button
-                          key={`paired-own-hand-${card.instanceId}`}
-                          onClick={() =>
-                            setPendingCardAction((current) =>
-                              current
-                                ? {
-                                    ...current,
-                                    pairedSelectedOwnHandCardId: card.instanceId,
-                                    selectedOwnHandCardId:
-                                      current.selectedOwnHandCardId === card.instanceId
-                                        ? getSelectableOwnHandCards(handCards, [
-                                            current.cardId,
-                                            current.pairedCardId,
-                                            card.instanceId,
-                                          ])[0]?.instanceId || null
-                                        : current.selectedOwnHandCardId,
-                                  }
-                                : current
-                            )
-                          }
-                          type="button"
-                          variant={
-                            pendingCardAction.pairedSelectedOwnHandCardId === card.instanceId
-                              ? 'primary'
-                              : 'secondary'
-                          }
-                        >
-                          {card.name}
-                        </Button>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="muted-text">Nao ha outra carta disponivel na sua mao para a carta extra.</p>
-                  )}
-                </div>
-              ) : null}
-
-              {automationRequiresTargetHandSelection(pendingCardAction?.pairedAutomation) ? (
-                <div className="combo-modal__subsection">
-                  <span className="status-label">Escolha a carta da mao do alvo da carta extra</span>
-                  {pendingCardAction?.pairedTargetUserId ? (
-                    pendingPairedTargetHandCards.length ? (
-                      <div className="combo-modal__chip-row">
-                        {pendingPairedTargetHandCards.map((card) => (
-                          <Button
-                            key={`paired-target-hand-${card.instanceId}`}
-                            onClick={() =>
-                              setPendingCardAction((current) =>
-                                current
-                                  ? {
-                                      ...current,
-                                      pairedSelectedTargetHandCardId: card.instanceId,
-                                    }
-                                  : current
-                              )
-                            }
-                            type="button"
-                            variant={
-                              pendingCardAction.pairedSelectedTargetHandCardId === card.instanceId
-                                ? 'primary'
-                                : 'secondary'
-                            }
-                          >
-                            {card.name}
-                          </Button>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="muted-text">A mao do alvo da carta extra esta vazia.</p>
-                    )
-                  ) : (
-                    <p className="muted-text">Escolha um alvo para a carta extra primeiro.</p>
-                  )}
-                </div>
-              ) : null}
-            </section>
-          ) : null}
-        </div>
+                              : current
+                          )
+                        }
+                        type="button"
+                        variant={
+                          pendingCardAction.pairedSelectedTargetHandCardId === card.instanceId ? 'primary' : 'secondary'
+                        }
+                      >
+                        {card.name}
+                      </Button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="muted-text">Escolha um alvo para a carta extra primeiro.</p>
+                )}
+              </section>
+            ) : null}
+          </div>
+        ) : null}
       </Modal>
 
       <Modal
         cancelLabel={null}
         confirmLabel={
           combatState?.status === 'awaiting-reaction'
-            ? 'Seguir sem reação'
+            ? 'Seguir sem reacao'
             : combatState?.status === 'awaiting-reaction-result'
-              ? 'Não superou'
+              ? 'Nao superou'
               : 'Pular resposta'
         }
         description={
           combatState?.status === 'awaiting-reaction'
-            ? `${combatState.attackerUsername} atacou voce com ${combatState.attackCard?.name}. Se voce tiver Reacao na mao, pode usa-la agora.`
+            ? `${combatState.attackerDisplayName} atacou ${combatState.defenderDisplayName}. Se voce tiver Reacao na mao, pode usa-la agora.`
             : combatState?.status === 'awaiting-reaction-result'
-              ? 'Resolva fisicamente o teste de defesa. Se voce superar o ataque, libera uma carta de resposta.'
-              : 'Voce superou o ataque. Agora pode jogar ou descartar uma carta em resposta antes de seguir a partida.'
+              ? 'Resolva fisicamente o teste de defesa. Se tiver sucesso, libera uma carta de resposta.'
+              : `Voce superou o ataque. Agora pode jogar ou descartar uma carta em resposta antes de seguir a partida.`
         }
         isLoading={isSubmitting}
         onClose={() => {}}
         onConfirm={() =>
           handleAction('match:resolveAttack', {
+            actingParticipantId: currentCombatDefender?.participantId,
             resolution:
               combatState?.status === 'awaiting-reaction'
                 ? 'skip-reaction'
@@ -1403,110 +1242,107 @@ export function MatchPage() {
         title="Ataque recebido"
       >
         {combatState?.status === 'awaiting-reaction' ? (
-          <div className="combat-flow">
-            <div className="combat-flow__summary">
+          <div className="stack-gap" style={{ gap: '14px' }}>
+            <div className="row-wrap">
               <Badge tone="accent">{combatState.attackCard?.name || 'Ataque'}</Badge>
-              <p className="muted-text">
-                Alvo: <strong>Você</strong>
-              </p>
+              <Badge tone="secondary">{currentCombatDefender?.displayName}</Badge>
             </div>
 
             {reactionCards.length ? (
-              <div className="combat-flow__card-grid">
+              <div className="player-hand">
                 {reactionCards.map((card) => (
-                  <CardItem
-                    category={card.category}
-                    cost={card.category === 'imo' ? card.imoCost || 0 : undefined}
-                    costLabel="Custo Imo"
-                    description={card.effect}
-                    footer={
-                      <div className="row-wrap">
-                        <Button
-                          disabled={isSubmitting}
-                          onClick={() =>
-                            handleAction('match:reactToAttack', {
-                              reactionCardId: card.instanceId,
-                            })
-                          }
-                          size="sm"
-                          type="button"
-                        >
-                          Usar Reação
-                        </Button>
-                      </div>
-                    }
-                    imageSrc={resolveCardImageUrl(card.imagePath)}
-                    key={`reaction-${card.instanceId}`}
-                    name={card.name}
-                  />
+                  <div className="player-hand__slot" key={`reaction-${card.instanceId}`}>
+                    <CardItem
+                      category={card.category}
+                      cost={card.category === 'imo' ? card.imoCost || 0 : undefined}
+                      costLabel="Custo Imo"
+                      description={card.effect}
+                      footer={
+                        <div className="row-wrap">
+                          <Button
+                            disabled={isSubmitting}
+                            onClick={() =>
+                              handleAction('match:reactToAttack', {
+                                actingParticipantId: currentCombatDefender?.participantId,
+                                reactionCardId: card.instanceId,
+                              })
+                            }
+                            size="sm"
+                            type="button"
+                          >
+                            Usar Reacao
+                          </Button>
+                        </div>
+                      }
+                      imageSrc={resolveCardImageUrl(card.imagePath)}
+                      name={card.name}
+                    />
+                  </div>
                 ))}
               </div>
             ) : (
-              <div className="empty-state">Você não tem uma carta de Reação disponível na mão.</div>
+              <div className="empty-state">Voce nao tem uma carta de Reacao disponivel na mao.</div>
             )}
           </div>
         ) : null}
 
         {combatState?.status === 'awaiting-reaction-result' ? (
-          <div className="combat-flow">
-            <div className="combat-flow__summary">
-              <Badge tone="primary">Reação usada</Badge>
-              <p className="muted-text">
-                Resolva o teste físico e, se tiver sucesso, libere a carta de resposta.
-              </p>
-            </div>
-
-            <div className="combat-flow__actions">
-              <Button disabled={isSubmitting} onClick={() => handleAction('match:resolveAttack', { resolution: 'reaction-success' })} type="button">
-                Superou o ataque
-              </Button>
-            </div>
+          <div className="stack-gap" style={{ gap: '14px' }}>
+            <Badge tone="primary">Reacao usada</Badge>
+            <p className="muted-text">Resolva o teste fisico e, se tiver sucesso, libere a carta de resposta.</p>
+            <Button
+              disabled={isSubmitting}
+              onClick={() =>
+                handleAction('match:resolveAttack', {
+                  actingParticipantId: currentCombatDefender?.participantId,
+                  resolution: 'reaction-success',
+                })
+              }
+              type="button"
+            >
+              Superou o ataque
+            </Button>
           </div>
         ) : null}
 
         {combatState?.status === 'awaiting-counter-response' ? (
-          <div className="combat-flow">
-            <div className="combat-flow__summary">
-              <Badge tone="primary">Resposta liberada</Badge>
-              <p className="muted-text">
-                Escolha uma carta para jogar ou descartar em resposta ao ataque de {combatState.attackerUsername}.
-              </p>
-            </div>
-
+          <div className="stack-gap" style={{ gap: '14px' }}>
+            <Badge tone="primary">Resposta liberada</Badge>
             {counterResponseCards.length ? (
-              <div className="combat-flow__card-grid">
+              <div className="player-hand">
                 {counterResponseCards.map((card) => (
-                  <CardItem
-                    category={card.category}
-                    cost={card.category === 'imo' ? card.imoCost || 0 : undefined}
-                    costLabel="Custo Imo"
-                    description={card.effect}
-                    footer={
-                      <div className="row-wrap">
-                        <Button
-                          disabled={isSubmitting || card.combatRole === 'reaction'}
-                          onClick={() => handleOpenCounterResponse('match:playCard', card.instanceId)}
-                          size="sm"
-                          type="button"
-                        >
-                          Jogar em resposta
-                        </Button>
+                  <div className="player-hand__slot" key={`counter-response-${card.instanceId}`}>
+                    <CardItem
+                      category={card.category}
+                      cost={card.category === 'imo' ? card.imoCost || 0 : undefined}
+                      costLabel="Custo Imo"
+                      description={card.effect}
+                      footer={
+                        <div className="row-wrap">
+                          <Button
+                            disabled={isSubmitting || card.combatRole === 'reaction'}
+                            onClick={() => openCardAction('match:playCard', card.instanceId, { asCounterResponse: true })}
+                            size="sm"
+                            type="button"
+                          >
+                            Jogar em resposta
+                          </Button>
 
-                        <Button
-                          disabled={isSubmitting || card.canDiscard === false}
-                          onClick={() => handleOpenCounterResponse('match:discardCard', card.instanceId)}
-                          size="sm"
-                          type="button"
-                          variant="secondary"
-                        >
-                          Descartar em resposta
-                        </Button>
-                      </div>
-                    }
-                    imageSrc={resolveCardImageUrl(card.imagePath)}
-                    key={`counter-response-${card.instanceId}`}
-                    name={card.name}
-                  />
+                          <Button
+                            disabled={isSubmitting || card.canDiscard === false}
+                            onClick={() => openCardAction('match:discardCard', card.instanceId, { asCounterResponse: true })}
+                            size="sm"
+                            type="button"
+                            variant="secondary"
+                          >
+                            Descartar em resposta
+                          </Button>
+                        </div>
+                      }
+                      imageSrc={resolveCardImageUrl(card.imagePath)}
+                      name={card.name}
+                    />
+                  </div>
                 ))}
               </div>
             ) : (
@@ -1522,8 +1358,8 @@ export function MatchPage() {
         description={
           activeTopDeckView
             ? activeTopDeckView.type === 'viewRandomHandCard'
-              ? `Voce visualizou uma carta aleatoria da mao de ${activeTopDeckView.targetUsername}. Essa informacao fica apenas com voce.`
-              : `Voce visualizou o topo do deck de ${activeTopDeckView.targetUsername}. Revele para a mesa apenas se quiser compartilhar essa informacao.`
+              ? `Voce visualizou uma carta aleatoria da mao de ${activeTopDeckView.targetDisplayName}. Essa informacao fica apenas com voce.`
+              : `Voce visualizou o topo do deck de ${activeTopDeckView.targetDisplayName}. Revele para a mesa apenas se quiser compartilhar essa informacao.`
             : ''
         }
         isLoading={isSubmitting}
@@ -1537,27 +1373,16 @@ export function MatchPage() {
         title="Visualizar"
       >
         {activeTopDeckView?.card ? (
-          <div className="top-deck-modal">
-            <div className="top-deck-modal__header">
-              <Badge tone="accent">
-                {activeTopDeckView.type === 'viewRandomHandCard' ? 'Carta aleatoria da mao' : 'Topo do deck'}
-              </Badge>
-              <p className="muted-text">
-                Alvo: <strong>{activeTopDeckView.targetUsername}</strong>
-              </p>
-            </div>
-
-            <div className="top-deck-modal__card">
-              <CardItem
-                category={activeTopDeckView.card.category}
-                cost={activeTopDeckView.card.category === 'imo' ? activeTopDeckView.card.imoCost || 0 : undefined}
-                costLabel="Custo Imo"
-                description={activeTopDeckView.card.effect}
-                imageSrc={resolveCardImageUrl(activeTopDeckView.card.imagePath)}
-                name={activeTopDeckView.card.name}
-                selected
-              />
-            </div>
+          <div className="top-deck-modal__card">
+            <CardItem
+              category={activeTopDeckView.card.category}
+              cost={activeTopDeckView.card.category === 'imo' ? activeTopDeckView.card.imoCost || 0 : undefined}
+              costLabel="Custo Imo"
+              description={activeTopDeckView.card.effect}
+              imageSrc={resolveCardImageUrl(activeTopDeckView.card.imagePath)}
+              name={activeTopDeckView.card.name}
+              selected
+            />
           </div>
         ) : (
           <div className="empty-state">Nao foi possivel carregar a carta visualizada.</div>
@@ -1569,7 +1394,7 @@ export function MatchPage() {
         confirmLabel="Fechar"
         description={
           revealedTopDeckModal
-            ? `${revealedTopDeckModal.actorUsername} revelou o topo do deck de ${revealedTopDeckModal.targetUsername} para toda a mesa.`
+            ? `${revealedTopDeckModal.actorDisplayName} revelou o topo do deck de ${revealedTopDeckModal.targetDisplayName} para toda a mesa.`
             : ''
         }
         onClose={() => setRevealedTopDeckModal(null)}
@@ -1578,25 +1403,16 @@ export function MatchPage() {
         title="Carta revelada"
       >
         {revealedTopDeckModal?.card ? (
-          <div className="top-deck-modal">
-            <div className="top-deck-modal__header">
-              <Badge tone="primary">Carta revelada</Badge>
-              <p className="muted-text">
-                Deck de <strong>{revealedTopDeckModal.targetUsername}</strong>
-              </p>
-            </div>
-
-            <div className="top-deck-modal__card">
-              <CardItem
-                category={revealedTopDeckModal.card.category}
-                cost={revealedTopDeckModal.card.category === 'imo' ? revealedTopDeckModal.card.imoCost || 0 : undefined}
-                costLabel="Custo Imo"
-                description={revealedTopDeckModal.card.effect}
-                imageSrc={resolveCardImageUrl(revealedTopDeckModal.card.imagePath)}
-                name={revealedTopDeckModal.card.name}
-                selected
-              />
-            </div>
+          <div className="top-deck-modal__card">
+            <CardItem
+              category={revealedTopDeckModal.card.category}
+              cost={revealedTopDeckModal.card.category === 'imo' ? revealedTopDeckModal.card.imoCost || 0 : undefined}
+              costLabel="Custo Imo"
+              description={revealedTopDeckModal.card.effect}
+              imageSrc={resolveCardImageUrl(revealedTopDeckModal.card.imagePath)}
+              name={revealedTopDeckModal.card.name}
+              selected
+            />
           </div>
         ) : (
           <div className="empty-state">Nenhuma carta revelada no momento.</div>
@@ -1606,30 +1422,30 @@ export function MatchPage() {
       <Modal
         cancelLabel={null}
         confirmLabel="Fechar"
-        description="As cartas aparecem em ordem no exílio: do topo para o fundo."
+        description="As cartas aparecem em ordem no exilio: do topo para o fundo."
         onClose={() => setIsExileModalOpen(false)}
         onConfirm={() => setIsExileModalOpen(false)}
         open={isExileModalOpen}
-        title="Exílio"
+        title="Exilio"
       >
         {exileCards.length ? (
-          <div className="exile-modal-grid">
+          <div className="player-hand">
             {exileCards.map((card, index) => (
-              <CardItem
-                category={card.category}
-                cost={card.category === 'imo' ? card.imoCost || 0 : undefined}
-                costLabel="Custo Imo"
-                description={card.effect}
-                footer={
-                  <div className="exile-card-order">
-                    <span>{index === 0 ? 'Topo do exílio' : `Posição ${index + 1}`}</span>
-                    <span>{index === exileCards.length - 1 ? 'Fundo' : null}</span>
-                  </div>
-                }
-                imageSrc={resolveCardImageUrl(card.imagePath)}
-                key={card.instanceId}
-                name={card.name}
-              />
+              <div className="player-hand__slot" key={`exile-card-${card.instanceId}`}>
+                <CardItem
+                  category={card.category}
+                  cost={card.category === 'imo' ? card.imoCost || 0 : undefined}
+                  costLabel="Custo Imo"
+                  description={card.effect}
+                  footer={
+                    <div className="row-wrap">
+                      <span>{index === 0 ? 'Topo do exilio' : `Posicao ${index + 1}`}</span>
+                    </div>
+                  }
+                  imageSrc={resolveCardImageUrl(card.imagePath)}
+                  name={card.name}
+                />
+              </div>
             ))}
           </div>
         ) : (
@@ -1639,4 +1455,3 @@ export function MatchPage() {
     </section>
   );
 }
-

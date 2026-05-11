@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS rooms (
   code VARCHAR(8) NOT NULL UNIQUE,
   host_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   status VARCHAR(20) NOT NULL DEFAULT 'lobby',
+  turn_order_draft_json JSONB NOT NULL DEFAULT '[]'::jsonb,
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
@@ -28,6 +29,7 @@ CREATE TABLE IF NOT EXISTS room_players (
   room_id INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   selected_deck_id INTEGER,
+  selected_deck_ids_json JSONB NOT NULL DEFAULT '[]'::jsonb,
   is_ready BOOLEAN NOT NULL DEFAULT FALSE,
   turn_order INTEGER,
   joined_at TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -53,7 +55,9 @@ CREATE TABLE IF NOT EXISTS matches (
   status VARCHAR(20) NOT NULL DEFAULT 'active',
   round INTEGER NOT NULL DEFAULT 1,
   current_turn_player_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  current_turn_participant_id INTEGER,
   winner_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  winner_participant_id INTEGER,
   combat_state_json JSONB DEFAULT NULL,
   started_at TIMESTAMP NOT NULL DEFAULT NOW(),
   ended_at TIMESTAMP,
@@ -79,6 +83,31 @@ CREATE TABLE IF NOT EXISTS match_players (
   exile_cards_json JSONB NOT NULL DEFAULT '[]'::jsonb,
   PRIMARY KEY (match_id, user_id)
 );
+
+CREATE TABLE IF NOT EXISTS match_participants (
+  id SERIAL PRIMARY KEY,
+  match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+  controller_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  participant_type VARCHAR(32) NOT NULL,
+  source_deck_id INTEGER REFERENCES decks(id) ON DELETE SET NULL,
+  display_name VARCHAR(120) NOT NULL,
+  turn_order INTEGER NOT NULL,
+  health INTEGER NOT NULL DEFAULT 10,
+  imo INTEGER NOT NULL DEFAULT 3,
+  max_imo INTEGER NOT NULL DEFAULT 10,
+  has_drawn_this_turn BOOLEAN NOT NULL DEFAULT FALSE,
+  has_used_card_action_this_turn BOOLEAN NOT NULL DEFAULT FALSE,
+  is_defeated BOOLEAN NOT NULL DEFAULT FALSE,
+  deck_cards_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  hand_cards_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  exile_cards_json JSONB NOT NULL DEFAULT '[]'::jsonb
+);
+
+CREATE INDEX IF NOT EXISTS match_participants_match_idx
+ON match_participants (match_id, turn_order);
+
+CREATE INDEX IF NOT EXISTS match_participants_controller_idx
+ON match_participants (match_id, controller_user_id);
 
 CREATE TABLE IF NOT EXISTS match_logs (
   id SERIAL PRIMARY KEY,

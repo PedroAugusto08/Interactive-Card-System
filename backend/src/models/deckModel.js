@@ -29,6 +29,25 @@ async function listDecksByOwner(ownerId) {
   return result.rows;
 }
 
+async function listDecksByIds(deckIds = []) {
+  const normalizedIds = [...new Set((deckIds || []).map((value) => Number(value)).filter(Number.isInteger))];
+  if (!normalizedIds.length) {
+    return [];
+  }
+
+  const result = await query(
+    `
+      SELECT id, owner_id, name, description, cards_json, created_at, updated_at
+      FROM decks
+      WHERE id = ANY($1::int[])
+      ORDER BY created_at DESC;
+    `,
+    [normalizedIds]
+  );
+
+  return result.rows;
+}
+
 // Busca deck por id sem filtrar dono.
 async function findDeckById(deckId) {
   const result = await query(
@@ -80,6 +99,7 @@ async function deleteDeckById({ deckId, ownerId }) {
 module.exports = {
   createDeck,
   listDecksByOwner,
+  listDecksByIds,
   findDeckById,
   updateDeckById,
   deleteDeckById,

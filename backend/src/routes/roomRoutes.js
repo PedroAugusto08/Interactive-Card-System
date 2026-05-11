@@ -14,6 +14,8 @@ router.post('/join', asyncHandler(roomController.joinRoom));
 router.post('/leave', asyncHandler(roomController.leaveRoom));
 router.get('/:roomId/players', asyncHandler(roomController.listPlayers));
 router.post('/:roomId/select-deck', asyncHandler(roomController.selectDeck));
+router.post('/:roomId/master-decks', asyncHandler(roomController.replaceMasterDecks));
+router.post('/:roomId/turn-order', asyncHandler(roomController.updateTurnOrderDraft));
 router.post('/:roomId/ready', asyncHandler(roomController.setReadyState));
 
 module.exports = { roomRoutes: router };

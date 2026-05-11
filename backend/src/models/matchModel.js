@@ -1,13 +1,52 @@
 const { query } = require('../config/db');
 
-async function createMatch({ roomId, currentTurnPlayerId }) {
+async function createMatch({
+  roomId,
+  currentTurnParticipantId = null,
+  currentTurnPlayerId = null,
+  winnerParticipantId = null,
+  winnerUserId = null,
+  status = 'active',
+  round = 1,
+  combatState = null,
+}) {
   const result = await query(
     `
-      INSERT INTO matches (room_id, current_turn_player_id)
-      VALUES ($1, $2)
-      RETURNING id, room_id, status, round, current_turn_player_id, winner_user_id, combat_state_json, started_at, ended_at, created_at;
+      INSERT INTO matches (
+        room_id,
+        status,
+        round,
+        current_turn_player_id,
+        current_turn_participant_id,
+        winner_user_id,
+        winner_participant_id,
+        combat_state_json
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+      RETURNING
+        id,
+        room_id,
+        status,
+        round,
+        current_turn_player_id,
+        current_turn_participant_id,
+        winner_user_id,
+        winner_participant_id,
+        combat_state_json,
+        started_at,
+        ended_at,
+        created_at;
     `,
-    [roomId, currentTurnPlayerId]
+    [
+      roomId,
+      status,
+      round,
+      currentTurnPlayerId,
+      currentTurnParticipantId,
+      winnerUserId,
+      winnerParticipantId,
+      JSON.stringify(combatState),
+    ]
   );
 
   return result.rows[0] || null;
@@ -16,7 +55,19 @@ async function createMatch({ roomId, currentTurnPlayerId }) {
 async function findActiveMatchByRoomId(roomId) {
   const result = await query(
     `
-      SELECT id, room_id, status, round, current_turn_player_id, winner_user_id, combat_state_json, started_at, ended_at, created_at
+      SELECT
+        id,
+        room_id,
+        status,
+        round,
+        current_turn_player_id,
+        current_turn_participant_id,
+        winner_user_id,
+        winner_participant_id,
+        combat_state_json,
+        started_at,
+        ended_at,
+        created_at
       FROM matches
       WHERE room_id = $1 AND status = 'active'
       LIMIT 1;
@@ -30,7 +81,19 @@ async function findActiveMatchByRoomId(roomId) {
 async function findMatchById(matchId) {
   const result = await query(
     `
-      SELECT id, room_id, status, round, current_turn_player_id, winner_user_id, combat_state_json, started_at, ended_at, created_at
+      SELECT
+        id,
+        room_id,
+        status,
+        round,
+        current_turn_player_id,
+        current_turn_participant_id,
+        winner_user_id,
+        winner_participant_id,
+        combat_state_json,
+        started_at,
+        ended_at,
+        created_at
       FROM matches
       WHERE id = $1
       LIMIT 1;
@@ -41,7 +104,16 @@ async function findMatchById(matchId) {
   return result.rows[0] || null;
 }
 
-async function updateMatchState({ matchId, status, round, currentTurnPlayerId, winnerUserId, endedAt = null }) {
+async function updateMatchState({
+  matchId,
+  status,
+  round,
+  currentTurnPlayerId,
+  currentTurnParticipantId,
+  winnerUserId,
+  winnerParticipantId,
+  endedAt = null,
+}) {
   const result = await query(
     `
       UPDATE matches
@@ -49,12 +121,35 @@ async function updateMatchState({ matchId, status, round, currentTurnPlayerId, w
         status = $2,
         round = $3,
         current_turn_player_id = $4,
-        winner_user_id = $5,
-        ended_at = $6
+        current_turn_participant_id = $5,
+        winner_user_id = $6,
+        winner_participant_id = $7,
+        ended_at = $8
       WHERE id = $1
-      RETURNING id, room_id, status, round, current_turn_player_id, winner_user_id, combat_state_json, started_at, ended_at, created_at;
+      RETURNING
+        id,
+        room_id,
+        status,
+        round,
+        current_turn_player_id,
+        current_turn_participant_id,
+        winner_user_id,
+        winner_participant_id,
+        combat_state_json,
+        started_at,
+        ended_at,
+        created_at;
     `,
-    [matchId, status, round, currentTurnPlayerId, winnerUserId, endedAt]
+    [
+      matchId,
+      status,
+      round,
+      currentTurnPlayerId,
+      currentTurnParticipantId,
+      winnerUserId,
+      winnerParticipantId,
+      endedAt,
+    ]
   );
 
   return result.rows[0] || null;
@@ -66,7 +161,19 @@ async function updateMatchCombatState({ matchId, combatState = null }) {
       UPDATE matches
       SET combat_state_json = $2::jsonb
       WHERE id = $1
-      RETURNING id, room_id, status, round, current_turn_player_id, winner_user_id, combat_state_json, started_at, ended_at, created_at;
+      RETURNING
+        id,
+        room_id,
+        status,
+        round,
+        current_turn_player_id,
+        current_turn_participant_id,
+        winner_user_id,
+        winner_participant_id,
+        combat_state_json,
+        started_at,
+        ended_at,
+        created_at;
     `,
     [matchId, JSON.stringify(combatState)]
   );
@@ -74,9 +181,12 @@ async function updateMatchCombatState({ matchId, combatState = null }) {
   return result.rows[0] || null;
 }
 
-async function upsertMatchPlayer({
+async function createMatchParticipant({
   matchId,
-  userId,
+  controllerUserId,
+  participantType,
+  sourceDeckId = null,
+  displayName,
   turnOrder,
   health = 10,
   imo = 3,
@@ -90,9 +200,12 @@ async function upsertMatchPlayer({
 }) {
   const result = await query(
     `
-      INSERT INTO match_players (
+      INSERT INTO match_participants (
         match_id,
-        user_id,
+        controller_user_id,
+        participant_type,
+        source_deck_id,
+        display_name,
         turn_order,
         health,
         imo,
@@ -104,22 +217,14 @@ async function upsertMatchPlayer({
         hand_cards_json,
         exile_cards_json
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12::jsonb)
-      ON CONFLICT (match_id, user_id)
-      DO UPDATE SET
-        turn_order = EXCLUDED.turn_order,
-        health = EXCLUDED.health,
-        imo = EXCLUDED.imo,
-        max_imo = EXCLUDED.max_imo,
-        has_drawn_this_turn = EXCLUDED.has_drawn_this_turn,
-        has_used_card_action_this_turn = EXCLUDED.has_used_card_action_this_turn,
-        is_defeated = EXCLUDED.is_defeated,
-        deck_cards_json = EXCLUDED.deck_cards_json,
-        hand_cards_json = EXCLUDED.hand_cards_json,
-        exile_cards_json = EXCLUDED.exile_cards_json
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14::jsonb, $15::jsonb)
       RETURNING
+        id,
         match_id,
-        user_id,
+        controller_user_id,
+        participant_type,
+        source_deck_id,
+        display_name,
         turn_order,
         health,
         imo,
@@ -133,7 +238,10 @@ async function upsertMatchPlayer({
     `,
     [
       matchId,
-      userId,
+      controllerUserId,
+      participantType,
+      sourceDeckId,
+      displayName,
       turnOrder,
       health,
       imo,
@@ -150,12 +258,80 @@ async function upsertMatchPlayer({
   return result.rows[0] || null;
 }
 
-async function listMatchPlayers(matchId) {
+async function updateMatchParticipant({
+  participantId,
+  turnOrder,
+  health,
+  imo,
+  maxImo,
+  hasDrawnThisTurn,
+  hasUsedCardActionThisTurn,
+  isDefeated,
+  deckCards,
+  handCards,
+  exileCards,
+}) {
+  const result = await query(
+    `
+      UPDATE match_participants
+      SET
+        turn_order = $2,
+        health = $3,
+        imo = $4,
+        max_imo = $5,
+        has_drawn_this_turn = $6,
+        has_used_card_action_this_turn = $7,
+        is_defeated = $8,
+        deck_cards_json = $9::jsonb,
+        hand_cards_json = $10::jsonb,
+        exile_cards_json = $11::jsonb
+      WHERE id = $1
+      RETURNING
+        id,
+        match_id,
+        controller_user_id,
+        participant_type,
+        source_deck_id,
+        display_name,
+        turn_order,
+        health,
+        imo,
+        max_imo,
+        has_drawn_this_turn,
+        has_used_card_action_this_turn,
+        is_defeated,
+        deck_cards_json,
+        hand_cards_json,
+        exile_cards_json;
+    `,
+    [
+      participantId,
+      turnOrder,
+      health,
+      imo,
+      maxImo,
+      hasDrawnThisTurn,
+      hasUsedCardActionThisTurn,
+      isDefeated,
+      JSON.stringify(deckCards),
+      JSON.stringify(handCards),
+      JSON.stringify(exileCards),
+    ]
+  );
+
+  return result.rows[0] || null;
+}
+
+async function listMatchParticipants(matchId) {
   const result = await query(
     `
       SELECT
+        mp.id,
         mp.match_id,
-        mp.user_id,
+        mp.controller_user_id,
+        mp.participant_type,
+        mp.source_deck_id,
+        mp.display_name,
         mp.turn_order,
         mp.health,
         mp.imo,
@@ -166,12 +342,12 @@ async function listMatchPlayers(matchId) {
         mp.deck_cards_json,
         mp.hand_cards_json,
         mp.exile_cards_json,
-        u.username,
-        u.email
-      FROM match_players mp
-      INNER JOIN users u ON u.id = mp.user_id
+        u.username AS controller_username,
+        u.email AS controller_email
+      FROM match_participants mp
+      INNER JOIN users u ON u.id = mp.controller_user_id
       WHERE mp.match_id = $1
-      ORDER BY mp.turn_order ASC;
+      ORDER BY mp.turn_order ASC, mp.id ASC;
     `,
     [matchId]
   );
@@ -179,12 +355,16 @@ async function listMatchPlayers(matchId) {
   return result.rows;
 }
 
-async function findMatchPlayer({ matchId, userId }) {
+async function findMatchParticipantById({ matchId, participantId }) {
   const result = await query(
     `
       SELECT
+        mp.id,
         mp.match_id,
-        mp.user_id,
+        mp.controller_user_id,
+        mp.participant_type,
+        mp.source_deck_id,
+        mp.display_name,
         mp.turn_order,
         mp.health,
         mp.imo,
@@ -195,17 +375,50 @@ async function findMatchPlayer({ matchId, userId }) {
         mp.deck_cards_json,
         mp.hand_cards_json,
         mp.exile_cards_json,
-        u.username,
-        u.email
-      FROM match_players mp
-      INNER JOIN users u ON u.id = mp.user_id
-      WHERE mp.match_id = $1 AND mp.user_id = $2
+        u.username AS controller_username,
+        u.email AS controller_email
+      FROM match_participants mp
+      INNER JOIN users u ON u.id = mp.controller_user_id
+      WHERE mp.match_id = $1 AND mp.id = $2
       LIMIT 1;
     `,
-    [matchId, userId]
+    [matchId, participantId]
   );
 
   return result.rows[0] || null;
+}
+
+async function listMatchParticipantsByController({ matchId, controllerUserId }) {
+  const result = await query(
+    `
+      SELECT
+        mp.id,
+        mp.match_id,
+        mp.controller_user_id,
+        mp.participant_type,
+        mp.source_deck_id,
+        mp.display_name,
+        mp.turn_order,
+        mp.health,
+        mp.imo,
+        mp.max_imo,
+        mp.has_drawn_this_turn,
+        mp.has_used_card_action_this_turn,
+        mp.is_defeated,
+        mp.deck_cards_json,
+        mp.hand_cards_json,
+        mp.exile_cards_json,
+        u.username AS controller_username,
+        u.email AS controller_email
+      FROM match_participants mp
+      INNER JOIN users u ON u.id = mp.controller_user_id
+      WHERE mp.match_id = $1 AND mp.controller_user_id = $2
+      ORDER BY mp.turn_order ASC, mp.id ASC;
+    `,
+    [matchId, controllerUserId]
+  );
+
+  return result.rows;
 }
 
 async function addMatchLog({ matchId, type, message, payload = {} }) {
@@ -237,14 +450,16 @@ async function listMatchLogs(matchId, limit = 50) {
 }
 
 module.exports = {
+  addMatchLog,
   createMatch,
+  createMatchParticipant,
   findActiveMatchByRoomId,
   findMatchById,
-  updateMatchState,
-  updateMatchCombatState,
-  upsertMatchPlayer,
-  listMatchPlayers,
-  findMatchPlayer,
-  addMatchLog,
+  findMatchParticipantById,
   listMatchLogs,
+  listMatchParticipants,
+  listMatchParticipantsByController,
+  updateMatchCombatState,
+  updateMatchParticipant,
+  updateMatchState,
 };

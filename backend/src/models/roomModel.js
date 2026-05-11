@@ -1,29 +1,30 @@
 const { query } = require('../config/db');
 
-async function createRoom({ code, hostId, status = 'lobby' }) {
+async function createRoom({ code, hostId, status = 'lobby', turnOrderDraft = [] }) {
   const result = await query(
     `
-      INSERT INTO rooms (code, host_id, status)
-      VALUES ($1, $2, $3)
-      RETURNING id, code, host_id, status, created_at;
+      INSERT INTO rooms (code, host_id, status, turn_order_draft_json)
+      VALUES ($1, $2, $3, $4::jsonb)
+      RETURNING id, code, host_id, status, turn_order_draft_json, created_at;
     `,
-    [code, hostId, status]
+    [code, hostId, status, JSON.stringify(turnOrderDraft)]
   );
 
   return result.rows[0];
 }
 
-async function updateRoomState({ roomId, hostId, status }) {
+async function updateRoomState({ roomId, hostId, status, turnOrderDraft }) {
   const result = await query(
     `
       UPDATE rooms
       SET
-        host_id = $2,
-        status = $3
+        host_id = COALESCE($2, host_id),
+        status = COALESCE($3, status),
+        turn_order_draft_json = COALESCE($4::jsonb, turn_order_draft_json)
       WHERE id = $1
-      RETURNING id, code, host_id, status, created_at;
+      RETURNING id, code, host_id, status, turn_order_draft_json, created_at;
     `,
-    [roomId, hostId, status]
+    [roomId, hostId ?? null, status ?? null, turnOrderDraft === undefined ? null : JSON.stringify(turnOrderDraft)]
   );
 
   return result.rows[0] || null;
@@ -32,7 +33,7 @@ async function updateRoomState({ roomId, hostId, status }) {
 async function findRoomByCode(code) {
   const result = await query(
     `
-      SELECT id, code, host_id, status, created_at
+      SELECT id, code, host_id, status, turn_order_draft_json, created_at
       FROM rooms
       WHERE code = $1
       LIMIT 1;
@@ -46,7 +47,7 @@ async function findRoomByCode(code) {
 async function findRoomById(roomId) {
   const result = await query(
     `
-      SELECT id, code, host_id, status, created_at
+      SELECT id, code, host_id, status, turn_order_draft_json, created_at
       FROM rooms
       WHERE id = $1
       LIMIT 1;
@@ -60,7 +61,7 @@ async function findRoomById(roomId) {
 async function findActiveRoomForUser(userId) {
   const result = await query(
     `
-      SELECT r.id, r.code, r.host_id, r.status, r.created_at
+      SELECT r.id, r.code, r.host_id, r.status, r.turn_order_draft_json, r.created_at
       FROM room_players rp
       INNER JOIN rooms r ON r.id = rp.room_id
       WHERE rp.user_id = $1 AND r.status IN ('lobby', 'in_match')
@@ -76,8 +77,8 @@ async function findActiveRoomForUser(userId) {
 async function addPlayerToRoom({ roomId, userId }) {
   await query(
     `
-      INSERT INTO room_players (room_id, user_id)
-      VALUES ($1, $2)
+      INSERT INTO room_players (room_id, user_id, selected_deck_ids_json)
+      VALUES ($1, $2, '[]'::jsonb)
       ON CONFLICT (room_id, user_id) DO NOTHING;
     `,
     [roomId, userId]
@@ -115,6 +116,7 @@ async function listRoomPlayers(roomId) {
         rp.room_id,
         rp.user_id,
         rp.selected_deck_id,
+        rp.selected_deck_ids_json,
         rp.is_ready,
         rp.turn_order,
         rp.joined_at,
@@ -135,48 +137,68 @@ async function updateRoomPlayerState({
   roomId,
   userId,
   selectedDeckId = null,
+  selectedDeckIds = [],
   isReady = false,
   turnOrder = null,
 }) {
+  const nextSelectedDeckIds = Array.isArray(selectedDeckIds)
+    ? selectedDeckIds.map((value) => Number(value)).filter((value) => Number.isInteger(value) && value > 0)
+    : [];
+  const normalizedSelectedDeckId =
+    Number.isInteger(Number(selectedDeckId)) && Number(selectedDeckId) > 0
+      ? Number(selectedDeckId)
+      : nextSelectedDeckIds[0] || null;
+
   const result = await query(
     `
       UPDATE room_players
       SET
         selected_deck_id = $3,
-        is_ready = $4,
-        turn_order = $5
+        selected_deck_ids_json = $4::jsonb,
+        is_ready = $5,
+        turn_order = $6
       WHERE room_id = $1 AND user_id = $2
-      RETURNING room_id, user_id, selected_deck_id, is_ready, turn_order, joined_at;
+      RETURNING room_id, user_id, selected_deck_id, selected_deck_ids_json, is_ready, turn_order, joined_at;
     `,
-    [roomId, userId, selectedDeckId, isReady, turnOrder]
+    [roomId, userId, normalizedSelectedDeckId, JSON.stringify(nextSelectedDeckIds), isReady, turnOrder]
   );
 
   return result.rows[0] || null;
 }
 
-async function assignRoomPlayerTurnOrders({ roomId, orderedUserIds }) {
-  for (let index = 0; index < orderedUserIds.length; index += 1) {
-    await query(
-      `
-        UPDATE room_players
-        SET turn_order = $3
-        WHERE room_id = $1 AND user_id = $2;
-      `,
-      [roomId, orderedUserIds[index], index + 1]
-    );
-  }
+async function resetRoomPlayersReady(roomId) {
+  await query(
+    `
+      UPDATE room_players
+      SET is_ready = FALSE
+      WHERE room_id = $1;
+    `,
+    [roomId]
+  );
+}
+
+async function clearRoomPlayerTurnOrders(roomId) {
+  await query(
+    `
+      UPDATE room_players
+      SET turn_order = NULL
+      WHERE room_id = $1;
+    `,
+    [roomId]
+  );
 }
 
 module.exports = {
+  addPlayerToRoom,
+  clearRoomPlayerTurnOrders,
   createRoom,
-  updateRoomState,
+  findActiveRoomForUser,
   findRoomByCode,
   findRoomById,
-  findActiveRoomForUser,
-  addPlayerToRoom,
-  removePlayerFromRoom,
   isPlayerInRoom,
   listRoomPlayers,
+  removePlayerFromRoom,
+  resetRoomPlayersReady,
   updateRoomPlayerState,
-  assignRoomPlayerTurnOrders,
+  updateRoomState,
 };
