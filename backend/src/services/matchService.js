@@ -1127,7 +1127,7 @@ async function endTurnForPlayer({ roomId, userId, actingParticipantId, includeSn
   });
 }
 
-async function forfeitMatchByLeavingRoom({ roomId, userId }) {
+async function forfeitMatchByLeavingRoom({ roomId, userId, closeRoom = false }) {
   const match = await findActiveMatchByRoomId(roomId);
   if (!match) {
     return null;
@@ -1154,6 +1154,43 @@ async function forfeitMatchByLeavingRoom({ roomId, userId }) {
   });
 
   const remainingParticipants = [...participantsById.values()].filter((participant) => !participant.is_defeated);
+  if (closeRoom) {
+    const room = await findRoomById(roomId);
+    const winnerParticipant = remainingParticipants.length === 1 ? remainingParticipants[0] : null;
+
+    await updateMatchState({
+      matchId: match.id,
+      status: 'finished',
+      round: match.round,
+      currentTurnPlayerId: null,
+      currentTurnParticipantId: null,
+      winnerUserId: winnerParticipant?.controller_user_id || null,
+      winnerParticipantId: winnerParticipant?.id || null,
+      endedAt: new Date().toISOString(),
+    });
+
+    await updateRoomState({
+      roomId,
+      hostId: room?.host_id || null,
+      status: 'finished',
+      turnOrderDraft: [],
+    });
+
+    await addMatchLog({
+      matchId: match.id,
+      type: 'MATCH_FINISH',
+      message: winnerParticipant
+        ? `${winnerParticipant.display_name} venceu porque o mestre encerrou a sala.`
+        : 'A partida foi encerrada porque o mestre saiu da sala.',
+      payload: {
+        leavingUserId: userId,
+        winnerParticipantId: winnerParticipant?.id || null,
+        closedByMasterLeaving: true,
+      },
+    });
+    return match.id;
+  }
+
   if (remainingParticipants.length === 1) {
     await updateMatchState({
       matchId: match.id,

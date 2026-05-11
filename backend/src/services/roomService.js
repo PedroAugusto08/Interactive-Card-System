@@ -77,16 +77,33 @@ async function leaveRoom({ roomId, userId, requesterUser = null }) {
   }
 
   const activeMasterUserId = resolveRoomMasterUserId({ room, requesterUser });
-  if (activeMasterUserId === userId && ['lobby', 'in_match'].includes(room.status)) {
-    throw new AppError('O mestre nao pode sair enquanto a sala estiver ativa.', 409);
-  }
+  const isMasterLeavingActiveRoom = activeMasterUserId === userId && ['lobby', 'in_match'].includes(room.status);
 
   if (room.status === 'in_match') {
-    await forfeitMatchByLeavingRoom({ roomId, userId });
+    await forfeitMatchByLeavingRoom({
+      roomId,
+      userId,
+      closeRoom: isMasterLeavingActiveRoom,
+    });
     room = await findRoomById(roomId);
   }
 
   await removePlayerFromRoom({ roomId, userId });
+
+  if (isMasterLeavingActiveRoom) {
+    await updateRoomState({
+      roomId,
+      hostId: room.host_id,
+      status: 'finished',
+      turnOrderDraft: [],
+    });
+
+    return {
+      room: null,
+      players: [],
+      lobbyParticipants: [],
+    };
+  }
 
   const remainingPlayers = await listRoomPlayers(roomId);
   if (!remainingPlayers.length) {

@@ -6,6 +6,7 @@ import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
+import { Modal } from '../components/ui/Modal';
 import { deckApi } from '../api/deckApi';
 import { matchApi } from '../api/matchApi';
 import { roomApi } from '../api/roomApi';
@@ -79,6 +80,7 @@ export function RoomLobbyPage() {
   const [copyMessage, setCopyMessage] = useState('');
   const [pendingMasterDeckIds, setPendingMasterDeckIds] = useState([]);
   const [pendingTurnOrder, setPendingTurnOrder] = useState([]);
+  const [isLeaveRoomModalOpen, setIsLeaveRoomModalOpen] = useState(false);
 
   const syncRoomState = useCallback((payload) => {
     setRoomData(payload);
@@ -166,6 +168,13 @@ export function RoomLobbyPage() {
     }
 
     function handleRoomUpdate(payload) {
+      if (payload?.room?.status === 'finished') {
+        clearRoom();
+        setMatchData({ match: null, viewer: null, participantStates: [], logs: [] });
+        setStatusMessage('A sala foi encerrada.');
+        return;
+      }
+
       syncRoomState(payload);
     }
 
@@ -188,7 +197,7 @@ export function RoomLobbyPage() {
       socket.off('match:sync', handleMatchSync);
       socket.off('match:log', handleLog);
     };
-  }, [setMatchData, socket, syncRoomState]);
+  }, [clearRoom, setMatchData, socket, syncRoomState]);
 
   useEffect(() => {
     if (!socket || !currentRoom?.id || !currentRoom?.code || !isSocketConnected) {
@@ -292,14 +301,41 @@ export function RoomLobbyPage() {
     setStatusMessage('');
 
     try {
-      await roomApi.leaveRoom({ roomId: currentRoom.id, token });
+      if (socket && isSocketConnected) {
+        socket.emit('room:leave', { roomId: currentRoom.id });
+      } else {
+        await roomApi.leaveRoom({ roomId: currentRoom.id, token });
+      }
       clearRoom();
-      setStatusMessage('Você saiu da sala atual.');
+      setStatusMessage(
+        isMaster && ['lobby', 'in_match'].includes(currentRoom.status)
+          ? 'VocÃª saiu da sala. A sala foi encerrada para todos os participantes.'
+          : 'VocÃª saiu da sala atual.'
+      );
     } catch (error) {
       setErrorMessage(formatErrorMessage(error));
     } finally {
       setIsLoading(false);
     }
+  }
+
+  function handleRequestLeaveRoom() {
+    if (!currentRoom?.id) {
+      setErrorMessage('NÃ£o existe sala ativa para sair.');
+      return;
+    }
+
+    if (isMaster && ['lobby', 'in_match'].includes(currentRoom.status)) {
+      setIsLeaveRoomModalOpen(true);
+      return;
+    }
+
+    handleLeaveRoom();
+  }
+
+  async function handleConfirmLeaveRoom() {
+    setIsLeaveRoomModalOpen(false);
+    await handleLeaveRoom();
   }
 
   async function handleRefreshPlayers() {
@@ -484,7 +520,7 @@ export function RoomLobbyPage() {
                 Criar sala
               </Button>
 
-              <Button disabled={isLoading || !currentRoom} onClick={handleLeaveRoom} variant="danger">
+              <Button disabled={isLoading || !currentRoom} onClick={handleRequestLeaveRoom} variant="danger">
                 Sair da sala
               </Button>
 
@@ -703,6 +739,21 @@ export function RoomLobbyPage() {
           </Card>
         </div>
       </div>
+
+      <Modal
+        cancelLabel="Cancelar"
+        confirmLabel="Encerrar sala e sair"
+        description="Ao sair como mestre, a sala ativa sera encerrada para todos."
+        isLoading={isLoading}
+        onClose={() => setIsLeaveRoomModalOpen(false)}
+        onConfirm={handleConfirmLeaveRoom}
+        open={isLeaveRoomModalOpen}
+        title="Encerrar sala?"
+      >
+        <p className="muted-text">
+          Todos os participantes perderao acesso a esta sala assim que voce sair. Use essa opcao apenas quando quiser encerrar a sessao atual.
+        </p>
+      </Modal>
     </section>
   );
 }
