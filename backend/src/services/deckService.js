@@ -18,6 +18,7 @@ const {
   getCardById,
   mapImoCardRecordToCatalogCard,
 } = require('../config/cardsCatalog');
+const { canUserManageMultipleDecks } = require('./masterOverride');
 
 async function getDeckCatalog(ownerId) {
   const imoCards = await listImoCardsByOwner(ownerId);
@@ -55,8 +56,9 @@ async function listImoCardsForUser(ownerId) {
   return cards.map(mapImoCardRecordToCatalogCard);
 }
 
-async function createDeckForUser({ ownerId, name, description, cards }) {
+async function createDeckForUser({ ownerId, name, description, cards, requesterUser = null }) {
   const normalizedCards = await normalizeAndValidateDeckCards({ ownerId, cards });
+  await assertUserCanCreateDeck({ ownerId, requesterUser });
 
   const createdDeck = await createDeck({
     ownerId,
@@ -109,6 +111,17 @@ async function deleteDeckForUser({ deckId, ownerId }) {
 
   const deletedDeck = await deleteDeckById({ deckId, ownerId });
   return attachDeckSummary(deletedDeck, ownerId);
+}
+
+async function assertUserCanCreateDeck({ ownerId, requesterUser = null }) {
+  if (canUserManageMultipleDecks(requesterUser)) {
+    return;
+  }
+
+  const existingDecks = await listDecksByOwner(ownerId);
+  if (existingDecks.length >= 1) {
+    throw new AppError('Jogadores comuns podem ter apenas 1 deck salvo.', 409);
+  }
 }
 
 async function getResolvedDeckForUser({ deckId, ownerId }) {

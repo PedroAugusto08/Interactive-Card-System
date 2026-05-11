@@ -14,6 +14,7 @@ const env = {
     'postgres://postgres:postgres@localhost:5432/acedia_deck_app',
   jwtSecret: process.env.JWT_SECRET || 'dev-secret-change-me',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
+  masterAccountEmail: String(process.env.MASTER_ACCOUNT_EMAIL || '').trim().toLowerCase(),
   devAllowMasterOverrideAs: String(process.env.DEV_ALLOW_MASTER_OVERRIDE_AS || '')
     .split(',')
     .map((value) => value.trim().toLowerCase())

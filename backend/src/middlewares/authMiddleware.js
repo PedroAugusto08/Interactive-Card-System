@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 
 const { env } = require('../config/env');
 const { findUserById } = require('../models/userModel');
+const { buildUserCapabilityFlags } = require('../services/masterOverride');
 
 // Middleware para proteger rotas com JWT.
 async function requireAuth(req, res, next) {
@@ -30,8 +31,11 @@ async function requireAuth(req, res, next) {
     // Salva o usuario no request para uso nas proximas camadas.
     req.user = {
       ...user,
-      devMasterOverride: Boolean(payload.devMasterOverride),
-      isDevMasterOverride: Boolean(payload.devMasterOverride),
+      ...buildUserCapabilityFlags({
+        ...user,
+        devMasterOverride: Boolean(payload.devMasterOverride),
+        isDevMasterOverride: Boolean(payload.devMasterOverride),
+      }),
     };
     return next();
   } catch (error) {

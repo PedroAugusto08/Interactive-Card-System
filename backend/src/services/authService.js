@@ -8,6 +8,7 @@ const {
   findUserByUsername,
 } = require('../models/userModel');
 const { AppError } = require('../utils/AppError');
+const { buildUserCapabilityFlags } = require('./masterOverride');
 
 // Cadastro com validacao de unicidade e hash de senha.
 async function register({ username, email, password }) {
@@ -61,13 +62,22 @@ async function setMasterOverrideForDevelopment({ requesterUser, enabled }) {
 
 // Gera JWT e devolve payload publico do usuario.
 function buildAuthResponse(user, options = {}) {
+  const capabilityFlags = buildUserCapabilityFlags({
+    ...user,
+    ...(options.devMasterOverride
+      ? {
+          devMasterOverride: true,
+          isDevMasterOverride: true,
+        }
+      : {}),
+  });
   const payload = {
     sub: String(user.id),
     username: user.username,
     email: user.email,
   };
 
-  if (options.devMasterOverride) {
+  if (capabilityFlags.devMasterOverride) {
     payload.devMasterOverride = true;
   }
 
@@ -81,12 +91,7 @@ function buildAuthResponse(user, options = {}) {
       id: user.id,
       username: user.username,
       email: user.email,
-      ...(options.devMasterOverride
-        ? {
-            devMasterOverride: true,
-            isDevMasterOverride: true,
-          }
-        : {}),
+      ...capabilityFlags,
     },
   };
 }

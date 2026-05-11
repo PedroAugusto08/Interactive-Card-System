@@ -5,6 +5,7 @@ const { env } = require('../config/env');
 const { findUserById } = require('../models/userModel');
 const roomService = require('../services/roomService');
 const matchService = require('../services/matchService');
+const { buildUserCapabilityFlags } = require('../services/masterOverride');
 
 function createSocketServer(httpServer) {
   const io = new Server(httpServer, {
@@ -42,8 +43,11 @@ function createSocketServer(httpServer) {
 
       socket.data.user = {
         ...user,
-        devMasterOverride: Boolean(payload.devMasterOverride),
-        isDevMasterOverride: Boolean(payload.devMasterOverride),
+        ...buildUserCapabilityFlags({
+          ...user,
+          devMasterOverride: Boolean(payload.devMasterOverride),
+          isDevMasterOverride: Boolean(payload.devMasterOverride),
+        }),
       };
       return next();
     } catch (error) {

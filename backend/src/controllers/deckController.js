@@ -72,6 +72,7 @@ async function createDeck(req, res) {
     name: payload.name,
     description: payload.description,
     cards: payload.cards,
+    requesterUser: req.user,
   });
 
   return res.status(201).json({ deck });

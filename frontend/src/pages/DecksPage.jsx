@@ -713,6 +713,7 @@ function DeckCardControl({ card, quantity, onDecrease, onIncrease, onPreview }) 
 
 export function DecksPage() {
   const token = useAuthStore((state) => state.token);
+  const user = useAuthStore((state) => state.user);
   const rules = useDeckStore((state) => state.rules);
   const catalog = useDeckStore((state) => state.catalog);
   const decks = useDeckStore((state) => state.decks);
@@ -747,6 +748,12 @@ export function DecksPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const canManageMultipleDecks = Boolean(
+    user?.canManageMultipleDecks ||
+      user?.isMasterAccount ||
+      user?.isDevMasterOverride ||
+      user?.devMasterOverride
+  );
 
   const catalogMap = useMemo(() => new Map(catalog.map((card) => [card.id, card])), [catalog]);
   const draftSummary = useMemo(
@@ -773,7 +780,10 @@ export function DecksPage() {
     () => (previewCard ? describeResolvedAutomation(previewCard, catalogMap) : []),
     [catalogMap, previewCard]
   );
-  const userDeck = useMemo(() => decks[0] || null, [decks]);
+  const activeDeck = useMemo(
+    () => decks.find((deck) => deck.id === selectedDeckId) || null,
+    [decks, selectedDeckId]
+  );
   const selectedCards = useMemo(() => {
     return Object.entries(draftQuantities)
       .map(([cardId, quantity]) => {
@@ -866,7 +876,10 @@ export function DecksPage() {
         });
 
         const deckState = useDeckStore.getState();
-        const existingDeck = decksResponse.decks?.[0] || null;
+        const existingDeck =
+          decksResponse.decks.find((deck) => deck.id === deckState.selectedDeckId) ||
+          decksResponse.decks?.[0] ||
+          null;
         if (!deckState.hasInitializedDraft) {
           if (existingDeck) {
             setDraftState({
@@ -933,12 +946,16 @@ export function DecksPage() {
     });
   }
 
-  function resetForm() {
+  function resetForm({ keepSelectedDeckId = false } = {}) {
     setDraftState({
-      selectedDeckId: null,
+      selectedDeckId: keepSelectedDeckId ? activeDeck?.id || null : null,
       name: '',
       draftQuantities: buildEmptyDraft(catalog),
     });
+  }
+
+  function startNewDeckDraft() {
+    resetForm({ keepSelectedDeckId: false });
   }
 
   function handleQuantityChange(cardId, rawValue) {
@@ -1115,7 +1132,7 @@ export function DecksPage() {
       };
 
       let savedDeck;
-      const deckToPersist = userDeck?.id || selectedDeckId;
+      const deckToPersist = selectedDeckId;
       if (deckToPersist) {
         const response = await deckApi.updateDeck({
           token,
@@ -1168,7 +1185,12 @@ export function DecksPage() {
       });
 
       if (selectedDeckId === deck.id) {
-        resetForm();
+        const nextDeck = listResponse.decks[0] || null;
+        if (nextDeck) {
+          applyDeckToForm(nextDeck);
+        } else {
+          resetForm();
+        }
       }
 
       setStatusMessage('Deck removido com sucesso.');
@@ -1200,11 +1222,21 @@ export function DecksPage() {
 
           <div className="deck-name-bar__actions">
             <Button disabled={isLoading} loading={isSubmitting} type="submit">
-              {userDeck ? 'Salvar' : 'Criar deck'}
+              {activeDeck ? 'Salvar' : 'Criar deck'}
             </Button>
+            {canManageMultipleDecks ? (
+              <Button
+                disabled={isSubmitting || isLoading}
+                onClick={startNewDeckDraft}
+                type="button"
+                variant="secondary"
+              >
+                Novo deck
+              </Button>
+            ) : null}
             <Button
               disabled={isSubmitting || isLoading}
-              onClick={resetForm}
+              onClick={() => resetForm({ keepSelectedDeckId: Boolean(activeDeck) })}
               type="button"
               variant="secondary"
             >
@@ -1513,10 +1545,47 @@ export function DecksPage() {
             title="Meu Deck"
           >
             <div className="deck-side-panel__content">
+              <div className="stack-gap" style={{ gap: '12px' }}>
+                <div className="deck-side-panel__list-head">
+                  <span className="status-label">
+                    {canManageMultipleDecks ? 'Decks salvos do mestre' : 'Deck salvo do jogador'}
+                  </span>
+                  <Badge tone="secondary">{decks.length}</Badge>
+                </div>
+
+                {decks.length ? (
+                  <div className="row-wrap" style={{ gap: '8px' }}>
+                    {decks.map((deck) => (
+                      <Button
+                        key={`saved-deck-${deck.id}`}
+                        onClick={() => applyDeckToForm(deck)}
+                        size="sm"
+                        type="button"
+                        variant={deck.id === activeDeck?.id ? 'primary' : 'secondary'}
+                      >
+                        {deck.name}
+                      </Button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="empty-state">
+                    {canManageMultipleDecks
+                      ? 'Nenhum deck salvo ainda. Crie o primeiro deck do mestre.'
+                      : 'Nenhum deck salvo ainda. O jogador pode manter apenas 1 deck.'}
+                  </div>
+                )}
+
+                {!canManageMultipleDecks ? (
+                  <p className="muted-text compact">
+                    Jogadores comuns podem manter apenas 1 deck salvo.
+                  </p>
+                ) : null}
+              </div>
+
               <div className="deck-side-panel__hero">
                 <div className="stack-gap" style={{ gap: '8px' }}>
                   <div className="deck-side-panel__title-row">
-                    <h3>{name || userDeck?.name || 'Novo deck'}</h3>
+                    <h3>{name || activeDeck?.name || 'Novo deck'}</h3>
                     {deckEvaluation ? (
                       <Badge tone={STATUS_BADGE_TONE[deckEvaluation.status]}>
                         {deckEvaluation.title}
@@ -1614,16 +1683,16 @@ export function DecksPage() {
 
               <div className="deck-side-panel__footer">
                 <Button
-                  disabled={!userDeck || isSubmitting}
-                  onClick={() => applyDeckToForm(userDeck)}
+                  disabled={!activeDeck || isSubmitting}
+                  onClick={() => applyDeckToForm(activeDeck)}
                   size="sm"
                   variant="secondary"
                 >
                   Recarregar salvo
                 </Button>
                 <Button
-                  disabled={!userDeck || isSubmitting}
-                  onClick={() => handleDeleteDeck(userDeck)}
+                  disabled={!activeDeck || isSubmitting}
+                  onClick={() => handleDeleteDeck(activeDeck)}
                   size="sm"
                   variant="danger"
                 >
