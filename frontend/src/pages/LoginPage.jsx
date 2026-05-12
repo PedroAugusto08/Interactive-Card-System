@@ -38,7 +38,6 @@ export function LoginPage() {
     <section className="auth-wrap">
       <Card className="auth-card" glow>
         <form className="auth-card-inner" onSubmit={handleSubmit}>
-          <span className="auth-eyebrow">Portal Arcano</span>
           <h1>Entrar</h1>
           <p className="muted-text">Acesse sua conta para entrar nas salas do RPG.</p>
 

@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react';
 import { ActionLogItem } from '../components/system/ActionLogItem';
 import { CardItem } from '../components/system/CardItem';
 import { PlayerHand } from '../components/system/PlayerHand';
-import { TurnBanner } from '../components/system/TurnBanner';
 import { ZoneContainer } from '../components/system/ZoneContainer';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
@@ -665,77 +664,83 @@ export function MatchPage() {
         </div>
       </div>
 
-      <TurnBanner
-        isCurrentUser={isViewerTurn}
-        playerName={activeTurnParticipant?.displayName || 'Participante'}
-      />
-
       {syncMessage ? <p className="success-text">{syncMessage}</p> : null}
       {localError ? <p className="error-text">{localError}</p> : null}
 
       <div className="grid-2">
         <div className="stack-gap">
           <Card
-            actions={<Badge tone="accent">{participantStates.length} participantes</Badge>}
-            title={viewer?.role === 'master' ? 'Criaturas e jogadores' : 'Participantes'}
-          >
-            {controlledParticipants.length > 1 ? (
-              <div className="row-wrap" style={{ marginBottom: '16px' }}>
-                {controlledParticipants.map((participant) => (
-                  <Button
-                    key={`focus-participant-${participant.participantId}`}
-                    onClick={() => setManualFocusedParticipantId(participant.participantId)}
-                    type="button"
-                    variant={focusedParticipantId === participant.participantId ? 'primary' : 'secondary'}
-                  >
-                    {participant.displayName}
-                  </Button>
-                ))}
+            actions={
+              <div className="row-wrap">
+                <Badge tone={isViewerTurn ? 'success' : 'secondary'}>
+                  Turno atual: {activeTurnParticipant?.displayName || 'Participante'}
+                </Badge>
+                <Badge tone="accent">{participantStates.length} participantes</Badge>
               </div>
-            ) : null}
-
+            }
+            title="Iniciativa"
+          >
             <div className="stack-gap" style={{ gap: '12px' }}>
               {participantStates.map((participant) => (
-                <div
+                <button
+                  aria-disabled={!participant.isControlledByViewer}
+                  aria-pressed={focusedParticipantId === participant.participantId}
                   key={`participant-state-${participant.participantId}`}
+                  onClick={() =>
+                    participant.isControlledByViewer
+                      ? setManualFocusedParticipantId(participant.participantId)
+                      : undefined
+                  }
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    gap: '12px',
-                    padding: '14px',
-                    border: '1px solid rgba(255,255,255,0.12)',
-                    borderRadius: '18px',
+                    gap: '10px',
+                    padding: '12px 14px',
+                    border: participant.isCurrentTurn
+                      ? '1px solid rgba(99,102,241,0.4)'
+                      : '1px solid rgba(255,255,255,0.12)',
+                    borderRadius: '16px',
                     background:
-                      participant.participantId === focusedParticipant?.participantId
-                        ? 'rgba(255,255,255,0.06)'
-                        : 'transparent',
+                      participant.isCurrentTurn
+                        ? 'linear-gradient(135deg, rgba(99,102,241,0.18), rgba(56,189,248,0.08))'
+                        : participant.participantId === focusedParticipant?.participantId
+                          ? 'rgba(255,255,255,0.06)'
+                          : 'transparent',
+                    width: '100%',
+                    textAlign: 'left',
+                    cursor: participant.isControlledByViewer ? 'pointer' : 'default',
+                    boxShadow:
+                      participant.isCurrentTurn
+                        ? '0 10px 24px rgba(59,130,246,0.12), 0 0 0 1px rgba(99,102,241,0.12), inset 0 1px 0 rgba(255,255,255,0.05)'
+                        : 'none',
+                    opacity: participant.isDefeated ? 0.72 : 1,
                   }}
                 >
-                  <div className="stack-gap" style={{ gap: '4px' }}>
+                  <div className="stack-gap" style={{ gap: '3px' }}>
                     <div className="row-wrap">
                       <strong>{participant.displayName}</strong>
                       {participant.isControlledByViewer ? <Badge tone="primary">Seu controle</Badge> : null}
                       {participant.participantType === 'master-creature' ? <Badge tone="accent">Criatura</Badge> : null}
-                      {participant.isCurrentTurn ? <Badge tone="accent">Turno</Badge> : null}
                       {participant.isDefeated ? <Badge tone="danger">Derrotado</Badge> : null}
                     </div>
                     <span className="muted-text compact">
-                      Vida {participant.health} • Imo {participant.imo}/{participant.maxImo} • Mao {participant.zones.handCount}
+                      {participant.isCurrentTurn
+                        ? 'Agindo agora'
+                        : participant.isControlledByViewer
+                          ? 'Disponivel para foco'
+                          : participant.participantType === 'master-creature'
+                            ? 'Criatura na rodada'
+                            : 'Jogador na rodada'}
                     </span>
                   </div>
 
                   {participant.isControlledByViewer ? (
-                    <Button
-                      onClick={() => setManualFocusedParticipantId(participant.participantId)}
-                      size="sm"
-                      type="button"
-                      variant={focusedParticipantId === participant.participantId ? 'primary' : 'secondary'}
-                    >
-                      Focar
-                    </Button>
-                  ) : null}
-                </div>
+                    <Badge tone={focusedParticipantId === participant.participantId ? 'primary' : 'secondary'}>
+                      {focusedParticipantId === participant.participantId ? 'Em foco' : 'Selecionar'}
+                    </Badge>
+                  ) : participant.isCurrentTurn ? <Badge tone="accent">Na vez</Badge> : null}
+                </button>
               ))}
             </div>
           </Card>
@@ -766,6 +771,28 @@ export function MatchPage() {
           >
             {focusedParticipant ? (
               <div className="stack-gap" style={{ gap: '18px' }}>
+                {controlledParticipants.length > 1 ? (
+                  <div className="stack-gap" style={{ gap: '10px' }}>
+                    <div className="row-wrap">
+                      <strong>Alternar criatura em foco</strong>
+                      <Badge tone="secondary">{controlledParticipants.length} sob seu controle</Badge>
+                    </div>
+                    <div className="row-wrap">
+                      {controlledParticipants.map((participant) => (
+                        <Button
+                          key={`focus-panel-participant-${participant.participantId}`}
+                          onClick={() => setManualFocusedParticipantId(participant.participantId)}
+                          size="sm"
+                          type="button"
+                          variant={focusedParticipantId === participant.participantId ? 'primary' : 'secondary'}
+                        >
+                          {participant.displayName}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
                 <div className="row-wrap">
                   <Badge tone="primary">Vida {focusedParticipant.health}</Badge>
                   <Badge tone="accent">Imo {focusedParticipant.imo}/{focusedParticipant.maxImo}</Badge>
@@ -840,17 +867,23 @@ export function MatchPage() {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    gap: '12px',
-                    padding: '12px',
+                    gap: '10px',
+                    padding: '10px 12px',
                     border: '1px solid rgba(255,255,255,0.12)',
-                    borderRadius: '16px',
+                    borderRadius: '14px',
+                    background: player.is_master ? 'rgba(255,255,255,0.03)' : 'transparent',
                   }}
                 >
                   <div className="stack-gap" style={{ gap: '2px' }}>
                     <strong>{player.username}</strong>
-                    <span className="muted-text compact">
-                      {player.is_master ? 'Mestre' : 'Jogador'} • {player.is_ready ? 'Pronto' : 'Nao pronto'}
-                    </span>
+                    <div className="row-wrap">
+                      <Badge tone={player.is_master ? 'accent' : 'secondary'}>
+                        {player.is_master ? 'Mestre' : 'Jogador'}
+                      </Badge>
+                      <Badge tone={player.is_ready ? 'success' : 'secondary'}>
+                        {player.is_ready ? 'Pronto' : 'Nao pronto'}
+                      </Badge>
+                    </div>
                   </div>
                   {player.user_id === currentRoom?.host_id ? <Badge tone="accent">Host</Badge> : null}
                 </div>
@@ -1455,3 +1488,4 @@ export function MatchPage() {
     </section>
   );
 }
+
