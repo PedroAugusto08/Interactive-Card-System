@@ -1,7 +1,10 @@
+const path = require('path');
 const dotenv = require('dotenv');
 
-// Carrega variaveis do arquivo .env para process.env.
-dotenv.config();
+// Carrega variaveis do backend/.env de forma explicita, independente do cwd.
+dotenv.config({
+  path: path.resolve(__dirname, '../../.env'),
+});
 
 // Config central da aplicacao com fallback para desenvolvimento local.
 const env = {
