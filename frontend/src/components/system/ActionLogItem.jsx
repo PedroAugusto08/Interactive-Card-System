@@ -3,7 +3,7 @@ import { Badge } from '../ui/Badge';
 const LOG_META_BY_TYPE = {
   MATCH_START: {
     tone: 'success',
-    label: 'Inicio da partida',
+    label: 'Início da partida',
     icon: '🎲',
   },
   MATCH_DRAW: {
@@ -28,12 +28,12 @@ const LOG_META_BY_TYPE = {
   },
   MATCH_ATTACK_RESOLUTION: {
     tone: 'primary',
-    label: 'Resolucao',
+    label: 'Resolução',
     icon: '🛡️',
   },
   MATCH_REVEAL_TOP_DECK: {
     tone: 'accent',
-    label: 'Revelacao',
+    label: 'Revelação',
     icon: '👁️',
   },
   MATCH_END_TURN: {
@@ -48,7 +48,7 @@ const LOG_META_BY_TYPE = {
   },
   MATCH_FORFEIT: {
     tone: 'danger',
-    label: 'Saida da partida',
+    label: 'Saída da partida',
     icon: '🚪',
   },
   ROOM_JOIN: {
@@ -63,17 +63,17 @@ const LOG_META_BY_TYPE = {
   },
   ROOM_LEAVE: {
     tone: 'secondary',
-    label: 'Saida',
+    label: 'Saída',
     icon: '🔹',
   },
   ROOM_LEAVE_HTTP: {
     tone: 'secondary',
-    label: 'Saida',
+    label: 'Saída',
     icon: '🔹',
   },
   ROOM_LEAVE_SOCKET: {
     tone: 'secondary',
-    label: 'Saida',
+    label: 'Saída',
     icon: '🔹',
   },
   ERROR: {
@@ -83,7 +83,7 @@ const LOG_META_BY_TYPE = {
   },
   INFO: {
     tone: 'primary',
-    label: 'Atualizacao',
+    label: 'Atualização',
     icon: '✦',
   },
 };
@@ -111,7 +111,10 @@ export function ActionLogItem({ item }) {
     <article className={['action-log-item', `action-log-item--${meta.tone}`].join(' ')}>
       <div className="action-log-item__top">
         <div className="action-log-item__meta">
-          <span className={['action-log-item__icon', `action-log-item__icon--${meta.tone}`].join(' ')} aria-hidden="true">
+          <span
+            aria-hidden="true"
+            className={['action-log-item__icon', `action-log-item__icon--${meta.tone}`].join(' ')}
+          >
             <span className="action-log-item__emoji">{meta.icon}</span>
           </span>
 

@@ -6,7 +6,7 @@ import { CardItem } from './CardItem';
 function getCardStateLabel({ canCardPlay, canCardDiscard }) {
   if (canCardPlay) {
     return {
-      text: 'Jogavel agora',
+      text: 'Jogável agora',
       tone: 'success',
     };
   }
@@ -18,10 +18,7 @@ function getCardStateLabel({ canCardPlay, canCardDiscard }) {
     };
   }
 
-  return {
-    text: 'Aguardando janela',
-    tone: 'secondary',
-  };
+  return null;
 }
 
 export function PlayerHand({
@@ -34,18 +31,20 @@ export function PlayerHand({
   onPlayCard,
   onDiscardCard,
   helperText = '',
+  helperTone = 'secondary',
+  helperBadgeText = '',
   playDisabledReason = '',
   discardDisabledReason = '',
 }) {
   if (!cards.length) {
-    return <div className="empty-state">Sem cartas na mao no momento.</div>;
+    return <div className="empty-state">Sem cartas na mão no momento.</div>;
   }
 
   return (
     <div className="player-hand-panel">
       {helperText ? (
         <div className="player-hand-panel__status">
-          <Badge tone={canPlay ? 'success' : 'secondary'}>{canPlay ? 'Janela aberta' : 'Janela fechada'}</Badge>
+          {helperBadgeText ? <Badge tone={helperTone}>{helperBadgeText}</Badge> : null}
           <span className="muted-text compact">{helperText}</span>
         </div>
       ) : null}
@@ -77,16 +76,18 @@ export function PlayerHand({
                 description={card.effect}
                 footer={
                   <div className="player-hand__footer">
-                    <div className="player-hand__footer-top">
-                      <Badge tone={cardState.tone}>{cardState.text}</Badge>
-                    </div>
+                    {cardState ? (
+                      <div className="player-hand__footer-top">
+                        <Badge tone={cardState.tone}>{cardState.text}</Badge>
+                      </div>
+                    ) : null}
 
                     <div className="row-wrap">
                       <Button
                         disabled={!canPlay || isSubmitting}
                         onClick={() => onPlayCard?.(card.instanceId)}
                         size="sm"
-                        title={!canCardPlay ? playDisabledReason || 'Essa acao nao esta disponivel agora.' : 'Jogar carta'}
+                        title={!canCardPlay ? playDisabledReason || 'Essa ação não está disponível agora.' : 'Jogar carta'}
                       >
                         Jogar
                       </Button>
@@ -99,8 +100,8 @@ export function PlayerHand({
                           !canCardDiscard
                             ? discardDisabledReason ||
                               (card.canDiscard === false
-                                ? 'Essa carta nao pode ser descartada agora.'
-                                : 'Essa acao nao esta disponivel agora.')
+                                ? 'Essa carta não pode ser descartada agora.'
+                                : 'Essa ação não está disponível agora.')
                             : 'Descartar carta'
                         }
                         variant="secondary"

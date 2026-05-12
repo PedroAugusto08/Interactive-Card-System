@@ -134,7 +134,7 @@ function formatNaturalList(items) {
 
 function buildActionReason(action, { focusedParticipant, availableActions, isSubmitting }) {
   if (isSubmitting) {
-    return 'Aguarde a acao atual terminar.';
+    return 'Aguarde a ação atual terminar.';
   }
 
   if (!focusedParticipant) {
@@ -146,26 +146,26 @@ function buildActionReason(action, { focusedParticipant, availableActions, isSub
   }
 
   if (!focusedParticipant.isCurrentTurn) {
-    return 'Voce so pode agir no turno do participante em foco.';
+    return 'Você só pode agir no turno do participante em foco.';
   }
 
   if (action === 'drawCard') {
-    return 'Essa compra nao esta disponivel agora.';
+    return 'Essa compra não está disponível agora.';
   }
 
   if (action === 'endTurn') {
-    return 'Essa acao ainda nao esta disponivel agora.';
+    return 'Essa ação ainda não está disponível agora.';
   }
 
   if (action === 'playCard') {
-    return 'Voce ainda nao pode jogar cartas nessa janela.';
+    return 'Você ainda não pode jogar cartas agora.';
   }
 
   if (action === 'discardCard') {
-    return 'Voce ainda nao pode descartar cartas nessa janela.';
+    return 'Você ainda não pode descartar cartas agora.';
   }
 
-  return 'Essa acao nao esta disponivel agora.';
+  return 'Essa ação não está disponível agora.';
 }
 
 function buildContextBarState({
@@ -181,7 +181,7 @@ function buildContextBarState({
       tone: 'danger',
       eyebrow: 'Resposta de ataque pendente',
       title: `${combatState.attackerDisplayName} atacou ${combatState.defenderDisplayName}.`,
-      description: 'Use uma Reacao agora ou siga sem responder.',
+      description: 'Use uma Reação agora ou siga sem responder.',
       badge: '⚔️ Defesa',
     };
   }
@@ -190,7 +190,7 @@ function buildContextBarState({
     return {
       tone: 'accent',
       eyebrow: 'Teste de defesa',
-      title: 'Resolva o teste fisico para liberar sua resposta.',
+      title: 'Resolva o teste físico para liberar sua resposta.',
       description: 'Se superar o ataque, a mesa libera uma carta em resposta.',
       badge: '🛡️ Em resolucao',
     };
@@ -200,7 +200,7 @@ function buildContextBarState({
     return {
       tone: 'success',
       eyebrow: 'Resposta liberada',
-      title: 'Voce pode jogar ou descartar uma carta agora.',
+      title: 'Você pode jogar ou descartar uma carta agora.',
       description: 'Escolha a melhor resposta antes da rodada continuar.',
       badge: '✨ Janela aberta',
     };
@@ -210,7 +210,7 @@ function buildContextBarState({
     return {
       tone: 'secondary',
       eyebrow: 'Sem foco',
-      title: 'Nenhum participante sob seu controle esta em foco.',
+      title: 'Nenhum participante sob seu controle está em foco.',
       description: 'Selecione uma criatura para acompanhar a rodada.',
       badge: '🧿 Foco',
     };
@@ -225,10 +225,10 @@ function buildContextBarState({
     return {
       tone: 'success',
       eyebrow: 'Seu turno',
-      title: `${focusedParticipant.displayName} esta na vez.`,
+      title: `${focusedParticipant.displayName} está na vez.`,
       description: actionCount
-        ? `Voce pode ${formatNaturalList(actionLabels)}.`
-        : 'Nenhuma acao esta disponivel nesse momento.',
+        ? `Você pode ${formatNaturalList(actionLabels)}.`
+        : 'Nenhuma ação está disponível nesse momento.',
       badge: `${actionCount} acoes disponiveis`,
     };
   }
@@ -236,9 +236,9 @@ function buildContextBarState({
   if (currentTurnIsControlled && activeTurnParticipant) {
     return {
       tone: 'primary',
-      eyebrow: 'Sua mesa esta agindo',
-      title: `${activeTurnParticipant.displayName} esta na vez agora.`,
-      description: 'Troque o foco para a criatura ativa se quiser acompanhar as acoes dela.',
+      eyebrow: 'Sua mesa está agindo',
+      title: `${activeTurnParticipant.displayName} está na vez agora.`,
+      description: 'Troque o foco para a criatura ativa se quiser acompanhar as ações dela.',
       badge: '🧿 Trocar foco',
     };
   }
@@ -247,7 +247,7 @@ function buildContextBarState({
     tone: 'secondary',
     eyebrow: 'Aguardando rodada',
     title: `Aguardando ${activeTurnParticipant?.displayName || 'outro participante'} agir...`,
-    description: 'Suas cartas ficam disponiveis quando um participante sob seu controle entrar na vez.',
+    description: 'Suas cartas ficam disponíveis quando um participante sob seu controle entrar na vez.',
     badge: '⌛ Em espera',
   };
 }
@@ -445,6 +445,26 @@ export function MatchPage() {
     isCurrentUserCombatDefender,
     controlledParticipantIds,
   });
+  const handActionsAvailable =
+    availableActions.includes('playCard') || availableActions.includes('discardCard');
+  const handHelperBadgeText = handActionsAvailable ? 'Ações liberadas' : 'Ações indisponíveis';
+  const handHelperTone = handActionsAvailable ? 'success' : 'secondary';
+  const handHelperText = handActionsAvailable
+    ? contextBarState.description
+    : focusedParticipant?.isCurrentTurn
+      ? 'Sem ações disponíveis agora.'
+      : 'Ações indisponíveis enquanto esta criatura não estiver na vez.';
+  const contextBarSummaryParts = [contextBarState.title];
+
+  if (focusedParticipant && activeTurnParticipant?.participantId !== focusedParticipant.participantId) {
+    contextBarSummaryParts.push(`Foco atual: ${focusedParticipant.displayName}`);
+  }
+
+  if (contextBarState.description) {
+    contextBarSummaryParts.push(contextBarState.description);
+  }
+
+  const contextBarSummary = contextBarSummaryParts.join(' • ');
 
   async function handleLeaveRoom() {
     if (!currentRoom?.id) {
@@ -765,17 +785,17 @@ export function MatchPage() {
     }
 
     if (requiresExileSelection && !pendingCardAction.selectedExileCardId) {
-      setLocalError('Selecione uma carta do seu exilio.');
+      setLocalError('Selecione uma carta do seu exílio.');
       return;
     }
 
     if (requiresOwnHandSelection && !pendingCardAction.selectedOwnHandCardId) {
-      setLocalError('Selecione uma carta da sua mao para passar.');
+      setLocalError('Selecione uma carta da sua mão para passar.');
       return;
     }
 
     if (requiresTargetHandSelection && !pendingCardAction.selectedTargetHandCardId) {
-      setLocalError('Selecione uma carta da mao do alvo.');
+      setLocalError('Selecione uma carta da mão do alvo.');
       return;
     }
 
@@ -785,17 +805,17 @@ export function MatchPage() {
     }
 
     if (requiresPairedExileSelection && !pendingCardAction.pairedSelectedExileCardId) {
-      setLocalError('Selecione uma carta do exilio para a carta jogada junto.');
+      setLocalError('Selecione uma carta do exílio para a carta jogada junto.');
       return;
     }
 
     if (requiresPairedOwnHandSelection && !pendingCardAction.pairedSelectedOwnHandCardId) {
-      setLocalError('Selecione uma carta da sua mao para a carta jogada junto.');
+      setLocalError('Selecione uma carta da sua mão para a carta jogada junto.');
       return;
     }
 
     if (requiresPairedTargetHandSelection && !pendingCardAction.pairedSelectedTargetHandCardId) {
-      setLocalError('Selecione uma carta da mao do alvo da carta jogada junto.');
+      setLocalError('Selecione uma carta da mão do alvo da carta jogada junto.');
       return;
     }
 
@@ -850,7 +870,7 @@ export function MatchPage() {
       <div aria-live="polite" className="match-toast-layer">
         {syncMessage ? (
           <div className="match-toast">
-            <Badge tone="success">Atualizacao</Badge>
+            <Badge tone="success">Atualização</Badge>
             <span>{syncMessage}</span>
           </div>
         ) : null}
@@ -858,7 +878,7 @@ export function MatchPage() {
       {localError ? <p className="error-text">{localError}</p> : null}
 
       <div className="grid-2">
-        <div className="stack-gap">
+        <div className="stack-gap match-sidebar-column">
           <Card
             className="match-initiative-card"
             actions={
@@ -871,46 +891,30 @@ export function MatchPage() {
             }
             title="Iniciativa"
           >
-            <div className="stack-gap" style={{ gap: '12px' }}>
+            <div className="stack-gap initiative-list">
               {participantStates.map((participant) => (
                 <button
                   aria-disabled={!participant.isControlledByViewer}
                   aria-pressed={focusedParticipantId === participant.participantId}
+                  className={[
+                    'initiative-item',
+                    participant.isCurrentTurn ? 'initiative-item--active' : '',
+                    focusedParticipantId === participant.participantId ? 'initiative-item--focused' : '',
+                    participant.isDefeated ? 'initiative-item--disabled' : '',
+                    participant.isControlledByViewer ? 'initiative-item--owned' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
                   key={`participant-state-${participant.participantId}`}
                   onClick={() =>
                     participant.isControlledByViewer
                       ? setManualFocusedParticipantId(participant.participantId)
                       : undefined
                   }
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '10px',
-                    padding: '12px 14px',
-                    border: participant.isCurrentTurn
-                      ? '1px solid rgba(99,102,241,0.4)'
-                      : '1px solid rgba(255,255,255,0.12)',
-                    borderRadius: '16px',
-                    background:
-                      participant.isCurrentTurn
-                        ? 'linear-gradient(135deg, rgba(99,102,241,0.18), rgba(56,189,248,0.08))'
-                        : participant.participantId === focusedParticipant?.participantId
-                          ? 'rgba(255,255,255,0.06)'
-                          : 'transparent',
-                    width: '100%',
-                    textAlign: 'left',
-                    cursor: participant.isControlledByViewer ? 'pointer' : 'default',
-                    boxShadow:
-                      participant.isCurrentTurn
-                        ? '0 10px 24px rgba(59,130,246,0.12), 0 0 0 1px rgba(99,102,241,0.12), inset 0 1px 0 rgba(255,255,255,0.05)'
-                        : 'none',
-                    opacity: participant.isDefeated ? 0.72 : 1,
-                  }}
                   type="button"
                 >
-                  <div className="stack-gap" style={{ gap: '3px' }}>
-                    <div className="row-wrap">
+                  <div className="stack-gap initiative-item__main">
+                    <div className="row-wrap initiative-item__head">
                       <strong>{participant.displayName}</strong>
                       {participant.isControlledByViewer ? <Badge tone="primary">Seu controle</Badge> : null}
                       {participant.participantType === 'master-creature' ? <Badge tone="accent">Criatura</Badge> : null}
@@ -920,7 +924,7 @@ export function MatchPage() {
                       {participant.isCurrentTurn
                         ? 'Agindo agora'
                         : participant.isControlledByViewer
-                          ? 'Disponivel para foco'
+                          ? 'Disponível para foco'
                           : participant.participantType === 'master-creature'
                             ? 'Criatura na rodada'
                             : 'Jogador na rodada'}
@@ -937,7 +941,7 @@ export function MatchPage() {
             </div>
           </Card>
 
-          <Card className="match-log-card" title="Historico da mesa">
+          <Card className="match-log-card" title="Histórico da mesa">
             {logs.length ? (
               <div className="stack-gap" style={{ gap: '10px' }}>
                 {logs.map((item) => (
@@ -945,12 +949,12 @@ export function MatchPage() {
                 ))}
               </div>
             ) : (
-              <div className="empty-state">Ainda nao ha eventos registrados.</div>
+              <div className="empty-state">Ainda não há eventos registrados.</div>
             )}
           </Card>
         </div>
 
-        <div className="stack-gap">
+        <div className="stack-gap match-main-column">
           <Card
             className="match-focus-card"
             actions={
@@ -995,8 +999,7 @@ export function MatchPage() {
                 <div className={['match-context-bar', `match-context-bar--${contextBarState.tone}`].join(' ')}>
                   <div className="match-context-bar__copy">
                     <span className="match-context-bar__eyebrow">{contextBarState.eyebrow}</span>
-                    <strong>{contextBarState.title}</strong>
-                    <span className="muted-text compact">{contextBarState.description}</span>
+                    <strong className="match-context-bar__summary">{contextBarSummary}</strong>
                   </div>
                   <Badge tone={contextBarState.tone}>{contextBarState.badge}</Badge>
                 </div>
@@ -1012,7 +1015,7 @@ export function MatchPage() {
                     description="Cartas removidas"
                     onClick={() => setIsExileModalOpen(true)}
                     previewCards={exileCards}
-                    title="Exilio"
+                    title="Exílio"
                     tone="accent"
                   />
                 </div>
@@ -1043,23 +1046,25 @@ export function MatchPage() {
 
                   {!availableActions.includes('drawCard') || !availableActions.includes('endTurn') ? (
                     <span className="muted-text compact">
-                      {drawDisabledReason || endTurnDisabledReason || 'Essa acao nao esta disponivel agora.'}
+                      {drawDisabledReason || endTurnDisabledReason || 'Essa ação não está disponível agora.'}
                     </span>
                   ) : null}
                 </div>
 
-                <div className="stack-gap match-hand-stage" style={{ gap: '12px' }}>
-                  <div className="row-wrap">
-                    <strong>Mao</strong>
+                <div className="stack-gap match-hand-stage">
+                  <div className="row-wrap match-hand-stage__header">
+                    <strong>Mão</strong>
                     <Badge tone="secondary">{focusedZones.handCount} cartas</Badge>
-                    {availableActions.includes('playCard') ? <Badge tone="success">Janela de jogo</Badge> : null}
+                    {availableActions.includes('playCard') ? <Badge tone="success">Ações liberadas</Badge> : null}
                   </div>
                   <PlayerHand
                     canDiscard={availableActions.includes('discardCard')}
                     canPlay={availableActions.includes('playCard')}
                     cards={handCards}
                     discardDisabledReason={discardDisabledReason}
-                    helperText={contextBarState.description}
+                    helperBadgeText={handHelperBadgeText}
+                    helperText={handHelperText}
+                    helperTone={handHelperTone}
                     isSubmitting={isSubmitting}
                     onDiscardCard={(cardId) => openCardAction('match:discardCard', cardId)}
                     onPlayCard={(cardId) => openCardAction('match:playCard', cardId)}
@@ -1086,11 +1091,11 @@ export function MatchPage() {
                 {isRoomUsersCollapsed ? 'Mostrar' : 'Ocultar'}
               </Button>
             }
-            title="Usuarios na sala"
+            title="Usuários na sala"
           >
             <div className="row-wrap">
               <Badge tone="secondary">{players.length} conectados</Badge>
-              <span className="muted-text compact">Presenca da sala durante a partida.</span>
+              <span className="muted-text compact">Presença da sala durante a partida.</span>
             </div>
 
             {!isRoomUsersCollapsed ? (
@@ -1116,7 +1121,7 @@ export function MatchPage() {
                           {player.is_master ? '👑 Mestre' : '🎮 Jogador'}
                         </Badge>
                         <Badge tone={player.is_ready ? 'success' : 'secondary'}>
-                          {player.is_ready ? 'Pronto' : 'Nao pronto'}
+                          {player.is_ready ? 'Pronto' : 'Não pronto'}
                         </Badge>
                       </div>
                     </div>
@@ -1131,18 +1136,18 @@ export function MatchPage() {
 
       <Modal
         confirmLabel="Encerrar turno"
-        description="Essa criatura ainda nao comprou carta neste turno. Encerrar mesmo assim?"
+        description="Essa criatura ainda não comprou carta neste turno. Encerrar mesmo assim?"
         isLoading={isSubmitting}
         onClose={() => setIsEndTurnConfirmOpen(false)}
         onConfirm={handleConfirmEndTurn}
         open={isEndTurnConfirmOpen}
         title="Confirmar turno"
       >
-        <p className="muted-text">Voce pode confirmar agora ou voltar e comprar uma carta antes de encerrar o turno.</p>
+        <p className="muted-text">Você pode confirmar agora ou voltar e comprar uma carta antes de encerrar o turno.</p>
       </Modal>
 
       <Modal
-        confirmLabel={pendingCardAction ? 'Confirmar acao' : 'Fechar'}
+        confirmLabel={pendingCardAction ? 'Confirmar ação' : 'Fechar'}
         description={
           pendingCardAction
             ? `Complete as escolhas necessarias para ${pendingCardAction.cardName}.`
@@ -1187,14 +1192,14 @@ export function MatchPage() {
                     ))}
                   </div>
                 ) : (
-                  <p className="muted-text">Nenhum alvo disponivel para esta carta.</p>
+                  <p className="muted-text">Nenhum alvo disponível para esta carta.</p>
                 )}
               </section>
             ) : null}
 
             {pendingCardAction.automation?.selection === 'own-exile-card' ? (
               <section className="stack-gap" style={{ gap: '10px' }}>
-                <span className="status-label">Escolha a carta do exilio</span>
+                <span className="status-label">Escolha a carta do exílio</span>
                 {exileCards.length ? (
                   <div className="row-wrap">
                     {exileCards.map((card) => (
@@ -1220,14 +1225,14 @@ export function MatchPage() {
                     ))}
                   </div>
                 ) : (
-                  <p className="muted-text">Seu exilio esta vazio.</p>
+                  <p className="muted-text">Seu exílio está vazio.</p>
                 )}
               </section>
             ) : null}
 
             {automationRequiresOwnHandSelection(pendingCardAction.automation) ? (
               <section className="stack-gap" style={{ gap: '10px' }}>
-                <span className="status-label">Escolha outra carta da sua mao</span>
+                <span className="status-label">Escolha outra carta da sua mão</span>
                 {pendingOwnHandCards.length ? (
                   <div className="row-wrap">
                     {pendingOwnHandCards.map((card) => (
@@ -1253,14 +1258,14 @@ export function MatchPage() {
                     ))}
                   </div>
                 ) : (
-                  <p className="muted-text">Nao ha outra carta disponivel na sua mao.</p>
+                  <p className="muted-text">Não há outra carta disponível na sua mão.</p>
                 )}
               </section>
             ) : null}
 
             {automationRequiresTargetHandSelection(pendingCardAction.automation) ? (
               <section className="stack-gap" style={{ gap: '10px' }}>
-                <span className="status-label">Escolha a carta da mao do alvo</span>
+                <span className="status-label">Escolha a carta da mão do alvo</span>
                 {pendingCardAction.targetParticipantId ? (
                   pendingTargetHandCards.length ? (
                     <div className="row-wrap">
@@ -1287,7 +1292,7 @@ export function MatchPage() {
                       ))}
                     </div>
                   ) : (
-                    <p className="muted-text">A mao do alvo esta vazia.</p>
+                    <p className="muted-text">A mão do alvo está vazia.</p>
                   )
                 ) : (
                   <p className="muted-text">Escolha um alvo primeiro.</p>
@@ -1386,7 +1391,7 @@ export function MatchPage() {
 
             {pendingCardAction.pairedAutomation?.selection === 'own-exile-card' ? (
               <section className="stack-gap" style={{ gap: '10px' }}>
-                <span className="status-label">Escolha a carta do exilio para a carta extra</span>
+                <span className="status-label">Escolha a carta do exílio para a carta extra</span>
                 <div className="row-wrap">
                   {exileCards.map((card) => (
                     <Button
@@ -1415,7 +1420,7 @@ export function MatchPage() {
 
             {automationRequiresOwnHandSelection(pendingCardAction.pairedAutomation) ? (
               <section className="stack-gap" style={{ gap: '10px' }}>
-                <span className="status-label">Escolha a carta da sua mao para a carta extra</span>
+                <span className="status-label">Escolha a carta da sua mão para a carta extra</span>
                 <div className="row-wrap">
                   {pendingPairedOwnHandCards.map((card) => (
                     <Button
@@ -1444,7 +1449,7 @@ export function MatchPage() {
 
             {automationRequiresTargetHandSelection(pendingCardAction.pairedAutomation) ? (
               <section className="stack-gap" style={{ gap: '10px' }}>
-                <span className="status-label">Escolha a carta da mao do alvo da carta extra</span>
+                <span className="status-label">Escolha a carta da mão do alvo da carta extra</span>
                 {pendingCardAction.pairedTargetParticipantId ? (
                   <div className="row-wrap">
                     {pendingPairedTargetHandCards.map((card) => (
@@ -1482,17 +1487,17 @@ export function MatchPage() {
         cancelLabel={null}
         confirmLabel={
           combatState?.status === 'awaiting-reaction'
-            ? 'Seguir sem reacao'
+            ? 'Seguir sem reação'
             : combatState?.status === 'awaiting-reaction-result'
-              ? 'Nao superou'
+              ? 'Não superou'
               : 'Pular resposta'
         }
         description={
           combatState?.status === 'awaiting-reaction'
-            ? `${combatState.attackerDisplayName} atacou ${combatState.defenderDisplayName}. Se voce tiver Reacao na mao, pode usa-la agora.`
+            ? `${combatState.attackerDisplayName} atacou ${combatState.defenderDisplayName}. Se você tiver Reação na mão, pode usá-la agora.`
             : combatState?.status === 'awaiting-reaction-result'
               ? 'Resolva fisicamente o teste de defesa. Se tiver sucesso, libera uma carta de resposta.'
-              : `Voce superou o ataque. Agora pode jogar ou descartar uma carta em resposta antes de seguir a partida.`
+              : `Você superou o ataque. Agora pode jogar ou descartar uma carta em resposta antes de seguir a partida.`
         }
         isLoading={isSubmitting}
         onClose={() => {}}
@@ -1539,7 +1544,7 @@ export function MatchPage() {
                             size="sm"
                             type="button"
                           >
-                            Usar Reacao
+                            Usar Reação
                           </Button>
                         </div>
                       }
@@ -1550,15 +1555,15 @@ export function MatchPage() {
                 ))}
               </div>
             ) : (
-              <div className="empty-state">Voce nao tem uma carta de Reacao disponivel na mao.</div>
+              <div className="empty-state">Você não tem uma carta de Reação disponível na mão.</div>
             )}
           </div>
         ) : null}
 
         {combatState?.status === 'awaiting-reaction-result' ? (
           <div className="stack-gap" style={{ gap: '14px' }}>
-            <Badge tone="primary">Reacao usada</Badge>
-            <p className="muted-text">Resolva o teste fisico e, se tiver sucesso, libere a carta de resposta.</p>
+            <Badge tone="primary">Reação usada</Badge>
+            <p className="muted-text">Resolva o teste físico e, se tiver sucesso, libere a carta de resposta.</p>
             <Button
               disabled={isSubmitting}
               onClick={() =>
@@ -1627,8 +1632,8 @@ export function MatchPage() {
         description={
           activeTopDeckView
             ? activeTopDeckView.type === 'viewRandomHandCard'
-              ? `Voce visualizou uma carta aleatoria da mao de ${activeTopDeckView.targetDisplayName}. Essa informacao fica apenas com voce.`
-              : `Voce visualizou o topo do deck de ${activeTopDeckView.targetDisplayName}. Revele para a mesa apenas se quiser compartilhar essa informacao.`
+              ? `Você visualizou uma carta aleatória da mão de ${activeTopDeckView.targetDisplayName}. Essa informação fica apenas com você.`
+              : `Você visualizou o topo do deck de ${activeTopDeckView.targetDisplayName}. Revele para a mesa apenas se quiser compartilhar essa informação.`
             : ''
         }
         isLoading={isSubmitting}
@@ -1654,7 +1659,7 @@ export function MatchPage() {
             />
           </div>
         ) : (
-          <div className="empty-state">Nao foi possivel carregar a carta visualizada.</div>
+          <div className="empty-state">Não foi possível carregar a carta visualizada.</div>
         )}
       </Modal>
 
@@ -1691,11 +1696,11 @@ export function MatchPage() {
       <Modal
         cancelLabel={null}
         confirmLabel="Fechar"
-        description="As cartas aparecem em ordem no exilio: do topo para o fundo."
+        description="As cartas aparecem em ordem no exílio: do topo para o fundo."
         onClose={() => setIsExileModalOpen(false)}
         onConfirm={() => setIsExileModalOpen(false)}
         open={isExileModalOpen}
-        title="Exilio"
+        title="Exílio"
       >
         {exileCards.length ? (
           <div className="player-hand">
@@ -1708,7 +1713,7 @@ export function MatchPage() {
                   description={card.effect}
                   footer={
                     <div className="row-wrap">
-                      <span>{index === 0 ? 'Topo do exilio' : `Posicao ${index + 1}`}</span>
+                      <span>{index === 0 ? 'Topo do exílio' : `Posição ${index + 1}`}</span>
                     </div>
                   }
                   imageSrc={resolveCardImageUrl(card.imagePath)}

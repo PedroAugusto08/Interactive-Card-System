@@ -2297,18 +2297,23 @@ ul {
 .match-action-rack,
 .match-focus-switcher,
 .match-hand-stage,
-.match-users-list {
+.match-users-list,
+.initiative-list,
+.initiative-item__main,
+.match-sidebar-column,
+.match-main-column,
+.action-log-list {
   display: grid;
   gap: 12px;
 }
 
 .player-hand-panel {
-  gap: 16px;
+  gap: 14px;
 }
 
 .player-hand-panel__status {
-  padding: 12px 14px;
-  border-radius: 18px;
+  padding: 10px 12px;
+  border-radius: 16px;
   border: 1px solid rgba(79, 140, 255, 0.16);
   background:
     linear-gradient(180deg, rgba(79, 140, 255, 0.08), rgba(255, 255, 255, 0)),
@@ -2325,6 +2330,15 @@ ul {
   transform: translateY(-8px) scale(1.05);
   border-color: rgba(124, 92, 255, 0.42);
   box-shadow: var(--shadow-md), 0 0 32px rgba(124, 92, 255, 0.18);
+}
+
+.player-hand__slot--inactive {
+  opacity: 0.8;
+  filter: saturate(0.88);
+}
+
+.player-hand__slot--inactive .ui-button:disabled {
+  opacity: 0.62;
 }
 
 .deck-row-card__summary {
@@ -2511,7 +2525,7 @@ ul {
 }
 
 .action-log-item {
-  padding: 14px 16px;
+  padding: 13px 15px;
   border-radius: 18px;
   border: 1px solid var(--line);
   background:
@@ -2533,7 +2547,7 @@ ul {
 
 .action-log-item__copy {
   display: grid;
-  gap: 6px;
+  gap: 4px;
 }
 
 .action-log-item__icon {
@@ -2606,6 +2620,67 @@ ul {
   border-color: rgba(99, 102, 241, 0.18);
 }
 
+.match-sidebar-column,
+.match-main-column {
+  gap: 16px;
+}
+
+.initiative-list {
+  gap: 10px;
+}
+
+.initiative-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  background: transparent;
+  text-align: left;
+  cursor: default;
+  transition: transform 200ms ease, border-color 200ms ease, box-shadow 200ms ease, background 200ms ease, opacity 200ms ease;
+}
+
+.initiative-item[aria-disabled='false'] {
+  cursor: pointer;
+}
+
+.initiative-item:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.initiative-item--owned:hover {
+  border-color: rgba(124, 92, 255, 0.22);
+}
+
+.initiative-item--active {
+  border-color: rgba(99, 102, 241, 0.4);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.18), rgba(56, 189, 248, 0.08));
+  box-shadow: 0 10px 24px rgba(59, 130, 246, 0.12), 0 0 0 1px rgba(99, 102, 241, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.initiative-item--focused:not(.initiative-item--active) {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(124, 92, 255, 0.18);
+}
+
+.initiative-item--disabled {
+  opacity: 0.74;
+}
+
+.initiative-item__main {
+  min-width: 0;
+  gap: 4px;
+}
+
+.initiative-item__head {
+  gap: 10px;
+}
+
 .match-focus-switcher {
   padding: 14px 16px;
   border-radius: 20px;
@@ -2624,8 +2699,9 @@ ul {
 .match-context-bar {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  padding: 14px 16px;
-  border-radius: 20px;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
@@ -2667,23 +2743,29 @@ ul {
 
 .match-context-bar__eyebrow {
   color: var(--text-secondary);
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
-.match-context-bar__copy strong {
-  font-size: 1rem;
+.match-context-bar__copy {
+  gap: 3px;
+}
+
+.match-context-bar__summary {
+  font-size: 0.94rem;
+  line-height: 1.45;
 }
 
 .match-action-rack {
-  padding: 14px 16px;
+  padding: 12px 14px;
   border-radius: 20px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.025);
 }
 
 .match-hand-stage {
+  gap: 12px;
   padding: 18px;
   border-radius: 22px;
   border: 1px solid rgba(124, 92, 255, 0.16);
@@ -2692,6 +2774,10 @@ ul {
     linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0)),
     rgba(12, 15, 22, 0.92);
   box-shadow: 0 20px 44px rgba(3, 7, 18, 0.2);
+}
+
+.match-hand-stage__header {
+  gap: 10px;
 }
 
 .match-users-card {
