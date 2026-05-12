@@ -871,19 +871,11 @@ export function MatchPage() {
             }
             title="Iniciativa"
           >
-            <div className="stack-gap match-initiative-track" style={{ gap: '12px' }}>
+            <div className="stack-gap" style={{ gap: '12px' }}>
               {participantStates.map((participant) => (
                 <button
                   aria-disabled={!participant.isControlledByViewer}
                   aria-pressed={focusedParticipantId === participant.participantId}
-                  className={[
-                    'match-initiative-item',
-                    participant.isCurrentTurn ? 'match-initiative-item--active' : '',
-                    focusedParticipantId === participant.participantId ? 'match-initiative-item--focused' : '',
-                    participant.isDefeated ? 'match-initiative-item--defeated' : '',
-                  ]
-                    .filter(Boolean)
-                    .join(' ')}
                   key={`participant-state-${participant.participantId}`}
                   onClick={() =>
                     participant.isControlledByViewer
@@ -891,45 +883,55 @@ export function MatchPage() {
                       : undefined
                   }
                   style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '10px',
+                    padding: '12px 14px',
+                    border: participant.isCurrentTurn
+                      ? '1px solid rgba(99,102,241,0.4)'
+                      : '1px solid rgba(255,255,255,0.12)',
+                    borderRadius: '16px',
+                    background:
+                      participant.isCurrentTurn
+                        ? 'linear-gradient(135deg, rgba(99,102,241,0.18), rgba(56,189,248,0.08))'
+                        : participant.participantId === focusedParticipant?.participantId
+                          ? 'rgba(255,255,255,0.06)'
+                          : 'transparent',
+                    width: '100%',
+                    textAlign: 'left',
                     cursor: participant.isControlledByViewer ? 'pointer' : 'default',
+                    boxShadow:
+                      participant.isCurrentTurn
+                        ? '0 10px 24px rgba(59,130,246,0.12), 0 0 0 1px rgba(99,102,241,0.12), inset 0 1px 0 rgba(255,255,255,0.05)'
+                        : 'none',
+                    opacity: participant.isDefeated ? 0.72 : 1,
                   }}
                   type="button"
                 >
-                  <span className="match-initiative-item__order">{participant.turnOrder}</span>
-
-                  <div className="stack-gap match-initiative-item__body" style={{ gap: '4px' }}>
-                    <div className="row-wrap match-initiative-item__header">
+                  <div className="stack-gap" style={{ gap: '3px' }}>
+                    <div className="row-wrap">
                       <strong>{participant.displayName}</strong>
+                      {participant.isControlledByViewer ? <Badge tone="primary">Seu controle</Badge> : null}
+                      {participant.participantType === 'master-creature' ? <Badge tone="accent">Criatura</Badge> : null}
                       {participant.isDefeated ? <Badge tone="danger">Derrotado</Badge> : null}
                     </div>
                     <span className="muted-text compact">
                       {participant.isCurrentTurn
-                        ? participant.isControlledByViewer
-                          ? 'Sua vez com este participante.'
-                          : 'Participante ativo na rodada.'
+                        ? 'Agindo agora'
                         : participant.isControlledByViewer
-                          ? 'Sob seu controle. Clique para focar na mesa.'
+                          ? 'Disponivel para foco'
                           : participant.participantType === 'master-creature'
-                            ? 'Criatura aguardando a vez.'
-                            : 'Jogador aguardando a vez.'}
+                            ? 'Criatura na rodada'
+                            : 'Jogador na rodada'}
                     </span>
                   </div>
 
-                  <div className="match-initiative-item__state">
-                    {participant.isControlledByViewer && !participant.isCurrentTurn ? (
-                      <span className="match-initiative-item__pill match-initiative-item__pill--control">
-                        Seu controle
-                      </span>
-                    ) : null}
-                    {participant.isCurrentTurn ? (
-                      <span className="match-initiative-item__pill match-initiative-item__pill--active">Agindo</span>
-                    ) : null}
-                    {focusedParticipantId === participant.participantId ? (
-                      <span className="match-initiative-item__pill match-initiative-item__pill--focus">Em foco</span>
-                    ) : participant.isControlledByViewer ? (
-                      <span className="match-initiative-item__link">Focar</span>
-                    ) : null}
-                  </div>
+                  {participant.isControlledByViewer ? (
+                    <Badge tone={focusedParticipantId === participant.participantId ? 'primary' : 'secondary'}>
+                      {focusedParticipantId === participant.participantId ? 'Em foco' : 'Selecionar'}
+                    </Badge>
+                  ) : participant.isCurrentTurn ? <Badge tone="accent">Na vez</Badge> : null}
                 </button>
               ))}
             </div>
@@ -984,97 +986,87 @@ export function MatchPage() {
                   </div>
                 ) : null}
 
-                <div className="match-table-layout">
-                  <aside className="match-table-layout__rail">
-                    <div className="row-wrap match-focus-metrics">
-                      <Badge tone="primary">Vida {focusedParticipant.health}</Badge>
-                      <Badge tone="accent">Imo {focusedParticipant.imo}/{focusedParticipant.maxImo}</Badge>
-                      <Badge tone="secondary">Iniciativa {focusedParticipant.turnOrder}</Badge>
-                      {focusedParticipant.isCurrentTurn ? <Badge tone="success">Agindo</Badge> : null}
-                    </div>
+                <div className="row-wrap match-focus-metrics">
+                  <Badge tone="primary">Vida {focusedParticipant.health}</Badge>
+                  <Badge tone="accent">Imo {focusedParticipant.imo}/{focusedParticipant.maxImo}</Badge>
+                  <Badge tone="secondary">Turno {focusedParticipant.turnOrder}</Badge>
+                </div>
 
-                    <div className={['match-context-bar', `match-context-bar--${contextBarState.tone}`].join(' ')}>
-                      <div className="match-context-bar__copy">
-                        <span className="match-context-bar__eyebrow">{contextBarState.eyebrow}</span>
-                        <strong>{contextBarState.title}</strong>
-                        <span className="muted-text compact">{contextBarState.description}</span>
-                      </div>
-                      <Badge tone={contextBarState.tone}>{contextBarState.badge}</Badge>
-                    </div>
-
-                    <div className="match-zone-rail">
-                      <ZoneContainer
-                        count={focusedZones.deckCount}
-                        description="Cartas restantes"
-                        title="Deck"
-                      />
-                      <ZoneContainer
-                        count={focusedZones.exileCount}
-                        description="Cartas removidas"
-                        onClick={() => setIsExileModalOpen(true)}
-                        previewCards={exileCards}
-                        title="Exilio"
-                        tone="accent"
-                      />
-                    </div>
-                  </aside>
-
-                  <div className="match-table-layout__main">
-                    <div className="stack-gap match-hand-stage" style={{ gap: '12px' }}>
-                      <div className="match-hand-stage__header">
-                        <div className="stack-gap" style={{ gap: '6px' }}>
-                          <div className="row-wrap">
-                            <strong>Mao</strong>
-                            <Badge tone="secondary">{focusedZones.handCount} cartas</Badge>
-                            {availableActions.includes('playCard') ? <Badge tone="success">Janela de jogo</Badge> : null}
-                          </div>
-                          <span className="muted-text compact">{contextBarState.description}</span>
-                        </div>
-
-                        <div className="row-wrap match-hand-stage__actions">
-                          <Button
-                            disabled={!availableActions.includes('drawCard') || isSubmitting}
-                            onClick={() =>
-                              handleAction('match:draw', { actingParticipantId: focusedParticipant.participantId })
-                            }
-                            title={drawDisabledReason || 'Comprar uma carta'}
-                            type="button"
-                          >
-                            Comprar carta
-                          </Button>
-
-                          <Button
-                            disabled={!availableActions.includes('endTurn') || isSubmitting}
-                            onClick={handleEndTurnClick}
-                            title={endTurnDisabledReason || 'Encerrar o turno'}
-                            type="button"
-                            variant="secondary"
-                          >
-                            Encerrar turno
-                          </Button>
-                        </div>
-                      </div>
-
-                      {!availableActions.includes('drawCard') || !availableActions.includes('endTurn') ? (
-                        <span className="muted-text compact">
-                          {drawDisabledReason || endTurnDisabledReason || 'Essa acao nao esta disponivel agora.'}
-                        </span>
-                      ) : null}
-
-                      <PlayerHand
-                        canDiscard={availableActions.includes('discardCard')}
-                        canPlay={availableActions.includes('playCard')}
-                        cards={handCards}
-                        discardDisabledReason={discardDisabledReason}
-                        isSubmitting={isSubmitting}
-                        onDiscardCard={(cardId) => openCardAction('match:discardCard', cardId)}
-                        onPlayCard={(cardId) => openCardAction('match:playCard', cardId)}
-                        onSelectCard={setSelectedHandCardId}
-                        playDisabledReason={playDisabledReason}
-                        selectedCardId={selectedHandCardId}
-                      />
-                    </div>
+                <div className={['match-context-bar', `match-context-bar--${contextBarState.tone}`].join(' ')}>
+                  <div className="match-context-bar__copy">
+                    <span className="match-context-bar__eyebrow">{contextBarState.eyebrow}</span>
+                    <strong>{contextBarState.title}</strong>
+                    <span className="muted-text compact">{contextBarState.description}</span>
                   </div>
+                  <Badge tone={contextBarState.tone}>{contextBarState.badge}</Badge>
+                </div>
+
+                <div className="grid-2">
+                  <ZoneContainer
+                    count={focusedZones.deckCount}
+                    description="Cartas restantes"
+                    title="Deck"
+                  />
+                  <ZoneContainer
+                    count={focusedZones.exileCount}
+                    description="Cartas removidas"
+                    onClick={() => setIsExileModalOpen(true)}
+                    previewCards={exileCards}
+                    title="Exilio"
+                    tone="accent"
+                  />
+                </div>
+
+                <div className="match-action-rack">
+                  <div className="row-wrap">
+                    <Button
+                      disabled={!availableActions.includes('drawCard') || isSubmitting}
+                      onClick={() =>
+                        handleAction('match:draw', { actingParticipantId: focusedParticipant.participantId })
+                      }
+                      title={drawDisabledReason || 'Comprar uma carta'}
+                      type="button"
+                    >
+                      Comprar carta
+                    </Button>
+
+                    <Button
+                      disabled={!availableActions.includes('endTurn') || isSubmitting}
+                      onClick={handleEndTurnClick}
+                      title={endTurnDisabledReason || 'Encerrar o turno'}
+                      type="button"
+                      variant="secondary"
+                    >
+                      Encerrar turno
+                    </Button>
+                  </div>
+
+                  {!availableActions.includes('drawCard') || !availableActions.includes('endTurn') ? (
+                    <span className="muted-text compact">
+                      {drawDisabledReason || endTurnDisabledReason || 'Essa acao nao esta disponivel agora.'}
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="stack-gap match-hand-stage" style={{ gap: '12px' }}>
+                  <div className="row-wrap">
+                    <strong>Mao</strong>
+                    <Badge tone="secondary">{focusedZones.handCount} cartas</Badge>
+                    {availableActions.includes('playCard') ? <Badge tone="success">Janela de jogo</Badge> : null}
+                  </div>
+                  <PlayerHand
+                    canDiscard={availableActions.includes('discardCard')}
+                    canPlay={availableActions.includes('playCard')}
+                    cards={handCards}
+                    discardDisabledReason={discardDisabledReason}
+                    helperText={contextBarState.description}
+                    isSubmitting={isSubmitting}
+                    onDiscardCard={(cardId) => openCardAction('match:discardCard', cardId)}
+                    onPlayCard={(cardId) => openCardAction('match:playCard', cardId)}
+                    onSelectCard={setSelectedHandCardId}
+                    playDisabledReason={playDisabledReason}
+                    selectedCardId={selectedHandCardId}
+                  />
                 </div>
               </div>
             ) : (
