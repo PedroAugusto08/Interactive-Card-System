@@ -48,6 +48,7 @@ async function startMatchForRoom({ roomId, userId, requesterUser = null, include
     throw new AppError('Sala nao encontrada.', 404);
   }
 
+  const players = await listRoomPlayers(roomId);
   const masterUserId = resolveRoomMasterUserId({ room, requesterUser, players });
   if (masterUserId !== userId) {
     throw new AppError('Somente o mestre pode iniciar a partida.', 403);
@@ -57,7 +58,6 @@ async function startMatchForRoom({ roomId, userId, requesterUser = null, include
     throw new AppError('A sala nao esta em lobby para iniciar partida.', 409);
   }
 
-  const players = await listRoomPlayers(roomId);
   if (players.length < 2) {
     throw new AppError('A partida precisa de ao menos 2 jogadores.', 409);
   }
