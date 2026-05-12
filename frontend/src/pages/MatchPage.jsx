@@ -109,6 +109,149 @@ function getPrivateCardViewEffects(effectResults) {
   );
 }
 
+const ACTION_COPY = {
+  drawCard: 'comprar carta',
+  playCard: 'jogar cartas',
+  discardCard: 'descartar cartas',
+  endTurn: 'encerrar o turno',
+};
+
+function formatNaturalList(items) {
+  if (!items.length) {
+    return '';
+  }
+
+  if (items.length === 1) {
+    return items[0];
+  }
+
+  if (items.length === 2) {
+    return `${items[0]} e ${items[1]}`;
+  }
+
+  return `${items.slice(0, -1).join(', ')} e ${items[items.length - 1]}`;
+}
+
+function buildActionReason(action, { focusedParticipant, availableActions, isSubmitting }) {
+  if (isSubmitting) {
+    return 'Aguarde a acao atual terminar.';
+  }
+
+  if (!focusedParticipant) {
+    return 'Selecione um participante em foco para agir.';
+  }
+
+  if (availableActions.includes(action)) {
+    return '';
+  }
+
+  if (!focusedParticipant.isCurrentTurn) {
+    return 'Voce so pode agir no turno do participante em foco.';
+  }
+
+  if (action === 'drawCard') {
+    return 'Essa compra nao esta disponivel agora.';
+  }
+
+  if (action === 'endTurn') {
+    return 'Essa acao ainda nao esta disponivel agora.';
+  }
+
+  if (action === 'playCard') {
+    return 'Voce ainda nao pode jogar cartas nessa janela.';
+  }
+
+  if (action === 'discardCard') {
+    return 'Voce ainda nao pode descartar cartas nessa janela.';
+  }
+
+  return 'Essa acao nao esta disponivel agora.';
+}
+
+function buildContextBarState({
+  focusedParticipant,
+  activeTurnParticipant,
+  availableActions,
+  combatState,
+  isCurrentUserCombatDefender,
+  controlledParticipantIds,
+}) {
+  if (combatState?.status === 'awaiting-reaction' && isCurrentUserCombatDefender) {
+    return {
+      tone: 'danger',
+      eyebrow: 'Resposta de ataque pendente',
+      title: `${combatState.attackerDisplayName} atacou ${combatState.defenderDisplayName}.`,
+      description: 'Use uma Reacao agora ou siga sem responder.',
+      badge: '⚔️ Defesa',
+    };
+  }
+
+  if (combatState?.status === 'awaiting-reaction-result' && isCurrentUserCombatDefender) {
+    return {
+      tone: 'accent',
+      eyebrow: 'Teste de defesa',
+      title: 'Resolva o teste fisico para liberar sua resposta.',
+      description: 'Se superar o ataque, a mesa libera uma carta em resposta.',
+      badge: '🛡️ Em resolucao',
+    };
+  }
+
+  if (combatState?.status === 'awaiting-counter-response' && isCurrentUserCombatDefender) {
+    return {
+      tone: 'success',
+      eyebrow: 'Resposta liberada',
+      title: 'Voce pode jogar ou descartar uma carta agora.',
+      description: 'Escolha a melhor resposta antes da rodada continuar.',
+      badge: '✨ Janela aberta',
+    };
+  }
+
+  if (!focusedParticipant) {
+    return {
+      tone: 'secondary',
+      eyebrow: 'Sem foco',
+      title: 'Nenhum participante sob seu controle esta em foco.',
+      description: 'Selecione uma criatura para acompanhar a rodada.',
+      badge: '🧿 Foco',
+    };
+  }
+
+  const actionLabels = availableActions.map((action) => ACTION_COPY[action]).filter(Boolean);
+  const actionCount = actionLabels.length;
+  const currentTurnIsControlled =
+    activeTurnParticipant && controlledParticipantIds.includes(activeTurnParticipant.participantId);
+
+  if (focusedParticipant.isCurrentTurn) {
+    return {
+      tone: 'success',
+      eyebrow: 'Seu turno',
+      title: `${focusedParticipant.displayName} esta na vez.`,
+      description: actionCount
+        ? `Voce pode ${formatNaturalList(actionLabels)}.`
+        : 'Nenhuma acao esta disponivel nesse momento.',
+      badge: `${actionCount} acoes disponiveis`,
+    };
+  }
+
+  if (currentTurnIsControlled && activeTurnParticipant) {
+    return {
+      tone: 'primary',
+      eyebrow: 'Sua mesa esta agindo',
+      title: `${activeTurnParticipant.displayName} esta na vez agora.`,
+      description: 'Troque o foco para a criatura ativa se quiser acompanhar as acoes dela.',
+      badge: '🧿 Trocar foco',
+    };
+  }
+
+  return {
+    tone: 'secondary',
+    eyebrow: 'Aguardando rodada',
+    title: `Aguardando ${activeTurnParticipant?.displayName || 'outro participante'} agir...`,
+    description: 'Suas cartas ficam disponiveis quando um participante sob seu controle entrar na vez.',
+    badge: '⌛ Em espera',
+  };
+}
+
 export function MatchPage() {
   const token = useAuthStore((state) => state.token);
 
@@ -132,6 +275,7 @@ export function MatchPage() {
   const [selectedHandCardId, setSelectedHandCardId] = useState(null);
   const [isEndTurnConfirmOpen, setIsEndTurnConfirmOpen] = useState(false);
   const [isExileModalOpen, setIsExileModalOpen] = useState(false);
+  const [isRoomUsersCollapsed, setIsRoomUsersCollapsed] = useState(true);
   const [pendingCardAction, setPendingCardAction] = useState(null);
   const [pendingCardViews, setPendingCardViews] = useState([]);
   const [revealedTopDeckModal, setRevealedTopDeckModal] = useState(null);
@@ -216,6 +360,18 @@ export function MatchPage() {
     }
   }, [currentRoom?.code, currentRoom?.id, isSocketConnected, socket]);
 
+  useEffect(() => {
+    if (!syncMessage) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setSyncMessage('');
+    }, 3200);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [syncMessage]);
+
   const focusedParticipantId =
     !controlledParticipantIds.length
       ? null
@@ -254,6 +410,41 @@ export function MatchPage() {
       : connectionState === 'reconnecting'
         ? 'Reconectando...'
         : 'Desconectado';
+  const currentCombatDefender = combatState?.defenderParticipantId
+    ? participantStates.find((participant) => participant.participantId === combatState.defenderParticipantId)
+    : null;
+  const isCurrentUserCombatDefender = Boolean(
+    currentCombatDefender && controlledParticipantIds.includes(currentCombatDefender.participantId)
+  );
+  const counterResponseCards = currentCombatDefender?.handCards || [];
+  const drawDisabledReason = buildActionReason('drawCard', {
+    focusedParticipant,
+    availableActions,
+    isSubmitting,
+  });
+  const endTurnDisabledReason = buildActionReason('endTurn', {
+    focusedParticipant,
+    availableActions,
+    isSubmitting,
+  });
+  const playDisabledReason = buildActionReason('playCard', {
+    focusedParticipant,
+    availableActions,
+    isSubmitting,
+  });
+  const discardDisabledReason = buildActionReason('discardCard', {
+    focusedParticipant,
+    availableActions,
+    isSubmitting,
+  });
+  const contextBarState = buildContextBarState({
+    focusedParticipant,
+    activeTurnParticipant,
+    availableActions,
+    combatState,
+    isCurrentUserCombatDefender,
+    controlledParticipantIds,
+  });
 
   async function handleLeaveRoom() {
     if (!currentRoom?.id) {
@@ -627,14 +818,6 @@ export function MatchPage() {
     await handleAction(pendingCardAction.action, payload);
   }
 
-  const currentCombatDefender = combatState?.defenderParticipantId
-    ? participantStates.find((participant) => participant.participantId === combatState.defenderParticipantId)
-    : null;
-  const isCurrentUserCombatDefender = Boolean(
-    currentCombatDefender && controlledParticipantIds.includes(currentCombatDefender.participantId)
-  );
-  const counterResponseCards = currentCombatDefender?.handCards || [];
-
   if (!currentRoom) {
     return (
       <section className="stack-gap-lg">
@@ -646,7 +829,7 @@ export function MatchPage() {
   }
 
   return (
-    <section className="stack-gap-lg">
+    <section className="stack-gap-lg match-page">
       <div className="section-header">
         <div className="stack-gap" style={{ gap: '8px' }}>
           <h1 className="page-title">Partida</h1>
@@ -664,18 +847,26 @@ export function MatchPage() {
         </div>
       </div>
 
-      {syncMessage ? <p className="success-text">{syncMessage}</p> : null}
+      <div aria-live="polite" className="match-toast-layer">
+        {syncMessage ? (
+          <div className="match-toast">
+            <Badge tone="success">Atualizacao</Badge>
+            <span>{syncMessage}</span>
+          </div>
+        ) : null}
+      </div>
       {localError ? <p className="error-text">{localError}</p> : null}
 
       <div className="grid-2">
         <div className="stack-gap">
           <Card
+            className="match-initiative-card"
             actions={
               <div className="row-wrap">
                 <Badge tone={isViewerTurn ? 'success' : 'secondary'}>
-                  Turno atual: {activeTurnParticipant?.displayName || 'Participante'}
+                  ⚔️ {activeTurnParticipant?.displayName || 'Participante'}
                 </Badge>
-                <Badge tone="accent">{participantStates.length} participantes</Badge>
+                <Badge tone="accent">{participantStates.length} na mesa</Badge>
               </div>
             }
             title="Iniciativa"
@@ -720,9 +911,9 @@ export function MatchPage() {
                   <div className="stack-gap" style={{ gap: '3px' }}>
                     <div className="row-wrap">
                       <strong>{participant.displayName}</strong>
-                      {participant.isControlledByViewer ? <Badge tone="primary">Seu controle</Badge> : null}
-                      {participant.participantType === 'master-creature' ? <Badge tone="accent">Criatura</Badge> : null}
-                      {participant.isDefeated ? <Badge tone="danger">Derrotado</Badge> : null}
+                      {participant.isControlledByViewer ? <Badge tone="primary">🟣 Seu controle</Badge> : null}
+                      {participant.participantType === 'master-creature' ? <Badge tone="accent">✦ Criatura</Badge> : null}
+                      {participant.isDefeated ? <Badge tone="danger">☠️ Derrotado</Badge> : null}
                     </div>
                     <span className="muted-text compact">
                       {participant.isCurrentTurn
@@ -737,15 +928,15 @@ export function MatchPage() {
 
                   {participant.isControlledByViewer ? (
                     <Badge tone={focusedParticipantId === participant.participantId ? 'primary' : 'secondary'}>
-                      {focusedParticipantId === participant.participantId ? 'Em foco' : 'Selecionar'}
+                      {focusedParticipantId === participant.participantId ? '🧿 Em foco' : 'Focar'}
                     </Badge>
-                  ) : participant.isCurrentTurn ? <Badge tone="accent">Na vez</Badge> : null}
+                  ) : participant.isCurrentTurn ? <Badge tone="accent">⚔️ Agindo</Badge> : null}
                 </button>
               ))}
             </div>
           </Card>
 
-          <Card title="Log da partida">
+          <Card className="match-log-card" title="Historico da mesa">
             {logs.length ? (
               <div className="stack-gap" style={{ gap: '10px' }}>
                 {logs.map((item) => (
@@ -760,10 +951,11 @@ export function MatchPage() {
 
         <div className="stack-gap">
           <Card
+            className="match-focus-card"
             actions={
               focusedParticipant ? (
                 <Badge tone={focusedParticipant.isCurrentTurn ? 'success' : 'secondary'}>
-                  {focusedParticipant.displayName}
+                  🧿 {focusedParticipant.displayName}
                 </Badge>
               ) : null
             }
@@ -772,7 +964,7 @@ export function MatchPage() {
             {focusedParticipant ? (
               <div className="stack-gap" style={{ gap: '18px' }}>
                 {controlledParticipants.length > 1 ? (
-                  <div className="stack-gap" style={{ gap: '10px' }}>
+                  <div className="stack-gap match-focus-switcher" style={{ gap: '10px' }}>
                     <div className="row-wrap">
                       <strong>Alternar criatura em foco</strong>
                       <Badge tone="secondary">{controlledParticipants.length} sob seu controle</Badge>
@@ -793,10 +985,20 @@ export function MatchPage() {
                   </div>
                 ) : null}
 
-                <div className="row-wrap">
-                  <Badge tone="primary">Vida {focusedParticipant.health}</Badge>
-                  <Badge tone="accent">Imo {focusedParticipant.imo}/{focusedParticipant.maxImo}</Badge>
-                  <Badge tone="secondary">Turno {focusedParticipant.turnOrder}</Badge>
+                <div className="row-wrap match-focus-metrics">
+                  <Badge tone="primary">❤️ Vida {focusedParticipant.health}</Badge>
+                  <Badge tone="accent">✦ Imo {focusedParticipant.imo}/{focusedParticipant.maxImo}</Badge>
+                  <Badge tone="secondary">🎯 Iniciativa {focusedParticipant.turnOrder}</Badge>
+                  {focusedParticipant.isCurrentTurn ? <Badge tone="success">⚔️ Agindo</Badge> : null}
+                </div>
+
+                <div className={['match-context-bar', `match-context-bar--${contextBarState.tone}`].join(' ')}>
+                  <div className="match-context-bar__copy">
+                    <span className="match-context-bar__eyebrow">{contextBarState.eyebrow}</span>
+                    <strong>{contextBarState.title}</strong>
+                    <span className="muted-text compact">{contextBarState.description}</span>
+                  </div>
+                  <Badge tone={contextBarState.tone}>{contextBarState.badge}</Badge>
                 </div>
 
                 <div className="grid-2">
@@ -815,40 +1017,54 @@ export function MatchPage() {
                   />
                 </div>
 
-                <div className="row-wrap">
-                  <Button
-                    disabled={!availableActions.includes('drawCard') || isSubmitting}
-                    onClick={() =>
-                      handleAction('match:draw', { actingParticipantId: focusedParticipant.participantId })
-                    }
-                    type="button"
-                  >
-                    Comprar carta
-                  </Button>
+                <div className="match-action-rack">
+                  <div className="row-wrap">
+                    <Button
+                      disabled={!availableActions.includes('drawCard') || isSubmitting}
+                      onClick={() =>
+                        handleAction('match:draw', { actingParticipantId: focusedParticipant.participantId })
+                      }
+                      title={drawDisabledReason || 'Comprar uma carta'}
+                      type="button"
+                    >
+                      Comprar carta
+                    </Button>
 
-                  <Button
-                    disabled={!availableActions.includes('endTurn') || isSubmitting}
-                    onClick={handleEndTurnClick}
-                    type="button"
-                    variant="secondary"
-                  >
-                    Encerrar turno
-                  </Button>
+                    <Button
+                      disabled={!availableActions.includes('endTurn') || isSubmitting}
+                      onClick={handleEndTurnClick}
+                      title={endTurnDisabledReason || 'Encerrar o turno'}
+                      type="button"
+                      variant="secondary"
+                    >
+                      Encerrar turno
+                    </Button>
+                  </div>
+
+                  {!availableActions.includes('drawCard') || !availableActions.includes('endTurn') ? (
+                    <span className="muted-text compact">
+                      {drawDisabledReason || endTurnDisabledReason || 'Essa acao nao esta disponivel agora.'}
+                    </span>
+                  ) : null}
                 </div>
 
-                <div className="stack-gap" style={{ gap: '10px' }}>
+                <div className="stack-gap match-hand-stage" style={{ gap: '12px' }}>
                   <div className="row-wrap">
                     <strong>Mao</strong>
                     <Badge tone="secondary">{focusedZones.handCount} cartas</Badge>
+                    {availableActions.includes('playCard') ? <Badge tone="success">✨ Janela de jogo</Badge> : null}
                   </div>
                   <PlayerHand
                     canDiscard={availableActions.includes('discardCard')}
                     canPlay={availableActions.includes('playCard')}
                     cards={handCards}
+                    discardDisabledReason={discardDisabledReason}
+                    helperText={contextBarState.description}
                     isSubmitting={isSubmitting}
                     onDiscardCard={(cardId) => openCardAction('match:discardCard', cardId)}
                     onPlayCard={(cardId) => openCardAction('match:playCard', cardId)}
                     onSelectCard={setSelectedHandCardId}
+                    playDisabledReason={playDisabledReason}
                     selectedCardId={selectedHandCardId}
                   />
                 </div>
@@ -858,37 +1074,57 @@ export function MatchPage() {
             )}
           </Card>
 
-          <Card title="Usuarios na sala">
-            <div className="stack-gap" style={{ gap: '10px' }}>
-              {players.map((player) => (
-                <div
-                  key={`room-player-${player.user_id}`}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '10px',
-                    padding: '10px 12px',
-                    border: '1px solid rgba(255,255,255,0.12)',
-                    borderRadius: '14px',
-                    background: player.is_master ? 'rgba(255,255,255,0.03)' : 'transparent',
-                  }}
-                >
-                  <div className="stack-gap" style={{ gap: '2px' }}>
-                    <strong>{player.username}</strong>
-                    <div className="row-wrap">
-                      <Badge tone={player.is_master ? 'accent' : 'secondary'}>
-                        {player.is_master ? 'Mestre' : 'Jogador'}
-                      </Badge>
-                      <Badge tone={player.is_ready ? 'success' : 'secondary'}>
-                        {player.is_ready ? 'Pronto' : 'Nao pronto'}
-                      </Badge>
-                    </div>
-                  </div>
-                  {player.user_id === currentRoom?.host_id ? <Badge tone="accent">Host</Badge> : null}
-                </div>
-              ))}
+          <Card
+            className="match-users-card"
+            actions={
+              <Button
+                onClick={() => setIsRoomUsersCollapsed((current) => !current)}
+                size="sm"
+                type="button"
+                variant="secondary"
+              >
+                {isRoomUsersCollapsed ? 'Mostrar' : 'Ocultar'}
+              </Button>
+            }
+            title="Usuarios na sala"
+          >
+            <div className="row-wrap">
+              <Badge tone="secondary">{players.length} conectados</Badge>
+              <span className="muted-text compact">Presenca da sala durante a partida.</span>
             </div>
+
+            {!isRoomUsersCollapsed ? (
+              <div className="stack-gap match-users-list" style={{ gap: '10px', marginTop: '12px' }}>
+                {players.map((player) => (
+                  <div
+                    key={`room-player-${player.user_id}`}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '10px',
+                      padding: '10px 12px',
+                      border: '1px solid rgba(255,255,255,0.12)',
+                      borderRadius: '14px',
+                      background: player.is_master ? 'rgba(255,255,255,0.03)' : 'transparent',
+                    }}
+                  >
+                    <div className="stack-gap" style={{ gap: '2px' }}>
+                      <strong>{player.username}</strong>
+                      <div className="row-wrap">
+                        <Badge tone={player.is_master ? 'accent' : 'secondary'}>
+                          {player.is_master ? '👑 Mestre' : '🎮 Jogador'}
+                        </Badge>
+                        <Badge tone={player.is_ready ? 'success' : 'secondary'}>
+                          {player.is_ready ? 'Pronto' : 'Nao pronto'}
+                        </Badge>
+                      </div>
+                    </div>
+                    {player.user_id === currentRoom?.host_id ? <Badge tone="accent">👑 Host</Badge> : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </Card>
         </div>
       </div>

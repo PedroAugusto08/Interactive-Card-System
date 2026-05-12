@@ -1,6 +1,28 @@
 import { resolveCardImageUrl } from '../../utils/cardImages';
+import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
 import { CardItem } from './CardItem';
+
+function getCardStateLabel({ canCardPlay, canCardDiscard }) {
+  if (canCardPlay) {
+    return {
+      text: 'Jogavel agora',
+      tone: 'success',
+    };
+  }
+
+  if (canCardDiscard) {
+    return {
+      text: 'Pode descartar',
+      tone: 'secondary',
+    };
+  }
+
+  return {
+    text: 'Aguardando janela',
+    tone: 'secondary',
+  };
+}
 
 export function PlayerHand({
   cards = [],
@@ -11,53 +33,93 @@ export function PlayerHand({
   onSelectCard,
   onPlayCard,
   onDiscardCard,
+  helperText = '',
+  playDisabledReason = '',
+  discardDisabledReason = '',
 }) {
   if (!cards.length) {
-    return <div className="empty-state">Sem cartas na mão no momento.</div>;
+    return <div className="empty-state">Sem cartas na mao no momento.</div>;
   }
 
   return (
-    <div className="player-hand">
-      {cards.map((card) => {
-        const isSelected = selectedCardId === card.instanceId;
+    <div className="player-hand-panel">
+      {helperText ? (
+        <div className="player-hand-panel__status">
+          <Badge tone={canPlay ? 'success' : 'secondary'}>{canPlay ? 'Janela aberta' : 'Janela fechada'}</Badge>
+          <span className="muted-text compact">{helperText}</span>
+        </div>
+      ) : null}
 
-        return (
-          <div className="player-hand__slot" key={card.instanceId}>
-            <CardItem
-              category={card.category}
-              className="player-hand__card"
-              cost={card.category === 'imo' ? card.imoCost || 0 : undefined}
-              costLabel="Custo Imo"
-              description={card.effect}
-              footer={
-                <div className="row-wrap">
-                  <Button
-                    disabled={!canPlay || isSubmitting}
-                    onClick={() => onPlayCard?.(card.instanceId)}
-                    size="sm"
-                  >
-                    Jogar
-                  </Button>
+      <div className="player-hand">
+        {cards.map((card) => {
+          const isSelected = selectedCardId === card.instanceId;
+          const canCardPlay = canPlay && !isSubmitting;
+          const canCardDiscard = canDiscard && !isSubmitting && card.canDiscard !== false;
+          const cardState = getCardStateLabel({ canCardPlay, canCardDiscard });
 
-                  <Button
-                    disabled={!canDiscard || isSubmitting || card.canDiscard === false}
-                    onClick={() => onDiscardCard?.(card.instanceId)}
-                    size="sm"
-                    variant="secondary"
-                  >
-                    Descartar
-                  </Button>
-                </div>
-              }
-              imageSrc={resolveCardImageUrl(card.imagePath)}
-              name={card.name}
-              onClick={() => onSelectCard?.(card.instanceId)}
-              selected={isSelected}
-              showDescription={false}
-            />
-          </div>
-        );
-      })}
+          return (
+            <div
+              className={[
+                'player-hand__slot',
+                canCardPlay ? 'player-hand__slot--playable' : '',
+                !canCardPlay && canCardDiscard ? 'player-hand__slot--discardable' : '',
+                !canCardPlay && !canCardDiscard ? 'player-hand__slot--inactive' : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              key={card.instanceId}
+            >
+              <CardItem
+                category={card.category}
+                className="player-hand__card"
+                cost={card.category === 'imo' ? card.imoCost || 0 : undefined}
+                costLabel="Custo Imo"
+                description={card.effect}
+                footer={
+                  <div className="player-hand__footer">
+                    <div className="player-hand__footer-top">
+                      <Badge tone={cardState.tone}>{cardState.text}</Badge>
+                    </div>
+
+                    <div className="row-wrap">
+                      <Button
+                        disabled={!canPlay || isSubmitting}
+                        onClick={() => onPlayCard?.(card.instanceId)}
+                        size="sm"
+                        title={!canCardPlay ? playDisabledReason || 'Essa acao nao esta disponivel agora.' : 'Jogar carta'}
+                      >
+                        Jogar
+                      </Button>
+
+                      <Button
+                        disabled={!canDiscard || isSubmitting || card.canDiscard === false}
+                        onClick={() => onDiscardCard?.(card.instanceId)}
+                        size="sm"
+                        title={
+                          !canCardDiscard
+                            ? discardDisabledReason ||
+                              (card.canDiscard === false
+                                ? 'Essa carta nao pode ser descartada agora.'
+                                : 'Essa acao nao esta disponivel agora.')
+                            : 'Descartar carta'
+                        }
+                        variant="secondary"
+                      >
+                        Descartar
+                      </Button>
+                    </div>
+                  </div>
+                }
+                imageSrc={resolveCardImageUrl(card.imagePath)}
+                name={card.name}
+                onClick={() => onSelectCard?.(card.instanceId)}
+                selected={isSelected}
+                showDescription={false}
+              />
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
