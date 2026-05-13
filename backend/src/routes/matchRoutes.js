@@ -16,6 +16,7 @@ router.post('/:roomId/discard-card', asyncHandler(matchController.discardCard));
 router.post('/:roomId/react-to-attack', asyncHandler(matchController.reactToAttack));
 router.post('/:roomId/resolve-attack', asyncHandler(matchController.resolveAttack));
 router.post('/:roomId/reveal-top-deck', asyncHandler(matchController.revealTopDeck));
+router.post('/:roomId/use-ferroada', asyncHandler(matchController.useFerroada));
 router.post('/:roomId/end-turn', asyncHandler(matchController.endTurn));
 
 module.exports = { matchRoutes: router };

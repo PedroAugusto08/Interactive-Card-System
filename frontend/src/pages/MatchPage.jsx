@@ -170,6 +170,7 @@ export function MatchPage() {
   const [isExileModalOpen, setIsExileModalOpen] = useState(false);
   const [isRoomUsersCollapsed, setIsRoomUsersCollapsed] = useState(true);
   const [pendingCardAction, setPendingCardAction] = useState(null);
+  const [pendingFerroadaAction, setPendingFerroadaAction] = useState(null);
   const [pendingCardViews, setPendingCardViews] = useState([]);
   const [revealedTopDeckModal, setRevealedTopDeckModal] = useState(null);
 
@@ -431,6 +432,14 @@ export function MatchPage() {
             resolution: payload.resolution,
             token,
           });
+        } else if (action === 'match:useFerroada') {
+          snapshot = await matchApi.useFerroada({
+            roomId: currentRoom.id,
+            actingParticipantId: payload.actingParticipantId,
+            ferroadaCardId: payload.ferroadaCardId,
+            selectedOwnHandCardIds: payload.selectedOwnHandCardIds,
+            token,
+          });
         } else if (action === 'match:endTurn') {
           snapshot = await matchApi.endTurn({
             roomId: currentRoom.id,
@@ -589,6 +598,34 @@ export function MatchPage() {
     setPendingCardAction(null);
   }
 
+  function openFerroadaAction(cardId) {
+    if (!focusedParticipant) {
+      return;
+    }
+
+    const targetCard = handCards.find((card) => card.instanceId === cardId && card.id === 'ferroada');
+    if (!targetCard) {
+      return;
+    }
+
+    const selectableCards = getSelectableOwnHandCards(handCards, [cardId]);
+    if (!selectableCards.length) {
+      setLocalError('A Ferroada precisa de pelo menos 1 outra carta na sua mão.');
+      return;
+    }
+
+    setLocalError('');
+    setPendingFerroadaAction({
+      actingParticipantId: focusedParticipant.participantId,
+      ferroadaCardId: cardId,
+      selectedOwnHandCardIds: selectableCards.slice(0, 2).map((card) => card.instanceId),
+    });
+  }
+
+  function closePendingFerroadaAction() {
+    setPendingFerroadaAction(null);
+  }
+
   const pendingTargetOptions = getTargetOptions(
     participantStates,
     pendingCardAction?.actingParticipantId,
@@ -616,6 +653,7 @@ export function MatchPage() {
   const pairedCandidates = pendingCardAction
     ? getPlayableTogetherCandidates(handCards, pendingCardAction.cardId)
     : [];
+  const ferroadaSelectableCards = getSelectableOwnHandCards(handCards, [pendingFerroadaAction?.ferroadaCardId]);
 
   async function handleConfirmPendingCardAction() {
     if (!pendingCardAction) {
@@ -703,6 +741,24 @@ export function MatchPage() {
     await handleAction(pendingCardAction.action, payload);
   }
 
+  async function handleConfirmPendingFerroadaAction() {
+    if (!pendingFerroadaAction) {
+      return;
+    }
+
+    if (!pendingFerroadaAction.selectedOwnHandCardIds.length) {
+      setLocalError('Escolha pelo menos 1 outra carta da sua mão para exilar.');
+      return;
+    }
+
+    closePendingFerroadaAction();
+    await handleAction('match:useFerroada', {
+      actingParticipantId: pendingFerroadaAction.actingParticipantId,
+      ferroadaCardId: pendingFerroadaAction.ferroadaCardId,
+      selectedOwnHandCardIds: pendingFerroadaAction.selectedOwnHandCardIds,
+    });
+  }
+
   if (!currentRoom) {
     return (
       <section className="stack-gap-lg">
@@ -712,6 +768,16 @@ export function MatchPage() {
       </section>
     );
   }
+
+  const ferroadaDisabledReason = !focusedParticipant
+    ? 'Selecione um participante em foco para agir.'
+    : isSubmitting
+      ? 'Aguarde a ação atual terminar.'
+      : handCards.length <= 1
+        ? 'A Ferroada precisa de pelo menos 1 outra carta na mão.'
+        : !availableActions.includes('playCard') && !availableActions.includes('discardCard')
+          ? 'Essa habilidade só pode ser usada antes da sua ação de carta do turno.'
+          : '';
 
   return (
     <section className="stack-gap-lg match-page">
@@ -893,12 +959,15 @@ export function MatchPage() {
                 <PlayerHand
                   canDiscard={availableActions.includes('discardCard')}
                   canPlay={availableActions.includes('playCard')}
+                  canUseFerroada={Boolean(!ferroadaDisabledReason)}
                   cards={handCards}
                   discardDisabledReason={discardDisabledReason}
+                  ferroadaDisabledReason={ferroadaDisabledReason}
                   isSubmitting={isSubmitting}
                   onDiscardCard={(cardId) => openCardAction('match:discardCard', cardId)}
                   onPlayCard={(cardId) => openCardAction('match:playCard', cardId)}
                   onSelectCard={setSelectedHandCardId}
+                  onUseFerroada={openFerroadaAction}
                   playDisabledReason={playDisabledReason}
                   selectedCardId={selectedHandCardId}
                 />
@@ -1324,6 +1393,74 @@ export function MatchPage() {
       </Modal>
 
       <Modal
+        confirmLabel="Exilar e comprar"
+        description="Escolha até 2 outras cartas da sua mão para exilar. A Ferroada então compra até 2 cartas do seu deck."
+        isLoading={isSubmitting}
+        onClose={closePendingFerroadaAction}
+        onConfirm={handleConfirmPendingFerroadaAction}
+        open={Boolean(pendingFerroadaAction)}
+        title="Ativar Ferroada"
+      >
+        {pendingFerroadaAction ? (
+          <div className="stack-gap" style={{ gap: '14px' }}>
+            <span className="status-label">Escolha 1 ou 2 outras cartas da sua mão</span>
+            {ferroadaSelectableCards.length ? (
+              <div className="row-wrap">
+                {ferroadaSelectableCards.map((card) => {
+                  const isSelected = pendingFerroadaAction.selectedOwnHandCardIds.includes(card.instanceId);
+                  const canSelectMore =
+                    isSelected || pendingFerroadaAction.selectedOwnHandCardIds.length < 2;
+
+                  return (
+                    <Button
+                      key={`ferroada-own-hand-${card.instanceId}`}
+                      onClick={() =>
+                        setPendingFerroadaAction((current) => {
+                          if (!current) {
+                            return current;
+                          }
+
+                          const alreadySelected = current.selectedOwnHandCardIds.includes(card.instanceId);
+                          if (alreadySelected) {
+                            return {
+                              ...current,
+                              selectedOwnHandCardIds: current.selectedOwnHandCardIds.filter(
+                                (instanceId) => instanceId !== card.instanceId
+                              ),
+                            };
+                          }
+
+                          if (current.selectedOwnHandCardIds.length >= 2) {
+                            return current;
+                          }
+
+                          return {
+                            ...current,
+                            selectedOwnHandCardIds: [...current.selectedOwnHandCardIds, card.instanceId],
+                          };
+                        })
+                      }
+                      type="button"
+                      variant={isSelected ? 'primary' : 'secondary'}
+                    >
+                      {card.name}
+                      {!canSelectMore && !isSelected ? ' (limite)' : ''}
+                    </Button>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="muted-text">Não há outra carta disponível na sua mão.</p>
+            )}
+
+            <p className="muted-text compact">
+              Selecionadas: {pendingFerroadaAction.selectedOwnHandCardIds.length} de 2.
+            </p>
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
         cancelLabel={null}
         confirmLabel={
           combatState?.status === 'awaiting-reaction'
@@ -1352,7 +1489,7 @@ export function MatchPage() {
                   : 'skip-counter-response',
           })
         }
-        open={isCurrentUserCombatDefender && !pendingCardAction}
+        open={isCurrentUserCombatDefender && !pendingCardAction && !pendingFerroadaAction}
         title="Ataque recebido"
       >
         {combatState?.status === 'awaiting-reaction' ? (

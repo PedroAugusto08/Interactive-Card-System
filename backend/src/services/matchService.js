@@ -930,6 +930,16 @@ async function resolveAttackForPlayer({
   let nextCombatState = combatState;
   let logMessage = '';
   const logType = 'MATCH_ATTACK_RESOLUTION';
+  let notice = '';
+  const logPayload = {
+    attackerParticipantId: combatState.attackerParticipantId,
+    defenderParticipantId: combatState.defenderParticipantId,
+    resolution,
+  };
+
+  const participantsById = createMutableParticipantMap(context.participants);
+  const attackerState = participantsById.get(combatState.attackerParticipantId);
+  const defenderState = participantsById.get(combatState.defenderParticipantId);
 
   if (resolution === 'skip-reaction') {
     if (combatState.status !== 'awaiting-reaction') {
@@ -966,6 +976,35 @@ async function resolveAttackForPlayer({
     throw new AppError('Resolucao de ataque invalida.', 400);
   }
 
+  let participantsForRealtimeState = context.participants;
+  if ((resolution === 'skip-reaction' || resolution === 'reaction-fail') && attackerState && defenderState) {
+    const stolenCardEntry = applyCeifarStealOnSuccessfulAttack({
+      attackerState,
+      defenderState,
+    });
+
+    if (stolenCardEntry) {
+      const stolenCard = await resolveMatchCardEntry({
+        cardEntry: stolenCardEntry,
+        fallbackOwnerUserId: attackerState.controller_user_id,
+      });
+
+      notice = stolenCard
+        ? `Ceifar roubou ${stolenCard.name} da mao de ${defenderState.display_name}.`
+        : `Ceifar roubou uma carta da mao de ${defenderState.display_name}.`;
+      logMessage = `${logMessage} ${notice}`;
+      logPayload.ceifarTriggered = true;
+      logPayload.stolenCardId = stolenCardEntry.cardId;
+      logPayload.stolenCardInstanceId = stolenCardEntry.instanceId;
+
+      const updatedParticipantsById = await persistParticipantStates({
+        participantsById,
+        originalParticipants: context.participants,
+      });
+      participantsForRealtimeState = [...updatedParticipantsById.values()];
+    }
+  }
+
   const updatedMatchState = await updateMatchCombatState({
     matchId: context.match.id,
     combatState: normalizeCombatState(nextCombatState),
@@ -975,11 +1014,7 @@ async function resolveAttackForPlayer({
     matchId: context.match.id,
     type: logType,
     message: logMessage,
-    payload: {
-      attackerParticipantId: combatState.attackerParticipantId,
-      defenderParticipantId: combatState.defenderParticipantId,
-      resolution,
-    },
+    payload: logPayload,
   });
 
   return finalizeActionResponse({
@@ -988,9 +1023,10 @@ async function resolveAttackForPlayer({
     includeSnapshot,
     actionState: await buildActionRealtimeState({
       activeMatch: updatedMatchState || context.match,
-      participants: context.participants,
+      participants: participantsForRealtimeState,
       currentUserId: userId,
       log: createdLog,
+      notice,
     }),
   });
 }
@@ -1063,6 +1099,76 @@ async function revealViewedTopDeckCardForPlayer({
     revealEvent,
     log: createdLog ? mapLogRecord(createdLog) : null,
   };
+}
+
+async function useFerroadaHandEffectForPlayer({
+  roomId,
+  userId,
+  actingParticipantId,
+  ferroadaCardId,
+  selectedOwnHandCardIds = [],
+  includeSnapshot = true,
+}) {
+  const context = await requireActiveTurnContext({
+    roomId,
+    userId,
+    actingParticipantId,
+    includeAllParticipants: true,
+  });
+  const combatState = normalizeCombatState(context.match.combat_state_json);
+
+  if (combatState) {
+    throw new AppError('Resolva o ataque pendente antes de usar a habilidade da Ferroada.', 409);
+  }
+
+  if (context.currentParticipant.has_used_card_action_this_turn) {
+    throw new AppError('Essa criatura ja usou sua acao de carta neste turno.', 409);
+  }
+
+  const participantsById = createMutableParticipantMap(context.participants);
+  const actingParticipant = participantsById.get(actingParticipantId);
+  const selectedIds = [...new Set((selectedOwnHandCardIds || []).filter(Boolean))];
+
+  const outcome = await applyFerroadaHandEffect({
+    ownerUserId: actingParticipant.controller_user_id,
+    actingParticipant,
+    ferroadaCardId,
+    selectedOwnHandCardIds: selectedIds,
+  });
+
+  actingParticipant.has_used_card_action_this_turn = true;
+
+  const updatedParticipantsById = await persistParticipantStates({
+    participantsById,
+    originalParticipants: context.participants,
+  });
+
+  const createdLog = await addMatchLog({
+    matchId: context.match.id,
+    type: 'MATCH_PLAY_CARD',
+    message: outcome.logMessage,
+    payload: {
+      actingParticipantId,
+      ferroadaCardId,
+      selectedOwnHandCardIds: selectedIds,
+      drawnCount: outcome.drawnCount,
+      exiledCount: outcome.exiledCount,
+      usedHandEffect: 'ferroada',
+    },
+  });
+
+  return finalizeActionResponse({
+    roomId,
+    userId,
+    includeSnapshot,
+    actionState: await buildActionRealtimeState({
+      activeMatch: context.match,
+      participants: [...updatedParticipantsById.values()],
+      currentUserId: userId,
+      log: createdLog,
+      notice: outcome.notice,
+    }),
+  });
 }
 
 async function endTurnForPlayer({ roomId, userId, actingParticipantId, includeSnapshot = true }) {
@@ -1980,6 +2086,124 @@ function reassignMatchCardEntryOwner({ cardEntry, nextOwnerId }) {
   };
 }
 
+function participantHasCardInHand(participant, cardId) {
+  return Boolean((participant?.hand_cards_json || []).some((entry) => entry.cardId === cardId));
+}
+
+function applyCeifarStealOnSuccessfulAttack({ attackerState, defenderState, stolenIndex = null }) {
+  if (!participantHasCardInHand(attackerState, 'ceifar')) {
+    return null;
+  }
+
+  const defenderHand = defenderState?.hand_cards_json || [];
+  if (!defenderHand.length) {
+    return null;
+  }
+
+  const normalizedIndex =
+    Number.isInteger(stolenIndex) && stolenIndex >= 0 && stolenIndex < defenderHand.length
+      ? stolenIndex
+      : Math.floor(Math.random() * defenderHand.length);
+
+  const [stolenCard] = defenderState.hand_cards_json.splice(normalizedIndex, 1);
+  if (!stolenCard) {
+    return null;
+  }
+
+  const reassignedCard = reassignMatchCardEntryOwner({
+    cardEntry: stolenCard,
+    nextOwnerId: attackerState.id,
+  });
+  attackerState.hand_cards_json = [...(attackerState.hand_cards_json || []), reassignedCard];
+  return reassignedCard;
+}
+
+async function applyFerroadaHandEffect({
+  ownerUserId,
+  actingParticipant,
+  ferroadaCardId,
+  selectedOwnHandCardIds,
+}) {
+  const ferroadaEntry = (actingParticipant?.hand_cards_json || []).find(
+    (entry) => entry.instanceId === ferroadaCardId && entry.cardId === 'ferroada'
+  );
+
+  if (!ferroadaEntry) {
+    throw new AppError('A Ferroada selecionada nao esta disponivel na sua mao.', 404);
+  }
+
+  const selectedIds = [...new Set((selectedOwnHandCardIds || []).filter(Boolean))];
+  if (!selectedIds.length) {
+    throw new AppError('Escolha pelo menos 1 outra carta da sua mao para exilar com a Ferroada.', 400);
+  }
+
+  if (selectedIds.length > 2) {
+    throw new AppError('A Ferroada permite exilar no maximo 2 outras cartas da mao.', 400);
+  }
+
+  const ferroadaIndex = actingParticipant.hand_cards_json.findIndex((entry) => entry.instanceId === ferroadaCardId);
+  const selectedEntries = [];
+
+  for (const selectedId of selectedIds) {
+    if (selectedId === ferroadaCardId) {
+      throw new AppError('A Ferroada nao pode exilar a si mesma com essa habilidade.', 400);
+    }
+
+    const handIndex = actingParticipant.hand_cards_json.findIndex((entry) => entry.instanceId === selectedId);
+    if (handIndex < 0) {
+      throw new AppError('Uma das cartas selecionadas nao esta mais disponivel na sua mao.', 400);
+    }
+
+    if (handIndex === ferroadaIndex) {
+      throw new AppError('A Ferroada nao pode exilar a si mesma com essa habilidade.', 400);
+    }
+
+    selectedEntries.push(actingParticipant.hand_cards_json[handIndex]);
+  }
+
+  actingParticipant.hand_cards_json = actingParticipant.hand_cards_json.filter(
+    (entry) => !selectedIds.includes(entry.instanceId)
+  );
+  actingParticipant.exile_cards_json = [...selectedEntries, ...(actingParticipant.exile_cards_json || [])];
+
+  const drawnCards = [];
+  for (let index = 0; index < 2; index += 1) {
+    if (!actingParticipant.deck_cards_json.length) {
+      break;
+    }
+
+    const [drawnCard] = actingParticipant.deck_cards_json.splice(0, 1);
+    drawnCards.push(drawnCard);
+  }
+
+  actingParticipant.hand_cards_json = [...actingParticipant.hand_cards_json, ...drawnCards];
+
+  const resolvedSelectedCards = await Promise.all(
+    selectedEntries.map((entry) =>
+      resolveMatchCardEntry({
+        cardEntry: entry,
+        fallbackOwnerUserId: ownerUserId,
+      })
+    )
+  );
+
+  const selectedNames = resolvedSelectedCards
+    .filter(Boolean)
+    .map((card) => card.name);
+
+  const summaryLabel = selectedNames.length
+    ? selectedNames.join(', ')
+    : `${selectedEntries.length} carta(s)`;
+  const notice = `Ferroada exilou ${summaryLabel} e comprou ${drawnCards.length} carta(s).`;
+
+  return {
+    drawnCount: drawnCards.length,
+    exiledCount: selectedEntries.length,
+    notice,
+    logMessage: `${actingParticipant.display_name} ativou Ferroada, exilou ${summaryLabel} e comprou ${drawnCards.length} carta(s).`,
+  };
+}
+
 function getMatchCardCatalogOwnerId(cardEntry, fallbackOwnerUserId) {
   const normalizedCatalogOwnerId = Number(cardEntry?.catalogOwnerId);
   if (Number.isInteger(normalizedCatalogOwnerId)) {
@@ -2095,6 +2319,10 @@ async function finalizeActionResponse({ roomId, userId, includeSnapshot, actionS
 }
 
 module.exports = {
+  __testables: {
+    applyCeifarStealOnSuccessfulAttack,
+    applyFerroadaHandEffect,
+  },
   discardCardForPlayer,
   drawCardForPlayer,
   endTurnForPlayer,
@@ -2107,4 +2335,5 @@ module.exports = {
   resolveAttackForPlayer,
   revealViewedTopDeckCardForPlayer,
   startMatchForRoom,
+  useFerroadaHandEffectForPlayer,
 };

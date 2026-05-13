@@ -316,6 +316,37 @@ const CARD_CATALOG = [
       ],
     },
   }),
+  defineCard({
+    id: 'adrenalina',
+    name: 'Adrenalina',
+    category: CARD_CATEGORIES.DIVISION,
+    maxCopies: 2,
+    imoCost: 1,
+    effect:
+      'Enquanto estiver na mao, suas recuperacoes de todas as fontes sao 50% melhores, arredondando para cima. Ao jogar ou descartar, recupera 25% de Imo e Carne.',
+    imagePath: '/cartas/16.png',
+  }),
+  defineCard({
+    id: 'ceifar',
+    name: 'Ceifar',
+    category: CARD_CATEGORIES.DIVISION,
+    maxCopies: 1,
+    imoCost: 1,
+    effect:
+      'Enquanto estiver na mao e ao causar dano ao inimigo, pode roubar uma carta da mao do inimigo. Ao jogar ou descartar, sua proxima carta nao necessitara de testes para obter sucesso.',
+    imagePath: '/cartas/17.png',
+  }),
+  defineCard({
+    id: 'ferroada',
+    name: 'Ferroada',
+    category: CARD_CATEGORIES.DIVISION,
+    combatRole: 'attack',
+    maxCopies: 2,
+    imoCost: 1,
+    effect:
+      'Enquanto estiver na mao, pode exilar ate 2 outras cartas da mao para comprar outras 2. Ao jogar, desfere um golpe com o dobro de dano e vantagem. Ao descartar, sofre 1 em Carne.',
+    imagePath: '/cartas/18.png',
+  }),
 ];
 
 const CARD_BY_ID = new Map(CARD_CATALOG.map((card) => [card.id, card]));

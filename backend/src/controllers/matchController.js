@@ -25,6 +25,12 @@ const actingParticipantSchema = z.object({
   actingParticipantId: z.coerce.number().int().positive(),
 });
 
+const ferroadaActionSchema = z.object({
+  actingParticipantId: z.coerce.number().int().positive(),
+  ferroadaCardId: z.string().trim().min(1),
+  selectedOwnHandCardIds: z.array(z.string().trim().min(1)).max(2),
+});
+
 const revealTopDeckSchema = z.object({
   actingParticipantId: z.coerce.number().int().positive(),
   targetParticipantId: z.coerce.number().int().positive(),
@@ -127,6 +133,20 @@ async function endTurn(req, res) {
   return res.status(200).json(data);
 }
 
+async function useFerroada(req, res) {
+  const { roomId } = roomIdParamSchema.parse(req.params);
+  const payload = ferroadaActionSchema.parse(req.body);
+  const data = await matchService.useFerroadaHandEffectForPlayer({
+    roomId,
+    userId: req.user.id,
+    actingParticipantId: payload.actingParticipantId,
+    ferroadaCardId: payload.ferroadaCardId,
+    selectedOwnHandCardIds: payload.selectedOwnHandCardIds,
+  });
+
+  return res.status(200).json(data);
+}
+
 async function revealTopDeck(req, res) {
   const { roomId } = roomIdParamSchema.parse(req.params);
   const payload = revealTopDeckSchema.parse(req.body);
@@ -177,4 +197,5 @@ module.exports = {
   resolveAttack,
   revealTopDeck,
   endTurn,
+  useFerroada,
 };

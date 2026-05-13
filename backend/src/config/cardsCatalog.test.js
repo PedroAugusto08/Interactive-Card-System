@@ -17,11 +17,27 @@ test('official cards expose structured automation metadata when needed', () => {
   const visualizar = getCardById('visualizar');
   const movimento = getCardById('movimento');
   const maldicao = getCardById('maldicao');
+  const ferroada = getCardById('ferroada');
 
   assert.equal(movimento.canPlayTogether, true);
   assert.equal(visualizar.playAutomation.targetScope, 'selected-player');
   assert.equal(visualizar.discardAutomation.effects[0].type, 'moveTopDeckToExile');
   assert.equal(maldicao.canDiscard, false);
+  assert.equal(ferroada.combatRole, 'attack');
+});
+
+test('new division cards are available with expected copy limits', () => {
+  const adrenalina = getCardById('adrenalina');
+  const ceifar = getCardById('ceifar');
+  const ferroada = getCardById('ferroada');
+
+  assert.ok(adrenalina);
+  assert.ok(ceifar);
+  assert.ok(ferroada);
+  assert.equal(adrenalina.category, 'division');
+  assert.equal(adrenalina.maxCopies, 2);
+  assert.equal(ceifar.maxCopies, 1);
+  assert.equal(ferroada.maxCopies, 2);
 });
 
 test('mapImoCardRecordToCatalogCard maps persisted imo cards to catalog shape', () => {

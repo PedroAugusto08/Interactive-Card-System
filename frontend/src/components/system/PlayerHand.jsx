@@ -27,9 +27,12 @@ export function PlayerHand({
   isSubmitting = false,
   canPlay = false,
   canDiscard = false,
+  canUseFerroada = false,
+  ferroadaDisabledReason = '',
   onSelectCard,
   onPlayCard,
   onDiscardCard,
+  onUseFerroada,
   playDisabledReason = '',
   discardDisabledReason = '',
 }) {
@@ -45,6 +48,8 @@ export function PlayerHand({
           const canCardPlay = canPlay && !isSubmitting;
           const canCardDiscard = canDiscard && !isSubmitting && card.canDiscard !== false;
           const cardState = getCardStateLabel({ canCardPlay, canCardDiscard });
+          const isFerroada = card.id === 'ferroada';
+          const canTriggerFerroada = isFerroada && canUseFerroada && !isSubmitting;
 
           return (
             <div
@@ -66,13 +71,30 @@ export function PlayerHand({
                 description={card.effect}
                 footer={
                   <div className="player-hand__footer">
-                    {cardState ? (
+                    {cardState || isFerroada ? (
                       <div className="player-hand__footer-top">
-                        <Badge tone={cardState.tone}>{cardState.text}</Badge>
+                        {cardState ? <Badge tone={cardState.tone}>{cardState.text}</Badge> : null}
+                        {isFerroada ? <Badge tone="accent">Efeito de mão</Badge> : null}
                       </div>
                     ) : null}
 
                     <div className="row-wrap">
+                      {isFerroada ? (
+                        <Button
+                          disabled={!canTriggerFerroada}
+                          onClick={() => onUseFerroada?.(card.instanceId)}
+                          size="sm"
+                          title={
+                            !canTriggerFerroada
+                              ? ferroadaDisabledReason || 'Essa ação não está disponível agora.'
+                              : 'Exilar até 2 outras cartas da mão e comprar 2.'
+                          }
+                          variant="secondary"
+                        >
+                          Ativar efeito
+                        </Button>
+                      ) : null}
+
                       <Button
                         disabled={!canPlay || isSubmitting}
                         onClick={() => onPlayCard?.(card.instanceId)}

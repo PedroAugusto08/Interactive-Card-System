@@ -429,6 +429,51 @@ function createSocketServer(httpServer) {
       }
     });
 
+    socket.on(
+      'match:useFerroada',
+      async ({ roomId, actingParticipantId, ferroadaCardId, selectedOwnHandCardIds }, acknowledge) => {
+      try {
+        const actionStartedAt = performance.now();
+        const actionState = await matchService.useFerroadaHandEffectForPlayer({
+          roomId: Number(roomId),
+          userId: user.id,
+          actingParticipantId: Number(actingParticipantId),
+          ferroadaCardId,
+          selectedOwnHandCardIds: Array.isArray(selectedOwnHandCardIds) ? selectedOwnHandCardIds : [],
+          includeSnapshot: false,
+        });
+        const mutateMs = performance.now() - actionStartedAt;
+        const acknowledgeStartedAt = performance.now();
+        const ackMetrics = {
+          buildAckMs: 0,
+          totalMs: 0,
+        };
+        if (typeof acknowledge === 'function') {
+          acknowledge({
+            ok: true,
+            snapshot: actionState?.snapshot || null,
+            log: actionState?.log || null,
+            notice: actionState?.notice || '',
+            effectResults: actionState?.effectResults || [],
+            metrics: ackMetrics,
+          });
+        }
+        ackMetrics.buildAckMs = performance.now() - acknowledgeStartedAt;
+        ackMetrics.totalMs = ackMetrics.buildAckMs;
+        logMatchPerf('match:useFerroada', {
+          roomId: Number(roomId),
+          userId: user.id,
+          mutateMs,
+          realtimeMetrics: ackMetrics,
+          totalMs: performance.now() - actionStartedAt,
+        });
+        queueMatchBroadcast(io, Number(roomId), [socket.id]);
+      } catch (error) {
+        acknowledgeSocketError(acknowledge, error.message);
+        emitSocketError(socket, error.message);
+      }
+    });
+
     socket.on('match:endTurn', async ({ roomId, actingParticipantId }, acknowledge) => {
       try {
         const actionStartedAt = performance.now();

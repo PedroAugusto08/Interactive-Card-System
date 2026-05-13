@@ -97,6 +97,17 @@ export const matchApi = {
       body: { actingParticipantId, targetParticipantId, topDeckInstanceId },
     }),
 
+  useFerroada: ({ roomId, actingParticipantId, ferroadaCardId, selectedOwnHandCardIds, token }) =>
+    request(`/match/${roomId}/use-ferroada`, {
+      method: 'POST',
+      token,
+      body: {
+        actingParticipantId,
+        ferroadaCardId,
+        selectedOwnHandCardIds,
+      },
+    }),
+
   endTurn: ({ roomId, actingParticipantId, token }) =>
     request(`/match/${roomId}/end-turn`, {
       method: 'POST',
