@@ -8,7 +8,7 @@ const cardEntrySchema = z.object({
   quantity: z.coerce.number().int().positive(),
 });
 
-const cardsSchema = z.array(cardEntrySchema).min(1);
+const cardsSchema = z.array(cardEntrySchema);
 
 const createDeckSchema = z.object({
   name: z.string().trim().min(2).max(80),
@@ -103,6 +103,7 @@ async function updateDeck(req, res) {
     name: payload.name,
     description: payload.description,
     cards: payload.cards,
+    requesterUser: req.user,
   });
 
   return res.status(200).json({ deck });

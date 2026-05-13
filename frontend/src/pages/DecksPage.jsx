@@ -125,7 +125,23 @@ function getCardRarityWeight(card) {
   return map[rarity] || 0;
 }
 
-function buildMetric({ key, label, current, min, max, exact = false }) {
+function buildMetric({ key, label, current, min, max, exact = false, unlimited = false }) {
+  if (unlimited) {
+    return {
+      key,
+      label,
+      current,
+      min: null,
+      max: null,
+      exact: false,
+      unlimited: true,
+      state: 'valid',
+      message: `${label} livre`,
+      displayValue: String(current),
+      progress: null,
+    };
+  }
+
   let state = 'valid';
   let message = `${label} pronta`;
 
@@ -152,6 +168,7 @@ function buildMetric({ key, label, current, min, max, exact = false }) {
     min,
     max,
     exact,
+    unlimited: false,
     state,
     message,
     displayValue: `${current}/${max}`,
@@ -159,9 +176,48 @@ function buildMetric({ key, label, current, min, max, exact = false }) {
   };
 }
 
-function buildDeckEvaluation(summary, rules) {
+function buildDeckEvaluation(summary, rules, { unlimited = false } = {}) {
   if (!rules) {
     return null;
+  }
+
+  if (unlimited) {
+    const metrics = {
+      total: buildMetric({
+        key: 'total',
+        label: 'Total',
+        current: summary.totalCards,
+        unlimited: true,
+      }),
+      fixed: buildMetric({
+        key: 'fixed',
+        label: CATEGORY_LABEL.fixed,
+        current: summary.categoryTotals.fixed || 0,
+        unlimited: true,
+      }),
+      division: buildMetric({
+        key: 'division',
+        label: CATEGORY_LABEL.division,
+        current: summary.categoryTotals.division || 0,
+        unlimited: true,
+      }),
+      imo: buildMetric({
+        key: 'imo',
+        label: CATEGORY_LABEL.imo,
+        current: summary.categoryTotals.imo || 0,
+        unlimited: true,
+      }),
+    };
+
+    return {
+      metrics,
+      status: 'valid',
+      title: 'Deck do mestre',
+      message: 'O mestre pode salvar decks sem mínimo ou máximo de cartas.',
+      completion: null,
+      persistenceLabel: summary.totalCards > 0 ? 'Pronto para salvar' : 'Pode salvar vazio',
+      unlimited: true,
+    };
   }
 
   const metrics = {
@@ -232,6 +288,7 @@ function buildDeckEvaluation(summary, rules) {
     message,
     completion,
     persistenceLabel: summary.totalCards > 0 ? 'Pronto para salvar' : 'Rascunho vazio',
+    unlimited: false,
   };
 }
 
@@ -260,6 +317,10 @@ function sortCatalogCards(cards, sortBy) {
 }
 
 function getMetricRuleText(metric) {
+  if (metric.unlimited) {
+    return 'Sem limite';
+  }
+
   if (metric.exact) {
     return `${metric.max} obrigatórias`;
   }
@@ -632,11 +693,13 @@ function DeckMetricCard({ metric }) {
       </div>
       <strong className="deck-metric-card__value">{metric.displayValue}</strong>
       <span className="deck-metric-card__hint">{getMetricRuleText(metric)}</span>
-      <div className="deck-progress">
-        <span className="deck-progress__bar">
-          <span className="deck-progress__fill" style={{ width: `${Math.max(metric.progress * 100, 8)}%` }} />
-        </span>
-      </div>
+      {typeof metric.progress === 'number' ? (
+        <div className="deck-progress">
+          <span className="deck-progress__bar">
+            <span className="deck-progress__fill" style={{ width: `${Math.max(metric.progress * 100, 8)}%` }} />
+          </span>
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -761,8 +824,8 @@ export function DecksPage() {
     [draftQuantities, catalogMap]
   );
   const deckEvaluation = useMemo(
-    () => buildDeckEvaluation(draftSummary, rules),
-    [draftSummary, rules]
+    () => buildDeckEvaluation(draftSummary, rules, { unlimited: canManageMultipleDecks }),
+    [canManageMultipleDecks, draftSummary, rules]
   );
   const imoCanDiscard = imoForm.canDiscard !== false;
   const imoCanPlayTogether = Boolean(imoForm.canPlayTogether);
@@ -1121,7 +1184,7 @@ export function DecksPage() {
 
     try {
       const cards = toCardsPayload(draftQuantities);
-      if (!cards.length) {
+      if (!cards.length && !canManageMultipleDecks) {
         throw new Error('Selecione ao menos uma carta para montar o deck.');
       }
 
@@ -1594,12 +1657,16 @@ export function DecksPage() {
                   </div>
 
                   <div className="deck-side-panel__status-line">
-                    <span>{draftSummary.totalCards} / {rules?.maxCards || 0} cartas</span>
+                    <span>
+                      {canManageMultipleDecks
+                        ? `${draftSummary.totalCards} cartas`
+                        : `${draftSummary.totalCards} / ${rules?.maxCards || 0} cartas`}
+                    </span>
                     <span>{isDraftDirty ? 'Rascunho com alteracoes' : deckEvaluation?.persistenceLabel}</span>
                   </div>
                 </div>
 
-                {deckEvaluation ? (
+                {deckEvaluation && typeof deckEvaluation.completion === 'number' ? (
                   <div className="deck-side-panel__progress">
                     <div className="deck-side-panel__progress-bar">
                       <span
@@ -1634,7 +1701,12 @@ export function DecksPage() {
                 <span className={getStatusDotClassName(deckEvaluation?.status || 'incomplete')} />
                 <div className="stack-gap" style={{ gap: '4px' }}>
                   <strong>{deckEvaluation?.title || 'Montando deck'}</strong>
-                  <span>{deckEvaluation?.message || 'Adicione cartas para começar.'}</span>
+                  <span>
+                    {deckEvaluation?.message ||
+                      (canManageMultipleDecks
+                        ? 'Adicione cartas se quiser começar este deck do mestre.'
+                        : 'Adicione cartas para começar.')}
+                  </span>
                 </div>
               </div>
 

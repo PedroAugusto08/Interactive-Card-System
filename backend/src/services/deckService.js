@@ -57,7 +57,7 @@ async function listImoCardsForUser(ownerId) {
 }
 
 async function createDeckForUser({ ownerId, name, description, cards, requesterUser = null }) {
-  const normalizedCards = await normalizeAndValidateDeckCards({ ownerId, cards });
+  const normalizedCards = await normalizeAndValidateDeckCards({ ownerId, cards, requesterUser });
   await assertUserCanCreateDeck({ ownerId, requesterUser });
 
   const createdDeck = await createDeck({
@@ -84,13 +84,13 @@ async function getDeckForUser({ deckId, ownerId }) {
   return attachDeckSummary(deck, ownerId);
 }
 
-async function updateDeckForUser({ deckId, ownerId, name, description, cards }) {
+async function updateDeckForUser({ deckId, ownerId, name, description, cards, requesterUser = null }) {
   const existingDeck = await findDeckById(deckId);
   if (!existingDeck || existingDeck.owner_id !== ownerId) {
     throw new AppError('Deck nao encontrado.', 404);
   }
 
-  const normalizedCards = await normalizeAndValidateDeckCards({ ownerId, cards });
+  const normalizedCards = await normalizeAndValidateDeckCards({ ownerId, cards, requesterUser });
 
   const updatedDeck = await updateDeckById({
     deckId,
@@ -153,9 +153,14 @@ async function getResolvedDeckForUser({ deckId, ownerId }) {
   };
 }
 
-async function normalizeAndValidateDeckCards({ ownerId, cards }) {
+async function normalizeAndValidateDeckCards({ ownerId, cards, requesterUser = null }) {
+  const canManageUnlimitedDeck = canUserManageMultipleDecks(requesterUser);
   const entries = Array.isArray(cards) ? cards : [];
   if (!entries.length) {
+    if (canManageUnlimitedDeck) {
+      return [];
+    }
+
     throw new AppError('O baralho precisa informar cartas.', 400);
   }
 
@@ -204,6 +209,10 @@ async function normalizeAndValidateDeckCards({ ownerId, cards }) {
       cardId,
       quantity,
     });
+  }
+
+  if (canManageUnlimitedDeck) {
+    return normalizedCards;
   }
 
   if (totalCards < DECK_RULES.minCards || totalCards > DECK_RULES.maxCards) {
