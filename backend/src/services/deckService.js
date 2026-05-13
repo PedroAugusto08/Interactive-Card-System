@@ -197,7 +197,7 @@ async function normalizeAndValidateDeckCards({ ownerId, cards, requesterUser = n
       throw new AppError(`Carta desconhecida no catalogo: ${cardId}.`, 400);
     }
 
-    if (quantity > card.maxCopies) {
+    if (!canManageUnlimitedDeck && quantity > card.maxCopies) {
       throw new AppError(`Carta ${card.name} excede o limite de ${card.maxCopies} copias.`, 400);
     }
 

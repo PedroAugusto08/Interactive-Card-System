@@ -704,7 +704,7 @@ function DeckMetricCard({ metric }) {
   );
 }
 
-function DeckCardControl({ card, quantity, onDecrease, onIncrease, onPreview }) {
+function DeckCardControl({ card, quantity, onDecrease, onIncrease, onPreview, unlimitedCopies = false }) {
   const isSelected = quantity > 0;
   const cost = getCardCost(card);
 
@@ -757,12 +757,11 @@ function DeckCardControl({ card, quantity, onDecrease, onIncrease, onPreview }) 
           </button>
           <div className="deck-stepper__value">
             <strong>{quantity}</strong>
-            <span>de {card.maxCopies}</span>
+            <span>{unlimitedCopies ? 'sem limite' : `de ${card.maxCopies}`}</span>
           </div>
           <button
             aria-label={`Aumentar quantidade de ${card.name}`}
             className="deck-stepper__button"
-            disabled={quantity >= card.maxCopies}
             onClick={onIncrease}
             type="button"
           >
@@ -1029,7 +1028,7 @@ export function DecksPage() {
 
     const parsedValue = Number(rawValue);
     const safeValue = Number.isInteger(parsedValue)
-      ? Math.max(0, Math.min(parsedValue, card.maxCopies))
+      ? Math.max(0, canManageMultipleDecks ? parsedValue : Math.min(parsedValue, card.maxCopies))
       : 0;
 
     updateDraftQuantities((previous) => ({
@@ -1585,6 +1584,7 @@ export function DecksPage() {
                                 onIncrease={() => handleAdjustQuantity(card.id, 1)}
                                 onPreview={() => handlePreviewCard(card)}
                                 quantity={Number(draftQuantities[card.id] ?? 0)}
+                                unlimitedCopies={canManageMultipleDecks}
                               />
                             ))}
                           </div>
@@ -1823,7 +1823,7 @@ export function DecksPage() {
             <div className="deck-preview-modal__content">
               <div className="deck-preview-modal__badges row-wrap">
                 <Badge tone="secondary">{CATEGORY_LABEL[previewCard.category] || 'Imo'}</Badge>
-                <Badge tone="accent">Max {previewCard.maxCopies}</Badge>
+                <Badge tone="accent">{canManageMultipleDecks ? 'Sem limite no deck' : `Max ${previewCard.maxCopies}`}</Badge>
                 {previewCard.category === 'imo' ? (
                   <Badge tone="accent">Custo Imo {previewCard.imoCost || 0}</Badge>
                 ) : null}
@@ -1863,7 +1863,7 @@ export function DecksPage() {
                 </div>
                 <div className="deck-preview-modal__meta-item">
                   <span>Cópias</span>
-                  <strong>Max {previewCard.maxCopies}</strong>
+                  <strong>{canManageMultipleDecks ? 'Sem limite para o mestre' : `Max ${previewCard.maxCopies}`}</strong>
                 </div>
                 <div className="deck-preview-modal__meta-item">
                   <span>Custo</span>
