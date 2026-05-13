@@ -30,9 +30,6 @@ export function PlayerHand({
   onSelectCard,
   onPlayCard,
   onDiscardCard,
-  helperText = '',
-  helperTone = 'secondary',
-  helperBadgeText = '',
   playDisabledReason = '',
   discardDisabledReason = '',
 }) {
@@ -42,13 +39,6 @@ export function PlayerHand({
 
   return (
     <div className="player-hand-panel">
-      {helperText ? (
-        <div className="player-hand-panel__status">
-          {helperBadgeText ? <Badge tone={helperTone}>{helperBadgeText}</Badge> : null}
-          <span className="muted-text compact">{helperText}</span>
-        </div>
-      ) : null}
-
       <div className="player-hand">
         {cards.map((card) => {
           const isSelected = selectedCardId === card.instanceId;
