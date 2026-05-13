@@ -611,21 +611,10 @@ export function RoomLobbyPage() {
                 {isMaster ? (
                   <Card compact title="Ordem da rodada">
                     {orderedLobbyParticipants.length ? (
-                      <div className="stack-gap" style={{ gap: '10px' }}>
+                      <div className="stack-gap lobby-turn-order-list" style={{ gap: '10px' }}>
                         {orderedLobbyParticipants.map((entry, index) => (
-                          <div
-                            key={`turn-order-${entry.entryId}`}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              gap: '12px',
-                              padding: '12px',
-                              border: '1px solid rgba(255,255,255,0.12)',
-                              borderRadius: '16px',
-                            }}
-                          >
-                            <div className="stack-gap" style={{ gap: '2px' }}>
+                          <div className="lobby-turn-order-item" key={`turn-order-${entry.entryId}`}>
+                            <div className="stack-gap lobby-turn-order-item__copy" style={{ gap: '2px' }}>
                               <strong>{entry.displayName}</strong>
                               <span className="muted-text compact">
                                 {entry.participantType === 'master-creature'
@@ -719,21 +708,10 @@ export function RoomLobbyPage() {
 
           <Card title="Participantes da rodada">
             {lobbyParticipants.length ? (
-              <div className="stack-gap" style={{ gap: '10px' }}>
+              <div className="stack-gap lobby-participant-list" style={{ gap: '10px' }}>
                 {lobbyParticipants.map((entry) => (
-                  <div
-                    key={`lobby-participant-${entry.entryId}`}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '12px',
-                      padding: '12px',
-                      border: '1px solid rgba(255,255,255,0.12)',
-                      borderRadius: '16px',
-                    }}
-                  >
-                    <div className="stack-gap" style={{ gap: '2px' }}>
+                  <div className="lobby-participant-item" key={`lobby-participant-${entry.entryId}`}>
+                    <div className="stack-gap lobby-participant-item__copy" style={{ gap: '2px' }}>
                       <strong>{entry.displayName}</strong>
                       <span className="muted-text compact">
                         {entry.participantType === 'master-creature' ? 'Criatura do mestre' : 'Jogador'}

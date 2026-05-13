@@ -201,7 +201,7 @@ export function ProtectedLayout() {
       <header className="topbar">
         <div className="topbar-left">
           <div className="topbar-brand" aria-label="Acédia Deck">
-            <span aria-hidden="true" className="topbar-brand__mark">
+            <span aria-hidden="true" className="topbar-brand__mark acedia-symbol-mark">
               <span className="topbar-brand__mark-core" />
             </span>
             <div className="topbar-brand__copy">
@@ -461,6 +461,7 @@ export function ProtectedLayout() {
       </aside>
 
       <main className="page-area">
+        <div aria-hidden="true" className="acedia-watermark" />
         <div className={['page-transition', `page-transition--${pageTransitionStage}`].join(' ')}>
           {displayedOutlet}
         </div>
