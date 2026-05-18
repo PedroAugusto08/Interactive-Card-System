@@ -25,18 +25,18 @@ export const roomApi = {
 
   listPlayers: ({ roomId, token }) => request(`/rooms/${roomId}/players`, { token }),
 
-  selectDeck: ({ roomId, deckId, token }) =>
-    request(`/rooms/${roomId}/select-deck`, {
+  selectCharacter: ({ roomId, characterId, token }) =>
+    request(`/rooms/${roomId}/select-character`, {
       method: 'POST',
       token,
-      body: { deckId },
+      body: { characterId },
     }),
 
-  replaceMasterDecks: ({ roomId, deckIds, token }) =>
-    request(`/rooms/${roomId}/master-decks`, {
+  replaceMasterCharacters: ({ roomId, characterIds, token }) =>
+    request(`/rooms/${roomId}/master-characters`, {
       method: 'POST',
       token,
-      body: { deckIds },
+      body: { characterIds },
     }),
 
   updateTurnOrderDraft: ({ roomId, draftEntryIds, token }) =>

@@ -14,12 +14,12 @@ const leaveRoomSchema = z.object({
   roomId: z.coerce.number().int().positive(),
 });
 
-const selectDeckSchema = z.object({
-  deckId: z.coerce.number().int().positive(),
+const selectCharacterSchema = z.object({
+  characterId: z.coerce.number().int().positive(),
 });
 
-const replaceMasterDecksSchema = z.object({
-  deckIds: z.array(z.coerce.number().int().positive()).min(1),
+const replaceMasterCharactersSchema = z.object({
+  characterIds: z.array(z.coerce.number().int().positive()).min(1),
 });
 
 const turnOrderDraftSchema = z.object({
@@ -79,13 +79,13 @@ async function getCurrentRoom(req, res) {
   return res.status(200).json(data);
 }
 
-async function selectDeck(req, res) {
+async function selectCharacter(req, res) {
   const { roomId } = roomIdParamSchema.parse(req.params);
-  const payload = selectDeckSchema.parse(req.body);
-  const data = await roomService.selectDeckForPlayer({
+  const payload = selectCharacterSchema.parse(req.body);
+  const data = await roomService.selectCharacterForPlayer({
     roomId,
     userId: req.user.id,
-    deckId: payload.deckId,
+    characterId: payload.characterId,
     requesterUser: req.user,
   });
 
@@ -105,13 +105,13 @@ async function setReadyState(req, res) {
   return res.status(200).json(data);
 }
 
-async function replaceMasterDecks(req, res) {
+async function replaceMasterCharacters(req, res) {
   const { roomId } = roomIdParamSchema.parse(req.params);
-  const payload = replaceMasterDecksSchema.parse(req.body);
-  const data = await roomService.replaceMasterDeckSelection({
+  const payload = replaceMasterCharactersSchema.parse(req.body);
+  const data = await roomService.replaceMasterCharacterSelection({
     roomId,
     userId: req.user.id,
-    deckIds: payload.deckIds,
+    characterIds: payload.characterIds,
     requesterUser: req.user,
   });
 
@@ -137,8 +137,8 @@ module.exports = {
   leaveRoom,
   listPlayers,
   getCurrentRoom,
-  replaceMasterDecks,
-  selectDeck,
+  replaceMasterCharacters,
+  selectCharacter,
   setReadyState,
   updateTurnOrderDraft,
 };

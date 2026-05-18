@@ -21,6 +21,10 @@ function canUserManageMultipleDecks(user) {
   return isMasterAccount(user) || isDevMasterOverrideEnabled(user);
 }
 
+function canUserManageMultipleCharacters(user) {
+  return canUserManageMultipleDecks(user);
+}
+
 function canUserActAsMaster(user) {
   return isMasterAccount(user) || isDevMasterOverrideEnabled(user);
 }
@@ -33,6 +37,7 @@ function buildUserCapabilityFlags(user) {
     devMasterOverride,
     isDevMasterOverride: devMasterOverride,
     isMasterAccount: masterAccount,
+    canManageMultipleCharacters: masterAccount || devMasterOverride,
     canManageMultipleDecks: masterAccount || devMasterOverride,
   };
 }
@@ -56,6 +61,7 @@ function resolveRoomMasterUserId({ room, requesterUser = null, players = [] }) {
 module.exports = {
   buildUserCapabilityFlags,
   canUserActAsMaster,
+  canUserManageMultipleCharacters,
   canUserManageMultipleDecks,
   isDevMasterOverrideEnabled,
   isMasterAccount,

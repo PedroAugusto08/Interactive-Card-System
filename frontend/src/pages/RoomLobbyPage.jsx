@@ -7,20 +7,19 @@ import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
 import { Modal } from '../components/ui/Modal';
-import { deckApi } from '../api/deckApi';
+import { characterApi } from '../api/characterApi';
 import { matchApi } from '../api/matchApi';
 import { roomApi } from '../api/roomApi';
 import { useSocket } from '../hooks/useSocket';
 import { useAuthStore } from '../stores/authStore';
-import { useDeckStore } from '../stores/deckStore';
+import { useCharacterStore } from '../stores/characterStore';
 import { useRoomStore } from '../stores/roomStore';
 import { formatErrorMessage } from '../utils/formatError';
 import {
   areAllPlayersReady,
   countReadyPlayers,
-  getDeckById,
-  getDeckCardCount,
-  getPlayerSelectedDeckIds,
+  getCharacterById,
+  getPlayerSelectedCharacterIds,
   translateRoomStatus,
 } from '../utils/lobbyUi';
 
@@ -58,6 +57,19 @@ function moveEntry(entries, fromIndex, direction) {
   return nextEntries;
 }
 
+function emitSocketAction(socket, eventName, payload) {
+  return new Promise((resolve, reject) => {
+    socket.emit(eventName, payload, (response) => {
+      if (!response?.ok) {
+        reject(new Error(response?.error || 'Falha ao sincronizar a partida.'));
+        return;
+      }
+
+      resolve(response);
+    });
+  });
+}
+
 export function RoomLobbyPage() {
   const token = useAuthStore((state) => state.token);
   const user = useAuthStore((state) => state.user);
@@ -69,8 +81,8 @@ export function RoomLobbyPage() {
   const setRoomData = useRoomStore((state) => state.setRoomData);
   const setMatchData = useRoomStore((state) => state.setMatchData);
   const clearRoom = useRoomStore((state) => state.clearRoom);
-  const availableDecks = useDeckStore((state) => state.decks);
-  const setDeckModuleData = useDeckStore((state) => state.setModuleData);
+  const availableCharacters = useCharacterStore((state) => state.characters);
+  const setCharacterModuleData = useCharacterStore((state) => state.setModuleData);
   const socket = useSocket(token);
 
   const [joinCode, setJoinCode] = useState('');
@@ -78,11 +90,12 @@ export function RoomLobbyPage() {
   const [statusMessage, setStatusMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [copyMessage, setCopyMessage] = useState('');
-  const [pendingMasterDeckIds, setPendingMasterDeckIds] = useState([]);
+  const [pendingMasterCharacterIds, setPendingMasterCharacterIds] = useState([]);
   const [pendingTurnOrder, setPendingTurnOrder] = useState([]);
   const [isLeaveRoomModalOpen, setIsLeaveRoomModalOpen] = useState(false);
   const canActAsMaster = Boolean(
-    user?.canManageMultipleDecks ||
+    user?.canManageMultipleCharacters ||
+      user?.canManageMultipleDecks ||
       user?.isMasterAccount ||
       user?.isDevMasterOverride ||
       user?.devMasterOverride
@@ -92,7 +105,7 @@ export function RoomLobbyPage() {
     setRoomData(payload);
 
     const syncedCurrentPlayer = (payload?.players || []).find((player) => player.user_id === user?.id) || null;
-    setPendingMasterDeckIds(getPlayerSelectedDeckIds(syncedCurrentPlayer));
+    setPendingMasterCharacterIds(getPlayerSelectedCharacterIds(syncedCurrentPlayer));
     setPendingTurnOrder(payload?.room?.turn_order_draft_json || []);
   }, [setRoomData, user?.id]);
 
@@ -102,12 +115,12 @@ export function RoomLobbyPage() {
     [players, user?.id]
   );
   const isMaster = Boolean(currentPlayer?.is_master);
-  const selectedUserDeck = useMemo(
-    () => getDeckById(availableDecks, currentPlayer?.selected_deck_id),
-    [availableDecks, currentPlayer?.selected_deck_id]
+  const selectedUserCharacter = useMemo(
+    () => getCharacterById(availableCharacters, currentPlayer?.selected_character_id),
+    [availableCharacters, currentPlayer?.selected_character_id]
   );
-  const selectedMasterDeckIds = useMemo(
-    () => getPlayerSelectedDeckIds(currentPlayer),
+  const selectedMasterCharacterIds = useMemo(
+    () => getPlayerSelectedCharacterIds(currentPlayer),
     [currentPlayer]
   );
   const readyPlayersCount = useMemo(() => countReadyPlayers(players), [players]);
@@ -132,21 +145,20 @@ export function RoomLobbyPage() {
 
     async function loadLobbyState() {
       try {
-        const [roomResponse, decksResponse] = await Promise.all([
+        const [roomResponse, charactersResponse] = await Promise.all([
           roomApi.getCurrentRoom({ token }),
-          deckApi.listDecks({ token }),
+          characterApi.listCharacters({ token }),
         ]);
 
         if (!isMounted) {
           return;
         }
 
-        const deckState = useDeckStore.getState();
-        setDeckModuleData({
-          rules: deckState.rules,
-          catalog: deckState.catalog,
-          decks: decksResponse.decks || [],
-          imoCards: deckState.imoCards,
+        const storeState = useCharacterStore.getState();
+        setCharacterModuleData({
+          catalog: storeState.catalog,
+          characters: charactersResponse.characters || [],
+          imoCards: storeState.imoCards,
         });
 
         if (roomResponse.room) {
@@ -166,7 +178,7 @@ export function RoomLobbyPage() {
     return () => {
       isMounted = false;
     };
-  }, [setDeckModuleData, setMatchData, setRoomData, syncRoomState, token]);
+  }, [setCharacterModuleData, setMatchData, syncRoomState, token]);
 
   useEffect(() => {
     if (!socket) {
@@ -242,12 +254,12 @@ export function RoomLobbyPage() {
       return 'A sala precisa de pelo menos 2 usuários.';
     }
 
-    if (!selectedMasterDeckIds.length) {
+    if (!selectedMasterCharacterIds.length) {
       return 'O mestre precisa selecionar ao menos uma criatura.';
     }
 
-    if (players.some((player) => !player.is_master && !player.selected_deck_id)) {
-      return 'Todos os jogadores precisam selecionar um deck.';
+    if (players.some((player) => !player.is_master && !player.selected_character_id)) {
+      return 'Todos os jogadores precisam selecionar um personagem.';
     }
 
     if (!hasValidDraft) {
@@ -259,7 +271,7 @@ export function RoomLobbyPage() {
     }
 
     return '';
-  }, [currentRoom, everyoneReady, hasValidDraft, isMaster, players, selectedMasterDeckIds.length]);
+  }, [currentRoom, everyoneReady, hasValidDraft, isMaster, players, selectedMasterCharacterIds.length]);
 
   const canStartMatch = !isLoading && !startMatchDisabledReason;
 
@@ -307,16 +319,12 @@ export function RoomLobbyPage() {
     setStatusMessage('');
 
     try {
-      if (socket && isSocketConnected) {
-        socket.emit('room:leave', { roomId: currentRoom.id });
-      } else {
-        await roomApi.leaveRoom({ roomId: currentRoom.id, token });
-      }
+      await roomApi.leaveRoom({ roomId: currentRoom.id, token });
       clearRoom();
       setStatusMessage(
         isMaster && ['lobby', 'in_match'].includes(currentRoom.status)
-          ? 'VocÃª saiu da sala. A sala foi encerrada para todos os participantes.'
-          : 'VocÃª saiu da sala atual.'
+          ? 'Você saiu da sala. A sala foi encerrada para todos os participantes.'
+          : 'Você saiu da sala atual.'
       );
     } catch (error) {
       setErrorMessage(formatErrorMessage(error));
@@ -327,7 +335,7 @@ export function RoomLobbyPage() {
 
   function handleRequestLeaveRoom() {
     if (!currentRoom?.id) {
-      setErrorMessage('NÃ£o existe sala ativa para sair.');
+      setErrorMessage('Não existe sala ativa para sair.');
       return;
     }
 
@@ -367,7 +375,7 @@ export function RoomLobbyPage() {
     }
   }
 
-  async function handleSelectPlayerDeck(deckId) {
+  async function handleSelectPlayerCharacter(characterId) {
     if (!currentRoom?.id || isMaster) {
       return;
     }
@@ -376,13 +384,13 @@ export function RoomLobbyPage() {
     setErrorMessage('');
 
     try {
-      const response = await roomApi.selectDeck({
+      const response = await roomApi.selectCharacter({
         roomId: currentRoom.id,
-        deckId,
+        characterId,
         token,
       });
       syncRoomState(response);
-      setStatusMessage('Deck do jogador atualizado.');
+      setStatusMessage('Personagem do jogador atualizado.');
     } catch (error) {
       setErrorMessage(formatErrorMessage(error));
     } finally {
@@ -390,7 +398,7 @@ export function RoomLobbyPage() {
     }
   }
 
-  async function handleSaveMasterDecks() {
+  async function handleSaveMasterCharacters() {
     if (!currentRoom?.id || !isMaster) {
       return;
     }
@@ -399,9 +407,9 @@ export function RoomLobbyPage() {
     setErrorMessage('');
 
     try {
-      const response = await roomApi.replaceMasterDecks({
+      const response = await roomApi.replaceMasterCharacters({
         roomId: currentRoom.id,
-        deckIds: pendingMasterDeckIds,
+        characterIds: pendingMasterCharacterIds,
         token,
       });
       syncRoomState(response);
@@ -469,8 +477,17 @@ export function RoomLobbyPage() {
     setStatusMessage('');
 
     try {
-      const snapshot = await matchApi.start({ roomId: currentRoom.id, token });
-      setMatchData(snapshot);
+      if (socket && isSocketConnected) {
+        const response = await emitSocketAction(socket, 'match:start', {
+          roomId: currentRoom.id,
+        });
+        if (response?.snapshot) {
+          setMatchData(response.snapshot);
+        }
+      } else {
+        const snapshot = await matchApi.start({ roomId: currentRoom.id, token });
+        setMatchData(snapshot);
+      }
       setStatusMessage('Partida iniciada com sucesso.');
       await handleRefreshPlayers();
     } catch (error) {
@@ -537,17 +554,12 @@ export function RoomLobbyPage() {
 
             {!canActAsMaster ? (
               <p className="muted-text compact">
-                Somente o mestre fixo pode criar salas. Contas de jogador entram usando o codigo da sala.
+                Somente o mestre fixo pode criar salas. Contas de jogador entram usando o código da sala.
               </p>
             ) : null}
 
             <form className="lobby-join-form" onSubmit={handleJoinRoom}>
-              <Input
-                onChange={(event) => setJoinCode(event.target.value)}
-                placeholder="Código da sala"
-                required
-                value={joinCode}
-              />
+              <Input onChange={(event) => setJoinCode(event.target.value)} placeholder="Código da sala" required value={joinCode} />
 
               <Button loading={isLoading} type="submit">
                 Entrar por código
@@ -559,51 +571,53 @@ export function RoomLobbyPage() {
                 {isMaster ? (
                   <Card compact title="Criaturas do mestre">
                     <div className="row-wrap" style={{ gap: '10px' }}>
-                      {availableDecks.map((deck) => {
-                        const isSelected = pendingMasterDeckIds.includes(deck.id);
+                      {availableCharacters.map((character) => {
+                        const isSelected = pendingMasterCharacterIds.includes(character.id);
                         return (
                           <Button
-                            key={`master-deck-toggle-${deck.id}`}
+                            key={`master-character-toggle-${character.id}`}
                             onClick={() =>
-                              setPendingMasterDeckIds((current) =>
-                                current.includes(deck.id)
-                                  ? current.filter((value) => value !== deck.id)
-                                  : [...current, deck.id]
+                              setPendingMasterCharacterIds((current) =>
+                                current.includes(character.id)
+                                  ? current.filter((value) => value !== character.id)
+                                  : [...current, character.id]
                               )
                             }
                             type="button"
                             variant={isSelected ? 'primary' : 'secondary'}
                           >
-                            {deck.name} ({getDeckCardCount(deck)})
+                            {character.name}
                           </Button>
                         );
                       })}
                     </div>
                     <div className="row-wrap" style={{ marginTop: '12px' }}>
-                      <Button disabled={isLoading} onClick={handleSaveMasterDecks} type="button">
+                      <Button disabled={isLoading} onClick={handleSaveMasterCharacters} type="button">
                         Salvar criaturas
                       </Button>
                     </div>
                   </Card>
                 ) : (
-                  <Card compact title="Deck do jogador">
+                  <Card compact title="Personagem do jogador">
                     <div className="row-wrap" style={{ gap: '10px' }}>
-                      {availableDecks.map((deck) => {
-                        const isSelected = Number(currentPlayer?.selected_deck_id) === Number(deck.id);
+                      {availableCharacters.map((character) => {
+                        const isSelected = Number(currentPlayer?.selected_character_id) === Number(character.id);
                         return (
                           <Button
-                            key={`player-deck-select-${deck.id}`}
-                            onClick={() => handleSelectPlayerDeck(deck.id)}
+                            key={`player-character-select-${character.id}`}
+                            onClick={() => handleSelectPlayerCharacter(character.id)}
                             type="button"
                             variant={isSelected ? 'primary' : 'secondary'}
                           >
-                            {deck.name} ({getDeckCardCount(deck)})
+                            {character.name}
                           </Button>
                         );
                       })}
                     </div>
                     <p className="muted-text compact" style={{ marginTop: '12px' }}>
-                      {selectedUserDeck ? `Selecionado: ${selectedUserDeck.name}.` : 'Selecione um deck para entrar pronto.'}
+                      {selectedUserCharacter
+                        ? `Selecionado: ${selectedUserCharacter.name}.`
+                        : 'Selecione um personagem para entrar pronto.'}
                     </p>
                   </Card>
                 )}
@@ -647,7 +661,7 @@ export function RoomLobbyPage() {
                         </Button>
                       </div>
                     ) : (
-                      <div className="empty-state">Selecione criaturas e decks para montar a ordem.</div>
+                      <div className="empty-state">Selecione criaturas e personagens para montar a ordem.</div>
                     )}
                   </Card>
                 ) : null}
@@ -697,7 +711,7 @@ export function RoomLobbyPage() {
                     isHost={player.user_id === currentRoom?.host_id}
                     key={`${player.room_id}-${player.user_id}`}
                     player={player}
-                    selectedDeck={getDeckById(availableDecks, player.selected_deck_id)}
+                    selectedCharacter={getCharacterById(availableCharacters, player.selected_character_id)}
                   />
                 ))}
               </div>
@@ -733,7 +747,7 @@ export function RoomLobbyPage() {
       <Modal
         cancelLabel="Cancelar"
         confirmLabel="Encerrar sala e sair"
-        description="Ao sair como mestre, a sala ativa sera encerrada para todos."
+        description="Ao sair como mestre, a sala ativa será encerrada para todos."
         isLoading={isLoading}
         onClose={() => setIsLeaveRoomModalOpen(false)}
         onConfirm={handleConfirmLeaveRoom}
@@ -741,7 +755,7 @@ export function RoomLobbyPage() {
         title="Encerrar sala?"
       >
         <p className="muted-text">
-          Todos os participantes perderao acesso a esta sala assim que voce sair. Use essa opcao apenas quando quiser encerrar a sessao atual.
+          Todos os participantes perderão acesso a esta sala assim que você sair. Use essa opção apenas quando quiser encerrar a sessão atual.
         </p>
       </Modal>
     </section>

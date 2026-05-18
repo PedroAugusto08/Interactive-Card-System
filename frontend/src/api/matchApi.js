@@ -9,102 +9,86 @@ export const matchApi = {
       token,
     }),
 
-  draw: ({ roomId, actingParticipantId, token }) =>
-    request(`/match/${roomId}/draw`, {
+  completeOpeningHand: ({ roomId, actingParticipantId, selectedCardIds, token }) =>
+    request(`/match/${roomId}/complete-opening-hand`, {
       method: 'POST',
       token,
-      body: { actingParticipantId },
+      body: { actingParticipantId, selectedCardIds },
     }),
 
-  playCard: ({
+  generateImo: ({ roomId, actingParticipantId, cardId, token }) =>
+    request(`/match/${roomId}/generate-imo`, {
+      method: 'POST',
+      token,
+      body: { actingParticipantId, cardId },
+    }),
+
+  useImoCard: ({
     roomId,
     actingParticipantId,
     cardId,
     targetParticipantId,
-    selectedExileCardId,
+    selectedExiledCardId,
     selectedOwnHandCardId,
     selectedTargetHandCardId,
-    pairedCardId,
-    pairedTargetParticipantId,
-    pairedSelectedExileCardId,
-    pairedSelectedOwnHandCardId,
-    pairedSelectedTargetHandCardId,
-    asCounterResponse,
     token,
   }) =>
-    request(`/match/${roomId}/play-card`, {
+    request(`/match/${roomId}/use-imo-card`, {
       method: 'POST',
       token,
       body: {
         actingParticipantId,
         cardId,
         targetParticipantId,
-        selectedExileCardId,
+        selectedExiledCardId,
         selectedOwnHandCardId,
         selectedTargetHandCardId,
-        pairedCardId,
-        pairedTargetParticipantId,
-        pairedSelectedExileCardId,
-        pairedSelectedOwnHandCardId,
-        pairedSelectedTargetHandCardId,
-        asCounterResponse,
       },
     }),
 
-  discardCard: ({
+  exileImoCard: ({
     roomId,
     actingParticipantId,
     cardId,
     targetParticipantId,
-    selectedExileCardId,
+    selectedExiledCardId,
     selectedOwnHandCardId,
     selectedTargetHandCardId,
-    asCounterResponse,
     token,
   }) =>
-    request(`/match/${roomId}/discard-card`, {
+    request(`/match/${roomId}/exile-imo-card`, {
       method: 'POST',
       token,
       body: {
         actingParticipantId,
         cardId,
         targetParticipantId,
-        selectedExileCardId,
+        selectedExiledCardId,
         selectedOwnHandCardId,
         selectedTargetHandCardId,
-        asCounterResponse,
       },
     }),
 
-  reactToAttack: ({ roomId, actingParticipantId, reactionCardId, token }) =>
-    request(`/match/${roomId}/react-to-attack`, {
-      method: 'POST',
-      token,
-      body: { actingParticipantId, reactionCardId },
-    }),
-
-  resolveAttack: ({ roomId, actingParticipantId, resolution, token }) =>
-    request(`/match/${roomId}/resolve-attack`, {
-      method: 'POST',
-      token,
-      body: { actingParticipantId, resolution },
-    }),
-
-  revealTopDeck: ({ roomId, actingParticipantId, targetParticipantId, topDeckInstanceId, token }) =>
-    request(`/match/${roomId}/reveal-top-deck`, {
-      method: 'POST',
-      token,
-      body: { actingParticipantId, targetParticipantId, topDeckInstanceId },
-    }),
-
-  useFerroada: ({ roomId, actingParticipantId, ferroadaCardId, selectedOwnHandCardIds, token }) =>
-    request(`/match/${roomId}/use-ferroada`, {
+  useDivisionAction: ({
+    roomId,
+    actingParticipantId,
+    divisionId,
+    targetParticipantId,
+    selectedExiledCardId,
+    selectedOwnHandCardId,
+    selectedTargetHandCardId,
+    token,
+  }) =>
+    request(`/match/${roomId}/use-division-action`, {
       method: 'POST',
       token,
       body: {
         actingParticipantId,
-        ferroadaCardId,
-        selectedOwnHandCardIds,
+        divisionId,
+        targetParticipantId,
+        selectedExiledCardId,
+        selectedOwnHandCardId,
+        selectedTargetHandCardId,
       },
     }),
 

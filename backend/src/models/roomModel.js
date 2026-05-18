@@ -77,7 +77,7 @@ async function findActiveRoomForUser(userId) {
 async function addPlayerToRoom({ roomId, userId }) {
   await query(
     `
-      INSERT INTO room_players (room_id, user_id, selected_deck_ids_json)
+      INSERT INTO room_players (room_id, user_id, selected_character_ids_json)
       VALUES ($1, $2, '[]'::jsonb)
       ON CONFLICT (room_id, user_id) DO NOTHING;
     `,
@@ -115,8 +115,8 @@ async function listRoomPlayers(roomId) {
       SELECT
         rp.room_id,
         rp.user_id,
-        rp.selected_deck_id,
-        rp.selected_deck_ids_json,
+        rp.selected_character_id,
+        rp.selected_character_ids_json,
         rp.is_ready,
         rp.turn_order,
         rp.joined_at,
@@ -136,31 +136,45 @@ async function listRoomPlayers(roomId) {
 async function updateRoomPlayerState({
   roomId,
   userId,
-  selectedDeckId = null,
-  selectedDeckIds = [],
+  selectedCharacterId = null,
+  selectedCharacterIds = [],
   isReady = false,
   turnOrder = null,
 }) {
-  const nextSelectedDeckIds = Array.isArray(selectedDeckIds)
-    ? selectedDeckIds.map((value) => Number(value)).filter((value) => Number.isInteger(value) && value > 0)
+  const nextSelectedCharacterIds = Array.isArray(selectedCharacterIds)
+    ? selectedCharacterIds.map((value) => Number(value)).filter((value) => Number.isInteger(value) && value > 0)
     : [];
-  const normalizedSelectedDeckId =
-    Number.isInteger(Number(selectedDeckId)) && Number(selectedDeckId) > 0
-      ? Number(selectedDeckId)
-      : nextSelectedDeckIds[0] || null;
+  const normalizedSelectedCharacterId =
+    Number.isInteger(Number(selectedCharacterId)) && Number(selectedCharacterId) > 0
+      ? Number(selectedCharacterId)
+      : nextSelectedCharacterIds[0] || null;
 
   const result = await query(
     `
       UPDATE room_players
       SET
-        selected_deck_id = $3,
-        selected_deck_ids_json = $4::jsonb,
+        selected_character_id = $3,
+        selected_character_ids_json = $4::jsonb,
         is_ready = $5,
         turn_order = $6
       WHERE room_id = $1 AND user_id = $2
-      RETURNING room_id, user_id, selected_deck_id, selected_deck_ids_json, is_ready, turn_order, joined_at;
+      RETURNING
+        room_id,
+        user_id,
+        selected_character_id,
+        selected_character_ids_json,
+        is_ready,
+        turn_order,
+        joined_at;
     `,
-    [roomId, userId, normalizedSelectedDeckId, JSON.stringify(nextSelectedDeckIds), isReady, turnOrder]
+    [
+      roomId,
+      userId,
+      normalizedSelectedCharacterId,
+      JSON.stringify(nextSelectedCharacterIds),
+      isReady,
+      turnOrder,
+    ]
   );
 
   return result.rows[0] || null;

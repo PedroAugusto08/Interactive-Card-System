@@ -10,30 +10,27 @@ const {
   validateTurnOrderDraft,
 } = require('./participantUtils');
 
-test('buildLobbyParticipantEntries expands master multi-deck into independent creatures', () => {
-  const room = {
-    host_id: 10,
-  };
+test('buildLobbyParticipantEntries expands master multi-character into independent creatures', () => {
   const players = [
     {
       user_id: 10,
       username: 'Mestre',
-      selected_deck_ids: [101, 102],
+      selected_character_ids: [101, 102],
     },
     {
       user_id: 11,
       username: 'Jogador',
-      selected_deck_ids: [201],
-      selected_deck_id: 201,
+      selected_character_ids: [201],
+      selected_character_id: 201,
     },
   ];
-  const deckMap = new Map([
+  const characterMap = new Map([
     [101, { id: 101, name: 'Lobo' }],
     [102, { id: 102, name: 'Corvo' }],
-    [201, { id: 201, name: 'Baralho do Jogador' }],
+    [201, { id: 201, name: 'Caçador' }],
   ]);
 
-  const entries = buildLobbyParticipantEntries({ room, players, deckMap });
+  const entries = buildLobbyParticipantEntries({ players, characterMap, masterUserId: 10 });
 
   assert.deepEqual(
     entries.map((entry) => ({
@@ -44,13 +41,13 @@ test('buildLobbyParticipantEntries expands master multi-deck into independent cr
     })),
     [
       {
-        entryId: 'master-deck:101',
+        entryId: 'master-character:101',
         participantType: 'master-creature',
         displayName: 'Lobo',
         controllerUserId: 10,
       },
       {
-        entryId: 'master-deck:102',
+        entryId: 'master-character:102',
         participantType: 'master-creature',
         displayName: 'Corvo',
         controllerUserId: 10,
@@ -67,15 +64,15 @@ test('buildLobbyParticipantEntries expands master multi-deck into independent cr
 
 test('validateTurnOrderDraft requires every lobby participant exactly once', () => {
   const lobbyEntries = [
-    { entryId: 'master-deck:101' },
-    { entryId: 'master-deck:102' },
+    { entryId: 'master-character:101' },
+    { entryId: 'master-character:102' },
     { entryId: 'player:11' },
   ];
 
   assert.equal(
     validateTurnOrderDraft({
       lobbyEntries,
-      draftEntryIds: ['master-deck:101', 'player:11', 'master-deck:102'],
+      draftEntryIds: ['master-character:101', 'player:11', 'master-character:102'],
     }).ok,
     true
   );
@@ -83,15 +80,7 @@ test('validateTurnOrderDraft requires every lobby participant exactly once', () 
   assert.equal(
     validateTurnOrderDraft({
       lobbyEntries,
-      draftEntryIds: ['master-deck:101', 'player:11'],
-    }).ok,
-    false
-  );
-
-  assert.equal(
-    validateTurnOrderDraft({
-      lobbyEntries,
-      draftEntryIds: ['master-deck:101', 'player:11', 'player:11'],
+      draftEntryIds: ['master-character:101', 'player:11'],
     }).ok,
     false
   );
@@ -99,19 +88,19 @@ test('validateTurnOrderDraft requires every lobby participant exactly once', () 
 
 test('buildDefaultTurnOrderDraft seeds the lobby using current participant expansion order', () => {
   const draft = buildDefaultTurnOrderDraft({
-    room: { host_id: 10 },
     players: [
-      { user_id: 10, username: 'Mestre', selected_deck_ids: [101, 102] },
-      { user_id: 11, username: 'Jogador', selected_deck_ids: [201], selected_deck_id: 201 },
+      { user_id: 10, username: 'Mestre', selected_character_ids: [101, 102] },
+      { user_id: 11, username: 'Jogador', selected_character_ids: [201], selected_character_id: 201 },
     ],
-    deckMap: new Map([
+    characterMap: new Map([
       [101, { id: 101, name: 'Lobo' }],
       [102, { id: 102, name: 'Corvo' }],
-      [201, { id: 201, name: 'Baralho do Jogador' }],
+      [201, { id: 201, name: 'Caçador' }],
     ]),
+    masterUserId: 10,
   });
 
-  assert.deepEqual(draft, ['master-deck:101', 'master-deck:102', 'player:11']);
+  assert.deepEqual(draft, ['master-character:101', 'master-character:102', 'player:11']);
 });
 
 test('getNextActiveParticipant rotates by participant id and wraps around', () => {
@@ -121,7 +110,7 @@ test('getNextActiveParticipant rotates by participant id and wraps around', () =
   assert.deepEqual(getNextActiveParticipant(activeParticipants, 43), { id: 41 });
 });
 
-test('viewer metadata exposes master control and chooses focused participant from turn/combat context', () => {
+test('viewer metadata exposes master control and prefers opening-hand pending participant', () => {
   const participantStates = [
     { participantId: 1, controllerUserId: 50 },
     { participantId: 2, controllerUserId: 50 },
@@ -133,22 +122,7 @@ test('viewer metadata exposes master control and chooses focused participant fro
       requesterUserId: 50,
       participantStates,
       currentTurnParticipantId: 2,
-      combatState: null,
-    }),
-    {
-      userId: 50,
-      role: 'master',
-      controlledParticipantIds: [1, 2],
-      focusedParticipantId: 2,
-    }
-  );
-
-  assert.deepEqual(
-    buildViewerMetadata({
-      requesterUserId: 50,
-      participantStates,
-      currentTurnParticipantId: 3,
-      combatState: { defenderParticipantId: 1 },
+      openingParticipantId: 1,
     }),
     {
       userId: 50,

@@ -1,69 +1,41 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { getCardById, mapImoCardRecordToCatalogCard } = require('./cardsCatalog');
+const {
+  DIVISION_ACTION_CATALOG,
+  getDivisionActionById,
+  mapImoCardRecordToCatalogCard,
+} = require('./cardsCatalog');
 const { normalizeCardAutomationConfig } = require('./cardAutomation');
 
-test('getCardById resolves official card with imoCost metadata', () => {
-  const card = getCardById('divisao');
+test('division catalog resolves known open arsenal actions', () => {
+  const divisao = getDivisionActionById('divisao');
+  const visualizar = getDivisionActionById('visualizar');
 
-  assert.ok(card);
-  assert.equal(card.category, 'division');
-  assert.equal(card.imoCost, 1);
-  assert.equal(card.maxCopies, 3);
+  assert.ok(divisao);
+  assert.ok(visualizar);
+  assert.equal(divisao.category, 'division');
+  assert.equal(divisao.actionSlot, 'complementary');
+  assert.equal(visualizar.useAutomation.effects[0].type, 'revealRandomHandCard');
+  assert.ok(DIVISION_ACTION_CATALOG.length >= 10);
 });
 
-test('official cards expose structured automation metadata when needed', () => {
-  const visualizar = getCardById('visualizar');
-  const movimento = getCardById('movimento');
-  const maldicao = getCardById('maldicao');
-  const ferroada = getCardById('ferroada');
-
-  assert.equal(movimento.canPlayTogether, true);
-  assert.equal(visualizar.playAutomation.targetScope, 'selected-player');
-  assert.equal(visualizar.discardAutomation.effects[0].type, 'moveTopDeckToExile');
-  assert.equal(maldicao.canDiscard, false);
-  assert.equal(ferroada.combatRole, 'attack');
-});
-
-test('new division cards are available with expected copy limits', () => {
-  const adrenalina = getCardById('adrenalina');
-  const ceifar = getCardById('ceifar');
-  const ferroada = getCardById('ferroada');
-
-  assert.ok(adrenalina);
-  assert.ok(ceifar);
-  assert.ok(ferroada);
-  assert.equal(adrenalina.category, 'division');
-  assert.equal(adrenalina.maxCopies, 2);
-  assert.equal(ceifar.maxCopies, 1);
-  assert.equal(ferroada.maxCopies, 2);
-});
-
-test('mapImoCardRecordToCatalogCard maps persisted imo cards to catalog shape', () => {
+test('mapImoCardRecordToCatalogCard maps persisted imo cards to the new runtime shape', () => {
   const card = mapImoCardRecordToCatalogCard({
     id: 7,
+    owner_id: 11,
     name: 'Ritual de Eclipse',
     description: 'Carta personalizada de teste.',
     image_path: 'data:image/png;base64,abc',
-    max_copies: 2,
     imo_cost: 4,
     automation_json: {
-      canDiscard: false,
-      canPlayTogether: true,
-      playAutomation: {
-        targetScope: 'selected-player',
+      actionSlot: 'complementary',
+      canExile: false,
+      useAutomation: {
         effects: [
           {
-            type: 'revealTopDeck',
-            target: 'selected-player',
-          },
-        ],
-      },
-      discardAutomation: {
-        effects: [
-          {
-            type: 'drawTopDeckToHand',
+            type: 'gainCatalogCardToHand',
+            cardId: 'imo:2',
           },
         ],
       },
@@ -75,49 +47,48 @@ test('mapImoCardRecordToCatalogCard maps persisted imo cards to catalog shape', 
     sourceId: 7,
     name: 'Ritual de Eclipse',
     category: 'imo',
-    maxCopies: 2,
     imoCost: 4,
     effect: 'Carta personalizada de teste.',
     imagePath: 'data:image/png;base64,abc',
     isCustom: true,
-    canDiscard: false,
-    canPlayTogether: true,
-    playAutomation: {
-      targetScope: 'selected-player',
-      effects: [
-        {
-          type: 'revealTopDeck',
-          target: 'selected-player',
-        },
-      ],
-    },
-    discardAutomation: null,
-  });
-});
-
-test('normalizeCardAutomationConfig applies defaults for custom cards', () => {
-  const automation = normalizeCardAutomationConfig({
-    playAutomation: {
+    actionSlot: 'complementary',
+    canExile: false,
+    useAutomation: {
       effects: [
         {
           type: 'gainCatalogCardToHand',
-          cardId: 'reacao',
+          cardId: 'imo:2',
+        },
+      ],
+    },
+    exileAutomation: null,
+    catalogOwnerId: 11,
+  });
+});
+
+test('normalizeCardAutomationConfig applies new defaults for custom imo cards', () => {
+  const automation = normalizeCardAutomationConfig({
+    useAutomation: {
+      effects: [
+        {
+          type: 'gainCatalogCardToHand',
+          cardId: 'imo:1',
         },
       ],
     },
   });
 
   assert.deepEqual(automation, {
-    canDiscard: true,
-    canPlayTogether: false,
-    playAutomation: {
+    actionSlot: 'standard',
+    canExile: true,
+    useAutomation: {
       effects: [
         {
           type: 'gainCatalogCardToHand',
-          cardId: 'reacao',
+          cardId: 'imo:1',
         },
       ],
     },
-    discardAutomation: null,
+    exileAutomation: null,
   });
 });

@@ -178,18 +178,10 @@ export function ProtectedLayout() {
           ? 'Modo mestre temporario ativado para esta sessao de desenvolvimento.'
           : 'Modo mestre temporario desativado para esta sessao.'
       );
-      setDevSessionMessage('Sessão trocada para a conta do mestre de desenvolvimento.');
-      setDevSessionMessage(
-        nextEnabled
-          ? 'Modo mestre temporario ativado para esta sessao de desenvolvimento.'
-          : 'Modo mestre temporario desativado para esta sessao.'
-      );
       setActiveSection('');
       setIsProfileOpen(false);
       navigate('/lobby', { replace: true });
     } catch (error) {
-      setDevSessionMessage(error?.message || 'Nao foi possivel alterar o mestre temporario.');
-      setDevSessionMessage(error?.message || 'Não foi possível assumir a sessão do mestre.');
       setDevSessionMessage(error?.message || 'Nao foi possivel alterar o mestre temporario.');
     } finally {
       setIsTogglingMasterOverride(false);
@@ -200,13 +192,13 @@ export function ProtectedLayout() {
     <div className="app-shell">
       <header className="topbar">
         <div className="topbar-left">
-          <div className="topbar-brand" aria-label="Acédia Deck">
+          <div className="topbar-brand" aria-label="Acédia Card System">
             <span aria-hidden="true" className="topbar-brand__mark acedia-symbol-mark">
               <span className="topbar-brand__mark-core" />
             </span>
             <div className="topbar-brand__copy">
               <strong className="topbar-brand__name">Acédia</strong>
-              <span className="topbar-brand__subtitle">Deck System</span>
+              <span className="topbar-brand__subtitle">Card System</span>
             </div>
           </div>
 
@@ -223,9 +215,9 @@ export function ProtectedLayout() {
               className={({ isActive }) =>
                 ['topbar-nav-link', isActive ? 'active' : ''].filter(Boolean).join(' ')
               }
-              to="/decks"
+              to="/characters"
             >
-              Decks
+              Personagens
             </NavLink>
             <NavLink
               className={({ isActive }) =>

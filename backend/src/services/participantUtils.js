@@ -2,74 +2,74 @@ function createPlayerEntryId(userId) {
   return `player:${Number(userId)}`;
 }
 
-function createMasterDeckEntryId(deckId) {
-  return `master-deck:${Number(deckId)}`;
+function createMasterCharacterEntryId(characterId) {
+  return `master-character:${Number(characterId)}`;
 }
 
-function normalizeSelectedDeckIds(player) {
-  if (Array.isArray(player?.selected_deck_ids)) {
-    return player.selected_deck_ids
+function normalizeSelectedCharacterIds(player) {
+  if (Array.isArray(player?.selected_character_ids)) {
+    return player.selected_character_ids
       .map((value) => Number(value))
       .filter((value) => Number.isInteger(value) && value > 0);
   }
 
-  if (Array.isArray(player?.selected_deck_ids_json)) {
-    return player.selected_deck_ids_json
+  if (Array.isArray(player?.selected_character_ids_json)) {
+    return player.selected_character_ids_json
       .map((value) => Number(value))
       .filter((value) => Number.isInteger(value) && value > 0);
   }
 
-  const fallbackDeckId = Number(player?.selected_deck_id);
-  return Number.isInteger(fallbackDeckId) && fallbackDeckId > 0 ? [fallbackDeckId] : [];
+  const fallbackCharacterId = Number(player?.selected_character_id);
+  return Number.isInteger(fallbackCharacterId) && fallbackCharacterId > 0 ? [fallbackCharacterId] : [];
 }
 
-function buildLobbyParticipantEntries({ room, players = [], deckMap = new Map(), masterUserId = null }) {
+function buildLobbyParticipantEntries({ players = [], characterMap = new Map(), masterUserId = null }) {
   const resolvedMasterUserId =
     Number.isInteger(Number(masterUserId)) && Number(masterUserId) > 0 ? Number(masterUserId) : null;
   const entries = [];
 
   for (const player of players) {
     const playerUserId = Number(player.user_id);
-    const selectedDeckIds = normalizeSelectedDeckIds(player);
+    const selectedCharacterIds = normalizeSelectedCharacterIds(player);
 
     if (playerUserId === resolvedMasterUserId) {
-      for (const deckId of selectedDeckIds) {
-        const selectedDeck = deckMap.get(deckId);
+      for (const characterId of selectedCharacterIds) {
+        const selectedCharacter = characterMap.get(characterId);
         entries.push({
-          entryId: createMasterDeckEntryId(deckId),
+          entryId: createMasterCharacterEntryId(characterId),
           participantType: 'master-creature',
           controllerUserId: playerUserId,
           roomPlayerUserId: playerUserId,
-          sourceDeckId: deckId,
-          displayName: selectedDeck?.name || `Criatura ${deckId}`,
+          sourceCharacterId: characterId,
+          displayName: selectedCharacter?.name || `Criatura ${characterId}`,
           username: player.username,
         });
       }
       continue;
     }
 
-    if (!selectedDeckIds.length) {
+    if (!selectedCharacterIds.length) {
       continue;
     }
 
-    const selectedDeck = deckMap.get(selectedDeckIds[0]);
+    const selectedCharacter = characterMap.get(selectedCharacterIds[0]);
     entries.push({
       entryId: createPlayerEntryId(playerUserId),
       participantType: 'player',
       controllerUserId: playerUserId,
       roomPlayerUserId: playerUserId,
-      sourceDeckId: selectedDeckIds[0],
+      sourceCharacterId: selectedCharacterIds[0],
       displayName: player.username,
       username: player.username,
-      selectedDeckName: selectedDeck?.name || '',
+      selectedCharacterName: selectedCharacter?.name || '',
     });
   }
 
   return entries;
 }
 
-function buildDefaultTurnOrderDraft({ room, players = [], deckMap = new Map(), masterUserId = null }) {
-  return buildLobbyParticipantEntries({ room, players, deckMap, masterUserId }).map((entry) => entry.entryId);
+function buildDefaultTurnOrderDraft({ players = [], characterMap = new Map(), masterUserId = null }) {
+  return buildLobbyParticipantEntries({ players, characterMap, masterUserId }).map((entry) => entry.entryId);
 }
 
 function validateTurnOrderDraft({ lobbyEntries = [], draftEntryIds = [] }) {
@@ -77,7 +77,7 @@ function validateTurnOrderDraft({ lobbyEntries = [], draftEntryIds = [] }) {
   if (!validIds.length) {
     return {
       ok: false,
-      reason: 'Nenhum participante disponivel para ordenar.',
+      reason: 'Nenhum participante disponível para ordenar.',
     };
   }
 
@@ -95,7 +95,7 @@ function validateTurnOrderDraft({ lobbyEntries = [], draftEntryIds = [] }) {
     if (!validIdSet.has(entryId) || seen.has(entryId)) {
       return {
         ok: false,
-        reason: 'A ordem de turno contem itens invalidos ou duplicados.',
+        reason: 'A ordem de turno contém itens inválidos ou duplicados.',
       };
     }
     seen.add(entryId);
@@ -132,7 +132,12 @@ function getNextActiveParticipant(activeParticipants, currentParticipantId) {
   return activeParticipants[(currentIndex + 1) % activeParticipants.length] || null;
 }
 
-function buildViewerMetadata({ requesterUserId, participantStates = [], currentTurnParticipantId = null, combatState = null }) {
+function buildViewerMetadata({
+  requesterUserId,
+  participantStates = [],
+  currentTurnParticipantId = null,
+  openingParticipantId = null,
+}) {
   const controlledParticipantIds = participantStates
     .filter((participant) => participant.controllerUserId === requesterUserId)
     .map((participant) => participant.participantId);
@@ -140,10 +145,10 @@ function buildViewerMetadata({ requesterUserId, participantStates = [], currentT
   const role = controlledParticipantIds.length > 1 ? 'master' : 'player';
 
   let focusedParticipantId = controlledParticipantIds[0] || null;
-  if (controlledParticipantIds.includes(currentTurnParticipantId)) {
+  if (controlledParticipantIds.includes(openingParticipantId)) {
+    focusedParticipantId = openingParticipantId;
+  } else if (controlledParticipantIds.includes(currentTurnParticipantId)) {
     focusedParticipantId = currentTurnParticipantId;
-  } else if (controlledParticipantIds.includes(combatState?.defenderParticipantId)) {
-    focusedParticipantId = combatState.defenderParticipantId;
   }
 
   return {
@@ -162,10 +167,10 @@ module.exports = {
   buildDefaultTurnOrderDraft,
   buildLobbyParticipantEntries,
   buildViewerMetadata,
-  createMasterDeckEntryId,
+  createMasterCharacterEntryId,
   createPlayerEntryId,
   getNextActiveParticipant,
-  normalizeSelectedDeckIds,
+  normalizeSelectedCharacterIds,
   reconcileTurnOrderDraft,
   shouldRevealParticipantPrivateState,
   validateTurnOrderDraft,

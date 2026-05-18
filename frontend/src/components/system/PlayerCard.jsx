@@ -1,4 +1,3 @@
-import { getDeckCardCount } from '../../utils/lobbyUi';
 import { Badge } from '../ui/Badge';
 import { Card } from '../ui/Card';
 
@@ -16,14 +15,13 @@ export function PlayerCard({
   isActiveTurn = false,
   isCurrentUser = false,
   isHost = false,
-  selectedDeck = null,
+  selectedCharacter = null,
 }) {
-  const selectedDecks = Array.isArray(player?.selected_decks)
-    ? player.selected_decks
-    : selectedDeck
-      ? [selectedDeck]
+  const selectedCharacters = Array.isArray(player?.selected_characters)
+    ? player.selected_characters
+    : selectedCharacter
+      ? [selectedCharacter]
       : [];
-  const deckCardCount = selectedDeck ? getDeckCardCount(selectedDeck) : 0;
   const isMaster = Boolean(player?.is_master);
 
   return (
@@ -75,25 +73,26 @@ export function PlayerCard({
         </div>
 
         <div className="player-card__deck">
-          <span className="status-label">{isMaster ? 'Criaturas selecionadas' : 'Deck selecionado'}</span>
+          <span className="status-label">{isMaster ? 'Criaturas selecionadas' : 'Personagem selecionado'}</span>
           {isMaster ? (
-            selectedDecks.length ? (
+            selectedCharacters.length ? (
               <div className="stack-gap" style={{ gap: '4px' }}>
-                {selectedDecks.map((deck) => (
-                  <strong key={`master-deck-${deck.id}`}>{deck.name}</strong>
+                {selectedCharacters.map((character) => (
+                  <strong key={`master-character-${character.id}`}>{character.name}</strong>
                 ))}
                 <span className="muted-text compact">
-                  {selectedDecks.length} criatura{selectedDecks.length === 1 ? '' : 's'} selecionada{selectedDecks.length === 1 ? '' : 's'}.
+                  {selectedCharacters.length} criatura{selectedCharacters.length === 1 ? '' : 's'} selecionada
+                  {selectedCharacters.length === 1 ? '' : 's'}.
                 </span>
               </div>
             ) : (
-              <span className="muted-text compact">Selecione ao menos um deck para liberar o pronto.</span>
+              <span className="muted-text compact">Selecione ao menos um personagem para liberar o pronto.</span>
             )
           ) : (
             <>
-              <strong>{selectedDeck?.name || 'Deck não selecionado'}</strong>
+              <strong>{selectedCharacter?.name || 'Personagem não selecionado'}</strong>
               <span className="muted-text compact">
-                {deckCardCount ? `${deckCardCount} cartas` : 'Selecione um deck para liberar o pronto.'}
+                {selectedCharacter ? 'Pronto para entrar no combate.' : 'Selecione um personagem para liberar o pronto.'}
               </span>
             </>
           )}

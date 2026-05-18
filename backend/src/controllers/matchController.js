@@ -6,45 +6,38 @@ const roomIdParamSchema = z.object({
   roomId: z.coerce.number().int().positive(),
 });
 
-const cardActionSchema = z.object({
+const targetedActionSchema = z.object({
   actingParticipantId: z.coerce.number().int().positive(),
-  cardId: z.string().trim().min(1),
   targetParticipantId: z.coerce.number().int().positive().optional(),
-  selectedExileCardId: z.string().trim().min(1).optional(),
+  selectedExiledCardId: z.string().trim().min(1).optional(),
   selectedOwnHandCardId: z.string().trim().min(1).optional(),
   selectedTargetHandCardId: z.string().trim().min(1).optional(),
-  pairedCardId: z.string().trim().min(1).optional(),
-  pairedTargetParticipantId: z.coerce.number().int().positive().optional(),
-  pairedSelectedExileCardId: z.string().trim().min(1).optional(),
-  pairedSelectedOwnHandCardId: z.string().trim().min(1).optional(),
-  pairedSelectedTargetHandCardId: z.string().trim().min(1).optional(),
-  asCounterResponse: z.coerce.boolean().optional(),
+});
+
+const useImoCardSchema = targetedActionSchema.extend({
+  cardId: z.string().trim().min(1),
+});
+
+const generateImoSchema = z.object({
+  actingParticipantId: z.coerce.number().int().positive(),
+  cardId: z.string().trim().min(1),
+});
+
+const useDivisionActionSchema = targetedActionSchema.extend({
+  divisionId: z.string().trim().min(1),
+});
+
+const completeOpeningHandSchema = z.object({
+  actingParticipantId: z.coerce.number().int().positive(),
+  selectedCardIds: z.array(z.string().trim().min(1)).length(2),
 });
 
 const actingParticipantSchema = z.object({
   actingParticipantId: z.coerce.number().int().positive(),
 });
 
-const ferroadaActionSchema = z.object({
-  actingParticipantId: z.coerce.number().int().positive(),
-  ferroadaCardId: z.string().trim().min(1),
-  selectedOwnHandCardIds: z.array(z.string().trim().min(1)).max(2),
-});
-
-const revealTopDeckSchema = z.object({
-  actingParticipantId: z.coerce.number().int().positive(),
-  targetParticipantId: z.coerce.number().int().positive(),
-  topDeckInstanceId: z.string().trim().min(1),
-});
-
-const reactToAttackSchema = z.object({
-  actingParticipantId: z.coerce.number().int().positive(),
-  reactionCardId: z.string().trim().min(1),
-});
-
-const resolveAttackSchema = z.object({
-  actingParticipantId: z.coerce.number().int().positive(),
-  resolution: z.enum(['skip-reaction', 'reaction-success', 'reaction-fail', 'skip-counter-response']),
+const exileImoCardSchema = targetedActionSchema.extend({
+  cardId: z.string().trim().min(1),
 });
 
 async function getMatchSnapshot(req, res) {
@@ -68,54 +61,78 @@ async function startMatch(req, res) {
   return res.status(200).json(data);
 }
 
-async function drawCard(req, res) {
+async function completeOpeningHand(req, res) {
   const { roomId } = roomIdParamSchema.parse(req.params);
-  const payload = actingParticipantSchema.parse(req.body);
-  const data = await matchService.drawCardForPlayer({
+  const payload = completeOpeningHandSchema.parse(req.body);
+  const data = await matchService.completeOpeningHandForPlayer({
     roomId,
     userId: req.user.id,
     actingParticipantId: payload.actingParticipantId,
+    selectedCardIds: payload.selectedCardIds,
   });
 
   return res.status(200).json(data);
 }
 
-async function playCard(req, res) {
+async function generateImo(req, res) {
   const { roomId } = roomIdParamSchema.parse(req.params);
-  const payload = cardActionSchema.parse(req.body);
-  const data = await matchService.playCardForPlayer({
+  const payload = generateImoSchema.parse(req.body);
+  const data = await matchService.generateImoForPlayer({
     roomId,
     userId: req.user.id,
     actingParticipantId: payload.actingParticipantId,
     cardId: payload.cardId,
-    targetParticipantId: payload.targetParticipantId,
-    selectedExileCardId: payload.selectedExileCardId,
-    selectedOwnHandCardId: payload.selectedOwnHandCardId,
-    selectedTargetHandCardId: payload.selectedTargetHandCardId,
-    pairedCardId: payload.pairedCardId,
-    pairedTargetParticipantId: payload.pairedTargetParticipantId,
-    pairedSelectedExileCardId: payload.pairedSelectedExileCardId,
-    pairedSelectedOwnHandCardId: payload.pairedSelectedOwnHandCardId,
-    pairedSelectedTargetHandCardId: payload.pairedSelectedTargetHandCardId,
-    asCounterResponse: payload.asCounterResponse,
   });
 
   return res.status(200).json(data);
 }
 
-async function discardCard(req, res) {
+async function useImoCard(req, res) {
   const { roomId } = roomIdParamSchema.parse(req.params);
-  const payload = cardActionSchema.parse(req.body);
-  const data = await matchService.discardCardForPlayer({
+  const payload = useImoCardSchema.parse(req.body);
+  const data = await matchService.useImoCardForPlayer({
     roomId,
     userId: req.user.id,
     actingParticipantId: payload.actingParticipantId,
     cardId: payload.cardId,
     targetParticipantId: payload.targetParticipantId,
-    selectedExileCardId: payload.selectedExileCardId,
+    selectedExiledCardId: payload.selectedExiledCardId,
     selectedOwnHandCardId: payload.selectedOwnHandCardId,
     selectedTargetHandCardId: payload.selectedTargetHandCardId,
-    asCounterResponse: payload.asCounterResponse,
+  });
+
+  return res.status(200).json(data);
+}
+
+async function exileImoCard(req, res) {
+  const { roomId } = roomIdParamSchema.parse(req.params);
+  const payload = exileImoCardSchema.parse(req.body);
+  const data = await matchService.exileImoCardForPlayer({
+    roomId,
+    userId: req.user.id,
+    actingParticipantId: payload.actingParticipantId,
+    cardId: payload.cardId,
+    targetParticipantId: payload.targetParticipantId,
+    selectedExiledCardId: payload.selectedExiledCardId,
+    selectedOwnHandCardId: payload.selectedOwnHandCardId,
+    selectedTargetHandCardId: payload.selectedTargetHandCardId,
+  });
+
+  return res.status(200).json(data);
+}
+
+async function useDivisionAction(req, res) {
+  const { roomId } = roomIdParamSchema.parse(req.params);
+  const payload = useDivisionActionSchema.parse(req.body);
+  const data = await matchService.useDivisionActionForPlayer({
+    roomId,
+    userId: req.user.id,
+    actingParticipantId: payload.actingParticipantId,
+    divisionId: payload.divisionId,
+    targetParticipantId: payload.targetParticipantId,
+    selectedExiledCardId: payload.selectedExiledCardId,
+    selectedOwnHandCardId: payload.selectedOwnHandCardId,
+    selectedTargetHandCardId: payload.selectedTargetHandCardId,
   });
 
   return res.status(200).json(data);
@@ -133,69 +150,13 @@ async function endTurn(req, res) {
   return res.status(200).json(data);
 }
 
-async function useFerroada(req, res) {
-  const { roomId } = roomIdParamSchema.parse(req.params);
-  const payload = ferroadaActionSchema.parse(req.body);
-  const data = await matchService.useFerroadaHandEffectForPlayer({
-    roomId,
-    userId: req.user.id,
-    actingParticipantId: payload.actingParticipantId,
-    ferroadaCardId: payload.ferroadaCardId,
-    selectedOwnHandCardIds: payload.selectedOwnHandCardIds,
-  });
-
-  return res.status(200).json(data);
-}
-
-async function revealTopDeck(req, res) {
-  const { roomId } = roomIdParamSchema.parse(req.params);
-  const payload = revealTopDeckSchema.parse(req.body);
-  const data = await matchService.revealViewedTopDeckCardForPlayer({
-    roomId,
-    userId: req.user.id,
-    actingParticipantId: payload.actingParticipantId,
-    targetParticipantId: payload.targetParticipantId,
-    topDeckInstanceId: payload.topDeckInstanceId,
-  });
-
-  return res.status(200).json(data);
-}
-
-async function reactToAttack(req, res) {
-  const { roomId } = roomIdParamSchema.parse(req.params);
-  const payload = reactToAttackSchema.parse(req.body);
-  const data = await matchService.reactToAttackForPlayer({
-    roomId,
-    userId: req.user.id,
-    actingParticipantId: payload.actingParticipantId,
-    reactionCardId: payload.reactionCardId,
-  });
-
-  return res.status(200).json(data);
-}
-
-async function resolveAttack(req, res) {
-  const { roomId } = roomIdParamSchema.parse(req.params);
-  const payload = resolveAttackSchema.parse(req.body);
-  const data = await matchService.resolveAttackForPlayer({
-    roomId,
-    userId: req.user.id,
-    actingParticipantId: payload.actingParticipantId,
-    resolution: payload.resolution,
-  });
-
-  return res.status(200).json(data);
-}
-
 module.exports = {
+  completeOpeningHand,
+  endTurn,
+  exileImoCard,
+  generateImo,
   getMatchSnapshot,
   startMatch,
-  drawCard,
-  playCard,
-  discardCard,
-  reactToAttack,
-  resolveAttack,
-  revealTopDeck,
-  endTurn,
-  useFerroada,
+  useDivisionAction,
+  useImoCard,
 };

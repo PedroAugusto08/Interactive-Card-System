@@ -8,7 +8,7 @@ const { env } = require('./config/env');
 const { healthRoutes } = require('./routes/healthRoutes');
 const { authRoutes } = require('./routes/authRoutes');
 const { roomRoutes } = require('./routes/roomRoutes');
-const { deckRoutes } = require('./routes/deckRoutes');
+const { characterRoutes } = require('./routes/characterRoutes');
 const { matchRoutes } = require('./routes/matchRoutes');
 const { notFoundHandler, errorHandler } = require('./middlewares/errorMiddleware');
 
@@ -52,7 +52,7 @@ function createApp() {
   app.use('/api/health', healthRoutes);
   app.use('/api/auth', authRoutes);
   app.use('/api/rooms', roomRoutes);
-  app.use('/api/decks', deckRoutes);
+  app.use('/api/characters', characterRoutes);
   app.use('/api/match', matchRoutes);
 
   // Handlers finais (404 e erros).

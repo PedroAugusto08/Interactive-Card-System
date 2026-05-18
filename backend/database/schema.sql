@@ -25,11 +25,23 @@ CREATE TABLE IF NOT EXISTS decks (
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS characters (
+  id SERIAL PRIMARY KEY,
+  owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  legacy_deck_id INTEGER UNIQUE REFERENCES decks(id) ON DELETE SET NULL,
+  name VARCHAR(80) NOT NULL,
+  description TEXT,
+  division_ids_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  imo_card_ids_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS room_players (
   room_id INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  selected_deck_id INTEGER,
-  selected_deck_ids_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  selected_character_id INTEGER REFERENCES characters(id) ON DELETE SET NULL,
+  selected_character_ids_json JSONB NOT NULL DEFAULT '[]'::jsonb,
   is_ready BOOLEAN NOT NULL DEFAULT FALSE,
   turn_order INTEGER,
   joined_at TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -52,7 +64,7 @@ CREATE TABLE IF NOT EXISTS imo_cards (
 CREATE TABLE IF NOT EXISTS matches (
   id SERIAL PRIMARY KEY,
   room_id INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
-  status VARCHAR(20) NOT NULL DEFAULT 'active',
+  status VARCHAR(20) NOT NULL DEFAULT 'opening',
   round INTEGER NOT NULL DEFAULT 1,
   current_turn_player_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
   current_turn_participant_id INTEGER,
@@ -66,41 +78,26 @@ CREATE TABLE IF NOT EXISTS matches (
 
 CREATE UNIQUE INDEX IF NOT EXISTS matches_room_active_idx
 ON matches (room_id)
-WHERE status = 'active';
-
-CREATE TABLE IF NOT EXISTS match_players (
-  match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
-  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  turn_order INTEGER NOT NULL,
-  health INTEGER NOT NULL DEFAULT 10,
-  imo INTEGER NOT NULL DEFAULT 3,
-  max_imo INTEGER NOT NULL DEFAULT 10,
-  has_drawn_this_turn BOOLEAN NOT NULL DEFAULT FALSE,
-  has_used_card_action_this_turn BOOLEAN NOT NULL DEFAULT FALSE,
-  is_defeated BOOLEAN NOT NULL DEFAULT FALSE,
-  deck_cards_json JSONB NOT NULL DEFAULT '[]'::jsonb,
-  hand_cards_json JSONB NOT NULL DEFAULT '[]'::jsonb,
-  exile_cards_json JSONB NOT NULL DEFAULT '[]'::jsonb,
-  PRIMARY KEY (match_id, user_id)
-);
+WHERE status IN ('opening', 'active');
 
 CREATE TABLE IF NOT EXISTS match_participants (
   id SERIAL PRIMARY KEY,
   match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
   controller_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   participant_type VARCHAR(32) NOT NULL,
-  source_deck_id INTEGER REFERENCES decks(id) ON DELETE SET NULL,
+  source_character_id INTEGER REFERENCES characters(id) ON DELETE SET NULL,
   display_name VARCHAR(120) NOT NULL,
   turn_order INTEGER NOT NULL,
   health INTEGER NOT NULL DEFAULT 10,
   imo INTEGER NOT NULL DEFAULT 3,
   max_imo INTEGER NOT NULL DEFAULT 10,
-  has_drawn_this_turn BOOLEAN NOT NULL DEFAULT FALSE,
-  has_used_card_action_this_turn BOOLEAN NOT NULL DEFAULT FALSE,
+  has_generated_imo_this_turn BOOLEAN NOT NULL DEFAULT FALSE,
+  standard_action_used BOOLEAN NOT NULL DEFAULT FALSE,
+  complementary_action_used BOOLEAN NOT NULL DEFAULT FALSE,
+  opening_hand_ready BOOLEAN NOT NULL DEFAULT FALSE,
   is_defeated BOOLEAN NOT NULL DEFAULT FALSE,
-  deck_cards_json JSONB NOT NULL DEFAULT '[]'::jsonb,
   hand_cards_json JSONB NOT NULL DEFAULT '[]'::jsonb,
-  exile_cards_json JSONB NOT NULL DEFAULT '[]'::jsonb
+  exiled_imo_card_ids_json JSONB NOT NULL DEFAULT '[]'::jsonb
 );
 
 CREATE INDEX IF NOT EXISTS match_participants_match_idx

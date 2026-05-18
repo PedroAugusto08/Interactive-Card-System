@@ -10,13 +10,11 @@ router.use(requireAuth);
 
 router.get('/:roomId', asyncHandler(matchController.getMatchSnapshot));
 router.post('/:roomId/start', asyncHandler(matchController.startMatch));
-router.post('/:roomId/draw', asyncHandler(matchController.drawCard));
-router.post('/:roomId/play-card', asyncHandler(matchController.playCard));
-router.post('/:roomId/discard-card', asyncHandler(matchController.discardCard));
-router.post('/:roomId/react-to-attack', asyncHandler(matchController.reactToAttack));
-router.post('/:roomId/resolve-attack', asyncHandler(matchController.resolveAttack));
-router.post('/:roomId/reveal-top-deck', asyncHandler(matchController.revealTopDeck));
-router.post('/:roomId/use-ferroada', asyncHandler(matchController.useFerroada));
+router.post('/:roomId/complete-opening-hand', asyncHandler(matchController.completeOpeningHand));
+router.post('/:roomId/generate-imo', asyncHandler(matchController.generateImo));
+router.post('/:roomId/use-imo-card', asyncHandler(matchController.useImoCard));
+router.post('/:roomId/exile-imo-card', asyncHandler(matchController.exileImoCard));
+router.post('/:roomId/use-division-action', asyncHandler(matchController.useDivisionAction));
 router.post('/:roomId/end-turn', asyncHandler(matchController.endTurn));
 
 module.exports = { matchRoutes: router };

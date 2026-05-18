@@ -10,11 +10,7 @@ const { buildUserCapabilityFlags } = require('../services/masterOverride');
 function createSocketServer(httpServer) {
   const io = new Server(httpServer, {
     cors: {
-      origin: [
-        'http://localhost:5173',
-        'http://127.0.0.1:5173',
-        env.clientOrigin,
-      ].filter(Boolean),
+      origin: ['http://localhost:5173', 'http://127.0.0.1:5173', env.clientOrigin].filter(Boolean),
       credentials: true,
     },
   });
@@ -31,14 +27,13 @@ function createSocketServer(httpServer) {
 
       const payload = jwt.verify(token, env.jwtSecret);
       const userId = Number(payload.sub);
-
       if (!Number.isInteger(userId)) {
-        return next(new Error('Token invalido.'));
+        return next(new Error('Token inválido.'));
       }
 
       const user = await findUserById(userId);
       if (!user) {
-        return next(new Error('Usuario nao encontrado.'));
+        return next(new Error('Usuário não encontrado.'));
       }
 
       socket.data.user = {
@@ -51,7 +46,7 @@ function createSocketServer(httpServer) {
       };
       return next();
     } catch (error) {
-      return next(new Error('Falha de autenticacao.'));
+      return next(new Error('Falha de autenticação.'));
     }
   });
 
@@ -97,12 +92,12 @@ function createSocketServer(httpServer) {
       }
     });
 
-    socket.on('room:selectDeck', async ({ roomId, deckId }) => {
+    socket.on('room:selectCharacter', async ({ roomId, characterId }) => {
       try {
-        await roomService.selectDeckForPlayer({
+        await roomService.selectCharacterForPlayer({
           roomId: Number(roomId),
           userId: user.id,
-          deckId: Number(deckId),
+          characterId: Number(characterId),
           requesterUser: user,
         });
 
@@ -113,13 +108,13 @@ function createSocketServer(httpServer) {
       }
     });
 
-    socket.on('room:setMasterDecks', async ({ roomId, deckIds }) => {
+    socket.on('room:setMasterCharacters', async ({ roomId, characterIds }) => {
       try {
-        await roomService.replaceMasterDeckSelection({
+        await roomService.replaceMasterCharacterSelection({
           roomId: Number(roomId),
           userId: user.id,
           requesterUser: user,
-          deckIds: Array.isArray(deckIds) ? deckIds.map((value) => Number(value)) : [],
+          characterIds: Array.isArray(characterIds) ? characterIds.map((value) => Number(value)) : [],
         });
 
         await syncSocketRoomOnly(socket, Number(roomId));
@@ -178,371 +173,76 @@ function createSocketServer(httpServer) {
       }
     });
 
-    socket.on('match:draw', async ({ roomId, actingParticipantId }, acknowledge) => {
-      try {
-        const actionStartedAt = performance.now();
-        const actionState = await matchService.drawCardForPlayer({
-          roomId: Number(roomId),
-          userId: user.id,
-          actingParticipantId: Number(actingParticipantId),
-          includeSnapshot: false,
-        });
-        const mutateMs = performance.now() - actionStartedAt;
-        const acknowledgeStartedAt = performance.now();
-        const ackMetrics = {
-          buildAckMs: 0,
-          totalMs: 0,
-        };
-        if (typeof acknowledge === 'function') {
-          acknowledge({
-            ok: true,
-            snapshot: actionState?.snapshot || null,
-            log: actionState?.log || null,
-            metrics: ackMetrics,
-          });
-        }
-        ackMetrics.buildAckMs = performance.now() - acknowledgeStartedAt;
-        ackMetrics.totalMs = ackMetrics.buildAckMs;
-        logMatchPerf('match:draw', {
-          roomId: Number(roomId),
-          userId: user.id,
-          mutateMs,
-          realtimeMetrics: ackMetrics,
-          totalMs: performance.now() - actionStartedAt,
-        });
-        queueMatchBroadcast(io, Number(roomId), [socket.id]);
-      } catch (error) {
-        acknowledgeSocketError(acknowledge, error.message);
-        emitSocketError(socket, error.message);
-      }
-    });
+    bindMatchAction(io, socket, 'match:completeOpeningHand', (payload) =>
+      matchService.completeOpeningHandForPlayer({
+        roomId: Number(payload.roomId),
+        userId: user.id,
+        actingParticipantId: Number(payload.actingParticipantId),
+        selectedCardIds: Array.isArray(payload.selectedCardIds) ? payload.selectedCardIds : [],
+        includeSnapshot: false,
+      })
+    );
 
-    socket.on(
-      'match:playCard',
-      async (
-        {
-          roomId,
-          actingParticipantId,
-          cardId,
-          targetParticipantId,
-          selectedExileCardId,
-          selectedOwnHandCardId,
-          selectedTargetHandCardId,
-          pairedCardId,
-          pairedTargetParticipantId,
-          pairedSelectedExileCardId,
-          pairedSelectedOwnHandCardId,
-          pairedSelectedTargetHandCardId,
-          asCounterResponse,
-        },
-        acknowledge
-      ) => {
-      try {
-        const actionStartedAt = performance.now();
-        const actionState = await matchService.playCardForPlayer({
-          roomId: Number(roomId),
-          userId: user.id,
-          actingParticipantId: Number(actingParticipantId),
-          cardId,
-          targetParticipantId: targetParticipantId ? Number(targetParticipantId) : undefined,
-          selectedExileCardId,
-          selectedOwnHandCardId,
-          selectedTargetHandCardId,
-          pairedCardId,
-          pairedTargetParticipantId: pairedTargetParticipantId ? Number(pairedTargetParticipantId) : undefined,
-          pairedSelectedExileCardId,
-          pairedSelectedOwnHandCardId,
-          pairedSelectedTargetHandCardId,
-          asCounterResponse: Boolean(asCounterResponse),
-          includeSnapshot: false,
-        });
-        const mutateMs = performance.now() - actionStartedAt;
-        const acknowledgeStartedAt = performance.now();
-        const ackMetrics = {
-          buildAckMs: 0,
-          totalMs: 0,
-        };
-        if (typeof acknowledge === 'function') {
-          acknowledge({
-            ok: true,
-            snapshot: actionState?.snapshot || null,
-            log: actionState?.log || null,
-            notice: actionState?.notice || '',
-            effectResults: actionState?.effectResults || [],
-            metrics: ackMetrics,
-          });
-        }
-        ackMetrics.buildAckMs = performance.now() - acknowledgeStartedAt;
-        ackMetrics.totalMs = ackMetrics.buildAckMs;
-        logMatchPerf('match:playCard', {
-          roomId: Number(roomId),
-          userId: user.id,
-          mutateMs,
-          realtimeMetrics: ackMetrics,
-          totalMs: performance.now() - actionStartedAt,
-        });
-        queueMatchBroadcast(io, Number(roomId), [socket.id]);
-      } catch (error) {
-        acknowledgeSocketError(acknowledge, error.message);
-        emitSocketError(socket, error.message);
-      }
-    });
+    bindMatchAction(io, socket, 'match:generateImo', (payload) =>
+      matchService.generateImoForPlayer({
+        roomId: Number(payload.roomId),
+        userId: user.id,
+        actingParticipantId: Number(payload.actingParticipantId),
+        cardId: payload.cardId,
+        includeSnapshot: false,
+      })
+    );
 
-    socket.on(
-      'match:discardCard',
-      async (
-        {
-          roomId,
-          actingParticipantId,
-          cardId,
-          targetParticipantId,
-          selectedExileCardId,
-          selectedOwnHandCardId,
-          selectedTargetHandCardId,
-          asCounterResponse,
-        },
-        acknowledge
-      ) => {
-      try {
-        const actionStartedAt = performance.now();
-        const actionState = await matchService.discardCardForPlayer({
-          roomId: Number(roomId),
-          userId: user.id,
-          actingParticipantId: Number(actingParticipantId),
-          cardId,
-          targetParticipantId: targetParticipantId ? Number(targetParticipantId) : undefined,
-          selectedExileCardId,
-          selectedOwnHandCardId,
-          selectedTargetHandCardId,
-          asCounterResponse: Boolean(asCounterResponse),
-          includeSnapshot: false,
-        });
-        const mutateMs = performance.now() - actionStartedAt;
-        const acknowledgeStartedAt = performance.now();
-        const ackMetrics = {
-          buildAckMs: 0,
-          totalMs: 0,
-        };
-        if (typeof acknowledge === 'function') {
-          acknowledge({
-            ok: true,
-            snapshot: actionState?.snapshot || null,
-            log: actionState?.log || null,
-            notice: actionState?.notice || '',
-            effectResults: actionState?.effectResults || [],
-            metrics: ackMetrics,
-          });
-        }
-        ackMetrics.buildAckMs = performance.now() - acknowledgeStartedAt;
-        ackMetrics.totalMs = ackMetrics.buildAckMs;
-        logMatchPerf('match:discardCard', {
-          roomId: Number(roomId),
-          userId: user.id,
-          mutateMs,
-          realtimeMetrics: ackMetrics,
-          totalMs: performance.now() - actionStartedAt,
-        });
-        queueMatchBroadcast(io, Number(roomId), [socket.id]);
-      } catch (error) {
-        acknowledgeSocketError(acknowledge, error.message);
-        emitSocketError(socket, error.message);
-      }
-    });
+    bindMatchAction(io, socket, 'match:useImoCard', (payload) =>
+      matchService.useImoCardForPlayer({
+        roomId: Number(payload.roomId),
+        userId: user.id,
+        actingParticipantId: Number(payload.actingParticipantId),
+        cardId: payload.cardId,
+        targetParticipantId: payload.targetParticipantId ? Number(payload.targetParticipantId) : undefined,
+        selectedExiledCardId: payload.selectedExiledCardId,
+        selectedOwnHandCardId: payload.selectedOwnHandCardId,
+        selectedTargetHandCardId: payload.selectedTargetHandCardId,
+        includeSnapshot: false,
+      })
+    );
 
-    socket.on('match:reactToAttack', async ({ roomId, actingParticipantId, reactionCardId }, acknowledge) => {
-      try {
-        const actionStartedAt = performance.now();
-        const actionState = await matchService.reactToAttackForPlayer({
-          roomId: Number(roomId),
-          userId: user.id,
-          actingParticipantId: Number(actingParticipantId),
-          reactionCardId,
-          includeSnapshot: false,
-        });
-        const mutateMs = performance.now() - actionStartedAt;
-        const acknowledgeStartedAt = performance.now();
-        const ackMetrics = {
-          buildAckMs: 0,
-          totalMs: 0,
-        };
-        if (typeof acknowledge === 'function') {
-          acknowledge({
-            ok: true,
-            snapshot: actionState?.snapshot || null,
-            log: actionState?.log || null,
-            metrics: ackMetrics,
-          });
-        }
-        ackMetrics.buildAckMs = performance.now() - acknowledgeStartedAt;
-        ackMetrics.totalMs = ackMetrics.buildAckMs;
-        logMatchPerf('match:reactToAttack', {
-          roomId: Number(roomId),
-          userId: user.id,
-          mutateMs,
-          realtimeMetrics: ackMetrics,
-          totalMs: performance.now() - actionStartedAt,
-        });
-        queueMatchBroadcast(io, Number(roomId), [socket.id]);
-      } catch (error) {
-        acknowledgeSocketError(acknowledge, error.message);
-        emitSocketError(socket, error.message);
-      }
-    });
+    bindMatchAction(io, socket, 'match:exileImoCard', (payload) =>
+      matchService.exileImoCardForPlayer({
+        roomId: Number(payload.roomId),
+        userId: user.id,
+        actingParticipantId: Number(payload.actingParticipantId),
+        cardId: payload.cardId,
+        targetParticipantId: payload.targetParticipantId ? Number(payload.targetParticipantId) : undefined,
+        selectedExiledCardId: payload.selectedExiledCardId,
+        selectedOwnHandCardId: payload.selectedOwnHandCardId,
+        selectedTargetHandCardId: payload.selectedTargetHandCardId,
+        includeSnapshot: false,
+      })
+    );
 
-    socket.on('match:resolveAttack', async ({ roomId, actingParticipantId, resolution }, acknowledge) => {
-      try {
-        const actionStartedAt = performance.now();
-        const actionState = await matchService.resolveAttackForPlayer({
-          roomId: Number(roomId),
-          userId: user.id,
-          actingParticipantId: Number(actingParticipantId),
-          resolution,
-          includeSnapshot: false,
-        });
-        const mutateMs = performance.now() - actionStartedAt;
-        const acknowledgeStartedAt = performance.now();
-        const ackMetrics = {
-          buildAckMs: 0,
-          totalMs: 0,
-        };
-        if (typeof acknowledge === 'function') {
-          acknowledge({
-            ok: true,
-            snapshot: actionState?.snapshot || null,
-            log: actionState?.log || null,
-            metrics: ackMetrics,
-          });
-        }
-        ackMetrics.buildAckMs = performance.now() - acknowledgeStartedAt;
-        ackMetrics.totalMs = ackMetrics.buildAckMs;
-        logMatchPerf('match:resolveAttack', {
-          roomId: Number(roomId),
-          userId: user.id,
-          mutateMs,
-          realtimeMetrics: ackMetrics,
-          totalMs: performance.now() - actionStartedAt,
-        });
-        queueMatchBroadcast(io, Number(roomId), [socket.id]);
-      } catch (error) {
-        acknowledgeSocketError(acknowledge, error.message);
-        emitSocketError(socket, error.message);
-      }
-    });
+    bindMatchAction(io, socket, 'match:useDivisionAction', (payload) =>
+      matchService.useDivisionActionForPlayer({
+        roomId: Number(payload.roomId),
+        userId: user.id,
+        actingParticipantId: Number(payload.actingParticipantId),
+        divisionId: payload.divisionId,
+        targetParticipantId: payload.targetParticipantId ? Number(payload.targetParticipantId) : undefined,
+        selectedExiledCardId: payload.selectedExiledCardId,
+        selectedOwnHandCardId: payload.selectedOwnHandCardId,
+        selectedTargetHandCardId: payload.selectedTargetHandCardId,
+        includeSnapshot: false,
+      })
+    );
 
-    socket.on(
-      'match:useFerroada',
-      async ({ roomId, actingParticipantId, ferroadaCardId, selectedOwnHandCardIds }, acknowledge) => {
-      try {
-        const actionStartedAt = performance.now();
-        const actionState = await matchService.useFerroadaHandEffectForPlayer({
-          roomId: Number(roomId),
-          userId: user.id,
-          actingParticipantId: Number(actingParticipantId),
-          ferroadaCardId,
-          selectedOwnHandCardIds: Array.isArray(selectedOwnHandCardIds) ? selectedOwnHandCardIds : [],
-          includeSnapshot: false,
-        });
-        const mutateMs = performance.now() - actionStartedAt;
-        const acknowledgeStartedAt = performance.now();
-        const ackMetrics = {
-          buildAckMs: 0,
-          totalMs: 0,
-        };
-        if (typeof acknowledge === 'function') {
-          acknowledge({
-            ok: true,
-            snapshot: actionState?.snapshot || null,
-            log: actionState?.log || null,
-            notice: actionState?.notice || '',
-            effectResults: actionState?.effectResults || [],
-            metrics: ackMetrics,
-          });
-        }
-        ackMetrics.buildAckMs = performance.now() - acknowledgeStartedAt;
-        ackMetrics.totalMs = ackMetrics.buildAckMs;
-        logMatchPerf('match:useFerroada', {
-          roomId: Number(roomId),
-          userId: user.id,
-          mutateMs,
-          realtimeMetrics: ackMetrics,
-          totalMs: performance.now() - actionStartedAt,
-        });
-        queueMatchBroadcast(io, Number(roomId), [socket.id]);
-      } catch (error) {
-        acknowledgeSocketError(acknowledge, error.message);
-        emitSocketError(socket, error.message);
-      }
-    });
-
-    socket.on('match:endTurn', async ({ roomId, actingParticipantId }, acknowledge) => {
-      try {
-        const actionStartedAt = performance.now();
-        const actionState = await matchService.endTurnForPlayer({
-          roomId: Number(roomId),
-          userId: user.id,
-          actingParticipantId: Number(actingParticipantId),
-          includeSnapshot: false,
-        });
-        const mutateMs = performance.now() - actionStartedAt;
-        const acknowledgeStartedAt = performance.now();
-        const ackMetrics = {
-          buildAckMs: 0,
-          totalMs: 0,
-        };
-        if (typeof acknowledge === 'function') {
-          acknowledge({
-            ok: true,
-            snapshot: actionState?.snapshot || null,
-            log: actionState?.log || null,
-            metrics: ackMetrics,
-          });
-        }
-        ackMetrics.buildAckMs = performance.now() - acknowledgeStartedAt;
-        ackMetrics.totalMs = ackMetrics.buildAckMs;
-        logMatchPerf('match:endTurn', {
-          roomId: Number(roomId),
-          userId: user.id,
-          mutateMs,
-          realtimeMetrics: ackMetrics,
-          totalMs: performance.now() - actionStartedAt,
-        });
-        queueMatchBroadcast(io, Number(roomId), [socket.id]);
-      } catch (error) {
-        acknowledgeSocketError(acknowledge, error.message);
-        emitSocketError(socket, error.message);
-      }
-    });
-
-    socket.on(
-      'match:revealTopDeck',
-      async ({ roomId, actingParticipantId, targetParticipantId, topDeckInstanceId }, acknowledge) => {
-      try {
-        const actionState = await matchService.revealViewedTopDeckCardForPlayer({
-          roomId: Number(roomId),
-          userId: user.id,
-          actingParticipantId: Number(actingParticipantId),
-          targetParticipantId: Number(targetParticipantId),
-          topDeckInstanceId,
-        });
-
-        const roomChannel = getRoomChannel(Number(roomId));
-        if (actionState?.log) {
-          io.to(roomChannel).emit('match:log', actionState.log);
-        }
-        if (actionState?.revealEvent) {
-          io.to(roomChannel).emit('match:topDeckRevealed', actionState.revealEvent);
-        }
-
-        if (typeof acknowledge === 'function') {
-          acknowledge({
-            ok: true,
-          });
-        }
-      } catch (error) {
-        acknowledgeSocketError(acknowledge, error.message);
-        emitSocketError(socket, error.message);
-      }
-    });
+    bindMatchAction(io, socket, 'match:endTurn', (payload) =>
+      matchService.endTurnForPlayer({
+        roomId: Number(payload.roomId),
+        userId: user.id,
+        actingParticipantId: Number(payload.actingParticipantId),
+        includeSnapshot: false,
+      })
+    );
 
     socket.on('match:sync', async ({ roomId }) => {
       try {
@@ -554,6 +254,28 @@ function createSocketServer(httpServer) {
   });
 
   return io;
+}
+
+function bindMatchAction(io, socket, eventName, handler) {
+  socket.on(eventName, async (payload, acknowledge) => {
+    try {
+      const actionState = await handler(payload || {});
+      if (typeof acknowledge === 'function') {
+        acknowledge({
+          ok: true,
+          snapshot: actionState?.snapshot || null,
+          log: actionState?.log || null,
+          notice: actionState?.notice || '',
+          effectResults: actionState?.effectResults || [],
+          metrics: { totalMs: 0 },
+        });
+      }
+      queueMatchBroadcast(io, Number(payload?.roomId), [socket.id]);
+    } catch (error) {
+      acknowledgeSocketError(acknowledge, error.message);
+      emitSocketError(socket, error.message);
+    }
+  });
 }
 
 async function syncSocketRoomState(socket, roomId) {
@@ -591,7 +313,7 @@ async function syncSocketMatchState(socket, roomId) {
 
   socket.emit('match:sync', matchSnapshot);
 
-  const latestLog = matchSnapshot.logs[0];
+  const latestLog = matchSnapshot.logs?.[0];
   if (latestLog) {
     socket.emit('match:log', {
       id: latestLog.id,
@@ -683,18 +405,6 @@ function queueMatchBroadcast(io, roomId, excludedSocketIds = []) {
       console.error('Failed to broadcast match state:', error);
     });
   });
-}
-
-function logMatchPerf(action, { roomId, userId, mutateMs, realtimeMetrics, totalMs }) {
-  // eslint-disable-next-line no-console
-  console.info(
-    `[match perf] action=${action} room=${roomId} user=${userId} mutate=${Math.round(mutateMs)}ms ` +
-      `findMatch=${Math.round(realtimeMetrics?.findMatchMs || 0)}ms ` +
-      `loadMatchData=${Math.round(realtimeMetrics?.loadMatchDataMs || 0)}ms ` +
-      `buildState=${Math.round(realtimeMetrics?.buildSnapshotsMs || 0)}ms ` +
-      `buildAck=${Math.round(realtimeMetrics?.buildAckMs || 0)}ms ` +
-      `ackTotal=${Math.round(realtimeMetrics?.totalMs || 0)}ms total=${Math.round(totalMs)}ms`
-  );
 }
 
 function emitSocketError(socket, message) {

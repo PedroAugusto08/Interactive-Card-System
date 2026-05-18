@@ -11,14 +11,14 @@ const {
   updateRoomPlayerState,
   resetRoomPlayersReady,
 } = require('../models/roomModel');
-const { findDeckById, listDecksByIds } = require('../models/deckModel');
+const { findCharacterById, listCharactersByIds } = require('../models/characterModel');
 const { AppError } = require('../utils/AppError');
 const { getMatchSnapshot, forfeitMatchByLeavingRoom } = require('./matchService');
 const { canUserActAsMaster, resolveRoomMasterUserId } = require('./masterOverride');
 const {
   buildDefaultTurnOrderDraft,
   buildLobbyParticipantEntries,
-  normalizeSelectedDeckIds,
+  normalizeSelectedCharacterIds,
   reconcileTurnOrderDraft,
   validateTurnOrderDraft,
 } = require('./participantUtils');
@@ -42,23 +42,23 @@ async function createRoomForHost({ hostId, requesterUser = null }) {
 async function joinRoomByCode({ code, userId, requesterUser = null }) {
   const normalizedCode = String(code || '').trim().toUpperCase();
   if (!normalizedCode) {
-    throw new AppError('Codigo da sala e obrigatorio.', 400);
+    throw new AppError('Código da sala é obrigatório.', 400);
   }
 
   const room = await findRoomByCode(normalizedCode);
   if (!room) {
-    throw new AppError('Sala nao encontrada.', 404);
+    throw new AppError('Sala não encontrada.', 404);
   }
 
   const activeRoom = await findActiveRoomForUser(userId);
   if (activeRoom && activeRoom.id !== room.id) {
-    throw new AppError('Voce ja participa de outra sala ativa.', 409);
+    throw new AppError('Você já participa de outra sala ativa.', 409);
   }
 
   const alreadyInRoom = await isPlayerInRoom({ roomId: room.id, userId });
   if (!alreadyInRoom) {
     if (room.status !== 'lobby') {
-      throw new AppError('A sala ja iniciou uma partida.', 409);
+      throw new AppError('A sala já iniciou uma partida.', 409);
     }
 
     await addPlayerToRoom({ roomId: room.id, userId });
@@ -71,12 +71,12 @@ async function joinRoomByCode({ code, userId, requesterUser = null }) {
 async function leaveRoom({ roomId, userId, requesterUser = null }) {
   let room = await findRoomById(roomId);
   if (!room) {
-    throw new AppError('Sala nao encontrada.', 404);
+    throw new AppError('Sala não encontrada.', 404);
   }
 
   const alreadyInRoom = await isPlayerInRoom({ roomId, userId });
   if (!alreadyInRoom) {
-    throw new AppError('Jogador nao esta na sala.', 409);
+    throw new AppError('Jogador não está na sala.', 409);
   }
 
   const activeMasterUserId = resolveRoomMasterUserId({
@@ -135,12 +135,12 @@ async function leaveRoom({ roomId, userId, requesterUser = null }) {
 async function getRoomPlayers({ roomId, userId, requesterUser = null }) {
   const room = await findRoomById(roomId);
   if (!room) {
-    throw new AppError('Sala nao encontrada.', 404);
+    throw new AppError('Sala não encontrada.', 404);
   }
 
   const alreadyInRoom = await isPlayerInRoom({ roomId, userId });
   if (!alreadyInRoom) {
-    throw new AppError('Voce nao pertence a esta sala.', 403);
+    throw new AppError('Você não pertence a esta sala.', 403);
   }
 
   return buildRoomPayload(roomId, requesterUser || { id: userId });
@@ -172,14 +172,14 @@ async function getCurrentRoomForUser({ userId, requesterUser = null }) {
   };
 }
 
-async function selectDeckForPlayer({ roomId, userId, deckId, requesterUser = null }) {
+async function selectCharacterForPlayer({ roomId, userId, characterId, requesterUser = null }) {
   const room = await findRoomById(roomId);
   if (!room) {
-    throw new AppError('Sala nao encontrada.', 404);
+    throw new AppError('Sala não encontrada.', 404);
   }
 
   if (room.status !== 'lobby') {
-    throw new AppError('Nao e possivel trocar deck fora do lobby.', 409);
+    throw new AppError('Não é possível trocar personagem fora do lobby.', 409);
   }
 
   const activeMasterUserId = resolveRoomMasterUserId({
@@ -188,24 +188,24 @@ async function selectDeckForPlayer({ roomId, userId, deckId, requesterUser = nul
     players: await listRoomPlayers(roomId),
   });
   if (activeMasterUserId === userId) {
-    throw new AppError('O mestre deve usar a selecao multipla de criaturas.', 409);
+    throw new AppError('O mestre deve usar a seleção múltipla de criaturas.', 409);
   }
 
   const alreadyInRoom = await isPlayerInRoom({ roomId, userId });
   if (!alreadyInRoom) {
-    throw new AppError('Voce nao pertence a esta sala.', 403);
+    throw new AppError('Você não pertence a esta sala.', 403);
   }
 
-  const deck = await findDeckById(deckId);
-  if (!deck || deck.owner_id !== userId) {
-    throw new AppError('Deck nao encontrado para o jogador.', 404);
+  const character = await findCharacterById(characterId);
+  if (!character || character.owner_id !== userId) {
+    throw new AppError('Personagem não encontrado para o jogador.', 404);
   }
 
   await updateRoomPlayerState({
     roomId,
     userId,
-    selectedDeckId: deckId,
-    selectedDeckIds: [deckId],
+    selectedCharacterId: characterId,
+    selectedCharacterIds: [characterId],
     isReady: false,
   });
 
@@ -217,14 +217,14 @@ async function selectDeckForPlayer({ roomId, userId, deckId, requesterUser = nul
   return buildRoomPayload(roomId, requesterUser || { id: userId });
 }
 
-async function replaceMasterDeckSelection({ roomId, userId, deckIds, requesterUser = null }) {
+async function replaceMasterCharacterSelection({ roomId, userId, characterIds, requesterUser = null }) {
   const room = await findRoomById(roomId);
   if (!room) {
-    throw new AppError('Sala nao encontrada.', 404);
+    throw new AppError('Sala não encontrada.', 404);
   }
 
   if (room.status !== 'lobby') {
-    throw new AppError('Nao e possivel trocar criaturas fora do lobby.', 409);
+    throw new AppError('Não é possível trocar criaturas fora do lobby.', 409);
   }
 
   const activeMasterUserId = resolveRoomMasterUserId({
@@ -236,21 +236,21 @@ async function replaceMasterDeckSelection({ roomId, userId, deckIds, requesterUs
     throw new AppError('Somente o mestre pode definir as criaturas.', 403);
   }
 
-  const uniqueDeckIds = [...new Set((deckIds || []).map((value) => Number(value)).filter(Number.isInteger))];
-  if (!uniqueDeckIds.length) {
-    throw new AppError('Selecione ao menos um deck para o mestre.', 400);
+  const uniqueCharacterIds = [...new Set((characterIds || []).map((value) => Number(value)).filter(Number.isInteger))];
+  if (!uniqueCharacterIds.length) {
+    throw new AppError('Selecione ao menos um personagem para o mestre.', 400);
   }
 
-  const ownedDecks = await Promise.all(uniqueDeckIds.map((deckId) => findDeckById(deckId)));
-  if (ownedDecks.some((deck) => !deck || deck.owner_id !== userId)) {
-    throw new AppError('Um ou mais decks selecionados nao pertencem ao mestre.', 404);
+  const ownedCharacters = await Promise.all(uniqueCharacterIds.map((value) => findCharacterById(value)));
+  if (ownedCharacters.some((character) => !character || character.owner_id !== userId)) {
+    throw new AppError('Um ou mais personagens selecionados não pertencem ao mestre.', 404);
   }
 
   await updateRoomPlayerState({
     roomId,
     userId,
-    selectedDeckId: uniqueDeckIds[0],
-    selectedDeckIds: uniqueDeckIds,
+    selectedCharacterId: uniqueCharacterIds[0],
+    selectedCharacterIds: uniqueCharacterIds,
     isReady: false,
   });
 
@@ -265,11 +265,11 @@ async function replaceMasterDeckSelection({ roomId, userId, deckIds, requesterUs
 async function updateTurnOrderDraftForRoom({ roomId, userId, draftEntryIds, requesterUser = null }) {
   const room = await findRoomById(roomId);
   if (!room) {
-    throw new AppError('Sala nao encontrada.', 404);
+    throw new AppError('Sala não encontrada.', 404);
   }
 
   if (room.status !== 'lobby') {
-    throw new AppError('Nao e possivel editar a ordem fora do lobby.', 409);
+    throw new AppError('Não é possível editar a ordem fora do lobby.', 409);
   }
 
   const activeMasterUserId = resolveRoomMasterUserId({
@@ -304,27 +304,27 @@ async function updateTurnOrderDraftForRoom({ roomId, userId, draftEntryIds, requ
 async function setPlayerReadyState({ roomId, userId, isReady, requesterUser = null }) {
   const room = await findRoomById(roomId);
   if (!room) {
-    throw new AppError('Sala nao encontrada.', 404);
+    throw new AppError('Sala não encontrada.', 404);
   }
 
   if (room.status !== 'lobby') {
-    throw new AppError('Nao e possivel alterar prontidao fora do lobby.', 409);
+    throw new AppError('Não é possível alterar prontidão fora do lobby.', 409);
   }
 
   const alreadyInRoom = await isPlayerInRoom({ roomId, userId });
   if (!alreadyInRoom) {
-    throw new AppError('Voce nao pertence a esta sala.', 403);
+    throw new AppError('Você não pertence a esta sala.', 403);
   }
 
   const roomPayload = await buildRoomPayload(roomId, requesterUser || { id: userId });
   const player = roomPayload.players.find((item) => item.user_id === userId);
   if (!player) {
-    throw new AppError('Jogador nao encontrado na sala.', 404);
+    throw new AppError('Jogador não encontrado na sala.', 404);
   }
 
   if (player.is_master) {
-    if (!player.selected_deck_ids.length) {
-      throw new AppError('Selecione ao menos um deck para o mestre antes de marcar pronto.', 409);
+    if (!player.selected_character_ids.length) {
+      throw new AppError('Selecione ao menos um personagem para o mestre antes de marcar pronto.', 409);
     }
 
     const validation = validateTurnOrderDraft({
@@ -334,15 +334,15 @@ async function setPlayerReadyState({ roomId, userId, isReady, requesterUser = nu
     if (!validation.ok) {
       throw new AppError('Defina a ordem completa da rodada antes de marcar pronto.', 409);
     }
-  } else if (!player.selected_deck_id) {
-    throw new AppError('Selecione um deck antes de marcar pronto.', 409);
+  } else if (!player.selected_character_id) {
+    throw new AppError('Selecione um personagem antes de marcar pronto.', 409);
   }
 
   await updateRoomPlayerState({
     roomId,
     userId,
-    selectedDeckId: player.selected_deck_id,
-    selectedDeckIds: player.selected_deck_ids,
+    selectedCharacterId: player.selected_character_id,
+    selectedCharacterIds: player.selected_character_ids,
     isReady: Boolean(isReady),
     turnOrder: player.turn_order,
   });
@@ -357,18 +357,17 @@ async function rebuildLobbyConfiguration({ roomId, preserveExistingDraft = true,
   }
 
   const players = await listRoomPlayers(roomId);
-  const deckMap = await buildSelectedDeckMap(players);
+  const characterMap = await buildSelectedCharacterMap(players);
   const resolvedMasterUserId =
     Number.isInteger(Number(masterUserId)) && Number(masterUserId) > 0
       ? Number(masterUserId)
       : resolveRoomMasterUserId({ room, players });
   const normalizedPlayers = players.map((player) =>
-    normalizeRoomPlayer({ player, room, deckMap, masterUserId: resolvedMasterUserId })
+    normalizeRoomPlayer({ player, characterMap, masterUserId: resolvedMasterUserId })
   );
   const lobbyParticipants = buildLobbyParticipantEntries({
-    room,
     players: normalizedPlayers,
-    deckMap,
+    characterMap,
     masterUserId: resolvedMasterUserId,
   });
   const nextTurnOrderDraft = preserveExistingDraft
@@ -376,7 +375,7 @@ async function rebuildLobbyConfiguration({ roomId, preserveExistingDraft = true,
         draftEntryIds: room.turn_order_draft_json || [],
         lobbyEntries: lobbyParticipants,
       })
-    : buildDefaultTurnOrderDraft({ room, players: normalizedPlayers, deckMap, masterUserId: resolvedMasterUserId });
+    : buildDefaultTurnOrderDraft({ players: normalizedPlayers, characterMap, masterUserId: resolvedMasterUserId });
 
   await updateRoomState({
     roomId,
@@ -399,19 +398,18 @@ async function rebuildLobbyConfiguration({ roomId, preserveExistingDraft = true,
 async function buildRoomPayload(roomId, requesterUser = null) {
   const room = await findRoomById(roomId);
   if (!room) {
-    throw new AppError('Sala nao encontrada.', 404);
+    throw new AppError('Sala não encontrada.', 404);
   }
 
   const players = await listRoomPlayers(roomId);
-  const deckMap = await buildSelectedDeckMap(players);
+  const characterMap = await buildSelectedCharacterMap(players);
   const masterUserId = resolveRoomMasterUserId({ room, requesterUser, players });
   const normalizedPlayers = players.map((player) =>
-    normalizeRoomPlayer({ player, room, deckMap, masterUserId })
+    normalizeRoomPlayer({ player, characterMap, masterUserId })
   );
   const lobbyParticipants = buildLobbyParticipantEntries({
-    room,
     players: normalizedPlayers,
-    deckMap,
+    characterMap,
     masterUserId,
   });
 
@@ -429,21 +427,21 @@ async function buildRoomPayload(roomId, requesterUser = null) {
   };
 }
 
-function normalizeRoomPlayer({ player, room, deckMap, masterUserId = null }) {
-  const selectedDeckIds = normalizeSelectedDeckIds(player);
+function normalizeRoomPlayer({ player, characterMap, masterUserId = null }) {
+  const selectedCharacterIds = normalizeSelectedCharacterIds(player);
   const resolvedMasterUserId =
     Number.isInteger(Number(masterUserId)) && Number(masterUserId) > 0 ? Number(masterUserId) : null;
-  const selectedDecks = selectedDeckIds.map((deckId) => {
-    const deck = deckMap.get(deckId);
-    return deck
+  const selectedCharacters = selectedCharacterIds.map((characterId) => {
+    const character = characterMap.get(characterId);
+    return character
       ? {
-          id: deck.id,
-          name: deck.name,
-          owner_id: deck.owner_id,
+          id: character.id,
+          name: character.name,
+          owner_id: character.owner_id,
         }
       : {
-          id: deckId,
-          name: `Deck ${deckId}`,
+          id: characterId,
+          name: `Personagem ${characterId}`,
           owner_id: player.user_id,
         };
   });
@@ -452,21 +450,22 @@ function normalizeRoomPlayer({ player, room, deckMap, masterUserId = null }) {
     ...player,
     role: player.user_id === resolvedMasterUserId ? 'master' : 'player',
     is_master: player.user_id === resolvedMasterUserId,
-    selected_deck_ids: selectedDeckIds,
-    selected_decks: selectedDecks,
+    selected_character_id: selectedCharacterIds[0] || null,
+    selected_character_ids: selectedCharacterIds,
+    selected_characters: selectedCharacters,
   };
 }
 
-async function buildSelectedDeckMap(players) {
-  const allSelectedDeckIds = players.flatMap((player) => normalizeSelectedDeckIds(player));
-  const selectedDecks = await listDecksByIds(allSelectedDeckIds);
-  return new Map(selectedDecks.map((deck) => [deck.id, deck]));
+async function buildSelectedCharacterMap(players) {
+  const allSelectedCharacterIds = players.flatMap((player) => normalizeSelectedCharacterIds(player));
+  const selectedCharacters = await listCharactersByIds(allSelectedCharacterIds);
+  return new Map(selectedCharacters.map((character) => [character.id, character]));
 }
 
 async function assertUserHasNoConflictingRoom(userId) {
   const activeRoom = await findActiveRoomForUser(userId);
   if (activeRoom) {
-    throw new AppError('Voce ja participa de outra sala ativa.', 409);
+    throw new AppError('Você já participa de outra sala ativa.', 409);
   }
 }
 
@@ -479,7 +478,7 @@ async function generateUniqueRoomCode(maxAttempts = 25) {
     }
   }
 
-  throw new AppError('Nao foi possivel gerar codigo unico para sala.', 500);
+  throw new AppError('Não foi possível gerar código único para sala.', 500);
 }
 
 function generateRoomCode() {
@@ -499,8 +498,8 @@ module.exports = {
   getRoomPlayers,
   joinRoomByCode,
   leaveRoom,
-  replaceMasterDeckSelection,
-  selectDeckForPlayer,
+  replaceMasterCharacterSelection,
+  selectCharacterForPlayer,
   setPlayerReadyState,
   updateTurnOrderDraftForRoom,
 };
