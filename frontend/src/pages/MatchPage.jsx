@@ -27,6 +27,21 @@ function emitSocketAction(socket, action, payload) {
   });
 }
 
+function areParticipantsAllies(leftParticipant, rightParticipant) {
+  const leftType = String(leftParticipant?.participantType || '');
+  const rightType = String(rightParticipant?.participantType || '');
+
+  if (!leftType || !rightType) {
+    return false;
+  }
+
+  if (leftType === 'player') {
+    return rightType === 'player';
+  }
+
+  return rightType === 'master-creature';
+}
+
 function getTargetOptions(participants, actingParticipantId, targetScope) {
   if (!Array.isArray(participants)) {
     return [];
@@ -38,6 +53,20 @@ function getTargetOptions(participants, actingParticipantId, targetScope) {
 
   if (targetScope === 'selected-player') {
     return participants.filter((participant) => !participant.isDefeated);
+  }
+
+  if (targetScope === 'selected-enemy') {
+    const actingParticipant = participants.find((participant) => participant.participantId === actingParticipantId);
+    if (!actingParticipant) {
+      return [];
+    }
+
+    return participants.filter(
+      (participant) =>
+        !participant.isDefeated &&
+        participant.participantId !== actingParticipantId &&
+        !areParticipantsAllies(actingParticipant, participant)
+    );
   }
 
   return [];
@@ -472,6 +501,9 @@ export function MatchPage() {
                   <Badge tone={focusedParticipant.turnActions?.complementaryAvailable ? 'success' : 'secondary'}>
                     Complementar {focusedParticipant.turnActions?.complementaryAvailable ? 'livre' : 'usada'}
                   </Badge>
+                  <Badge tone={focusedParticipant.hasExiledImoThisTurn ? 'accent' : 'secondary'}>
+                    Exilou Imo {focusedParticipant.hasExiledImoThisTurn ? 'neste turno' : 'ainda nao'}
+                  </Badge>
                   <Badge tone={focusedParticipant.turnActions?.canGenerateImo ? 'accent' : 'secondary'}>
                     Gerar Imo {focusedParticipant.turnActions?.canGenerateImo ? 'disponível' : 'fechado'}
                   </Badge>
@@ -591,9 +623,18 @@ export function MatchPage() {
                       footer={
                         <div className="row-wrap">
                           <Button
-                            disabled={isSubmitting || !focusedParticipant?.isCurrentTurn}
+                            disabled={
+                              isSubmitting ||
+                              !focusedParticipant?.isCurrentTurn ||
+                              (action.id === 'loucura' && !focusedParticipant?.turnActions?.canUseLoucura)
+                            }
                             onClick={() => handleOpenAction('useDivisionAction', action)}
                             size="sm"
+                            title={
+                              action.id === 'loucura' && !focusedParticipant?.turnActions?.canUseLoucura
+                                ? 'Loucura exige que voce tenha exilado uma carta de Imo neste turno.'
+                                : undefined
+                            }
                             type="button"
                           >
                             Usar

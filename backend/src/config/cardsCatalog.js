@@ -21,21 +21,21 @@ const DIVISION_ACTION_CATALOG = [
     id: 'recarregar',
     name: 'Recarregar',
     imoCost: 1,
-    effect: 'Recarrega toda a munição ou recupera a arma quebrada do personagem.',
+    effect: 'Gera uma municao ao custo de 1 de Imo ou recarrega completamente sua arma.',
     imagePath: '/cartas/6.png',
   }),
   defineDivisionAction({
     id: 'destruir',
     name: 'Destruir',
     imoCost: 1,
-    effect: 'Consome 1 de Carne para amplificar o próximo dano causado pelo personagem.',
+    effect: 'Consome 1 de Carne para dobrar o dano.',
     imagePath: '/cartas/7.png',
   }),
   defineDivisionAction({
     id: 'visualizar',
     name: 'Visualizar',
     imoCost: 1,
-    effect: 'Visualiza privadamente uma carta aleatória da mão de um alvo selecionado.',
+    effect: 'Ve uma carta aleatoria na mao de um alvo.',
     imagePath: '/cartas/8.png',
     useAutomation: {
       targetScope: 'selected-player',
@@ -51,30 +51,32 @@ const DIVISION_ACTION_CATALOG = [
     id: 'ecoar',
     name: 'Ecoar',
     imoCost: 1,
-    effect: 'Retira uma carta do próprio exílio e a libera novamente para geração.',
+    effect: 'Manual: causa 1d6 de dano extra em Imo.',
     imagePath: '/cartas/9.png',
+  }),
+  defineDivisionAction({
+    id: 'equalizar',
+    name: 'Equalizar',
+    imoCost: 8,
+    effect: 'Destroi uma carta na mao do alvo ao custo de 8 de Imo.',
+    imagePath: '/cartas/10.png',
     useAutomation: {
-      selection: 'own-exiled-card-id',
+      targetScope: 'selected-player',
+      selection: 'target-hand-card',
       effects: [
         {
-          type: 'restoreSelectedExiledCardId',
-          target: 'self',
+          type: 'destroySelectedHandCard',
+          target: 'selected-player',
         },
       ],
     },
   }),
   defineDivisionAction({
-    id: 'equalizar',
-    name: 'Equalizar',
-    imoCost: 1,
-    effect: 'Manual: desestabiliza o fluxo de Imo do alvo ou reequilibra o exílio de um aliado.',
-    imagePath: '/cartas/10.png',
-  }),
-  defineDivisionAction({
     id: 'divisao',
-    name: 'Divisão',
-    imoCost: 1,
-    effect: 'Passa uma carta da própria mão para a mão de um alvo selecionado.',
+    name: 'Divisao',
+    imoCost: 2,
+    effect:
+      'Passa uma carta para o alvo ao custo de 2 de Imo. A automacao atual cobre cartas na mao; transferencias de Divisao seguem resolucao manual.',
     imagePath: '/cartas/11.png',
     useAutomation: {
       targetScope: 'selected-player',
@@ -89,66 +91,83 @@ const DIVISION_ACTION_CATALOG = [
   }),
   defineDivisionAction({
     id: 'maldicao',
-    name: 'Maldição',
-    imoCost: 3,
-    effect: 'Manual: amaldiçoa o corpo do personagem em troca de um efeito de alto risco.',
+    name: 'Maldicao',
+    imoCost: 1,
+    effect: 'Retorna uma carta do exilio proprio.',
     imagePath: '/cartas/12.png',
+    useAutomation: {
+      selection: 'own-exiled-card-id',
+      effects: [
+        {
+          type: 'restoreSelectedExiledCardId',
+          target: 'self',
+        },
+      ],
+    },
   }),
   defineDivisionAction({
     id: 'exploracao',
-    name: 'Exploração',
+    name: 'Exploracao',
     imoCost: 1,
-    effect: 'Manual: enfraquece um alvo e reposiciona o fluxo de Imo da cena.',
+    effect: 'Manual: o alvo selecionado recebe -1 em Combate por 1d3 turnos (nao cumulativo).',
     imagePath: '/cartas/13.png',
   }),
   defineDivisionAction({
     id: 'loucura',
     name: 'Loucura',
     imoCost: 1,
-    effect: 'Manual: instala uma distorção mental temporária sobre o alvo.',
+    effect: 'Manual: se voce exilou uma carta, outro jogador recupera todo o Imo.',
     imagePath: '/cartas/14.png',
   }),
   defineDivisionAction({
     id: 'esquema',
     name: 'Esquema',
     imoCost: 1,
-    effect: 'Destrói uma carta específica da mão do alvo selecionado.',
+    effect: 'Manual: recebe +2 no Fragmento desejado neste turno.',
     imagePath: '/cartas/15.png',
-    useAutomation: {
-      targetScope: 'selected-player',
-      selection: 'target-hand-card',
-      effects: [
-        {
-          type: 'destroySelectedHandCard',
-          target: 'selected-player',
-        },
-      ],
-    },
   }),
   defineDivisionAction({
     id: 'adrenalina',
     name: 'Adrenalina',
     imoCost: 1,
-    effect: 'Manual: impulsiona a recuperação física e mental do personagem.',
+    effect: 'Manual: uma recuperacao fica 25% mais eficiente ou recupera 1d4 de Carne/Imo.',
     imagePath: '/cartas/16.png',
   }),
   defineDivisionAction({
-    id: 'ceifar',
-    name: 'Ceifar',
-    imoCost: 1,
-    effect: 'Manual: potencializa a próxima agressão ou roubo de recursos do alvo.',
-    imagePath: '/cartas/17.png',
+    id: 'ferroada',
+    name: 'Ferroada Ceifadora',
+    imoCost: 3,
+    effect:
+      'Manual: pode tentar roubar uma carta do inimigo (Divisao ou Imo, de uso unico) gastando 3 de Imo e realizando um teste de Furor ou, com o mesmo custo, ao desferir um golpe tenha o dobro de dano e vantagem.',
+    imagePath: '/cartas/18.png',
   }),
   defineDivisionAction({
-    id: 'ferroada',
-    name: 'Ferroada',
+    id: 'interromper',
+    name: 'Interromper',
+    imoCost: 0,
+    effect: 'Ao custo de 3 de Imo, anule o complemento de uma acao inimiga (1x por turno).',
+    imagePath: '',
+    useAutomation: {
+      targetScope: 'selected-enemy',
+      effects: [
+        {
+          type: 'cancelComplementaryAction',
+          target: 'selected-enemy',
+        },
+      ],
+    },
+  }),
+  defineDivisionAction({
+    id: 'memoria-seletiva',
+    name: 'Memoria Seletiva',
     imoCost: 1,
-    effect: 'Manual: desfere um golpe brutal e pode ser combinado com o gerenciamento tático do exílio.',
-    imagePath: '/cartas/18.png',
+    effect: 'Manual: conceda 2 de Percepcao para um alvo ate seu proximo turno.',
+    imagePath: '',
   }),
 ];
 
 const DIVISION_ACTION_BY_ID = new Map(DIVISION_ACTION_CATALOG.map((card) => [card.id, card]));
+DIVISION_ACTION_BY_ID.set('ceifar', DIVISION_ACTION_BY_ID.get('ferroada'));
 
 function getDivisionActionById(cardId) {
   return DIVISION_ACTION_BY_ID.get(cardId) || null;

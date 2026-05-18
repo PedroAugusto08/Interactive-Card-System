@@ -115,6 +115,7 @@ async function startMatchForRoom({ roomId, userId, requesterUser = null, include
       hasGeneratedImoThisTurn: false,
       standardActionUsed: false,
       complementaryActionUsed: false,
+      hasExiledImoThisTurn: false,
       openingHandReady: false,
       isDefeated: false,
       handCards: [],
@@ -444,7 +445,7 @@ async function useImoCardForPlayer({
       participants: [...updatedParticipantsById.values()],
       currentUserId: userId,
       log: createdLog,
-      notice: automationOutcome.notices.join(' '),
+      notice: buildDivisionActionNotice({ divisionCard, automationOutcome }),
       effectResults: automationOutcome.effects,
     }),
   });
@@ -494,6 +495,7 @@ async function exileImoCardForPlayer({
   consumeActionSlot({ participant: actingParticipant, actionSlot: 'standard' });
   actingParticipant.hand_cards_json = handCards;
   actingParticipant.exiled_imo_card_ids_json = addUniqueCardId(actingParticipant.exiled_imo_card_ids_json, exiledCard.cardId);
+  actingParticipant.has_exiled_imo_this_turn = true;
 
   let generatedCardNotice = '';
   const normalizedGeneratedCardId = String(generatedCardId || '').trim();
@@ -592,6 +594,7 @@ async function useDivisionActionForPlayer({
     throw new AppError('Imo insuficiente para usar essa ação de Divisão.', 409);
   }
 
+  assertDivisionActionCanBeUsed({ actingParticipant, divisionCard });
   consumeActionSlot({ participant: actingParticipant, actionSlot: divisionCard.actionSlot || 'complementary' });
   actingParticipant.imo -= Number(divisionCard.imoCost || 0);
 
@@ -653,11 +656,14 @@ async function endTurnForPlayer({ roomId, userId, actingParticipantId, includeSn
       : context.match.round;
 
   const participantsById = createMutableParticipantMap(context.participants);
+  const mutableCurrentParticipant = participantsById.get(context.currentParticipant.id);
   const mutableNextParticipant = participantsById.get(nextParticipant.id);
+  mutableCurrentParticipant.has_exiled_imo_this_turn = false;
   mutableNextParticipant.imo = Math.min(mutableNextParticipant.max_imo, mutableNextParticipant.imo + 1);
   mutableNextParticipant.has_generated_imo_this_turn = false;
   mutableNextParticipant.standard_action_used = false;
   mutableNextParticipant.complementary_action_used = false;
+  mutableNextParticipant.has_exiled_imo_this_turn = false;
 
   const updatedParticipantsById = await persistParticipantStates({
     participantsById,
@@ -928,6 +934,7 @@ async function buildParticipantState({ activeMatch, matchParticipant, allPartici
     imo: matchParticipant.imo,
     maxImo: matchParticipant.max_imo,
     hasGeneratedImoThisTurn: matchParticipant.has_generated_imo_this_turn,
+    hasExiledImoThisTurn: matchParticipant.has_exiled_imo_this_turn,
     standardActionUsed: matchParticipant.standard_action_used,
     complementaryActionUsed: matchParticipant.complementary_action_used,
     openingHandReady: matchParticipant.opening_hand_ready,
@@ -952,6 +959,11 @@ async function buildParticipantState({ activeMatch, matchParticipant, allPartici
         !matchParticipant.standard_action_used &&
         !matchParticipant.has_generated_imo_this_turn &&
         (matchParticipant.hand_cards_json || []).length < MAX_HAND_SIZE,
+      canUseLoucura:
+        activeMatch.status === 'active' &&
+        activeMatch.current_turn_participant_id === matchParticipant.id &&
+        !matchParticipant.complementary_action_used &&
+        Boolean(matchParticipant.has_exiled_imo_this_turn),
       standardAvailable:
         activeMatch.status === 'active' &&
         activeMatch.current_turn_participant_id === matchParticipant.id &&
@@ -1103,6 +1115,7 @@ function createMutableParticipantMap(participants) {
         hand_cards_json: [...(participant.hand_cards_json || [])],
         exiled_imo_card_ids_json: [...(participant.exiled_imo_card_ids_json || [])],
         generated_ally_imo_card_keys_json: [...(participant.generated_ally_imo_card_keys_json || [])],
+        has_exiled_imo_this_turn: Boolean(participant.has_exiled_imo_this_turn),
       },
     ])
   );
@@ -1124,6 +1137,7 @@ async function persistParticipantStates({ participantsById, originalParticipants
       imo: participantState.imo,
       maxImo: participantState.max_imo,
       hasGeneratedImoThisTurn: participantState.has_generated_imo_this_turn,
+      hasExiledImoThisTurn: participantState.has_exiled_imo_this_turn,
       standardActionUsed: participantState.standard_action_used,
       complementaryActionUsed: participantState.complementary_action_used,
       openingHandReady: participantState.opening_hand_ready,
@@ -1547,6 +1561,20 @@ async function applyAutomation({
 
       targetState.hand_cards_json.splice(targetHandIndex, 1);
       outcome.notices.push(`Efeito resolvido: uma carta foi destruída da mão de ${targetState.display_name}.`);
+      continue;
+    }
+
+    if (effect.type === 'cancelComplementaryAction') {
+      const targetState = resolveEffectTargetState({ effect, actingParticipant, selectedTargetState });
+      if (targetState.complementary_action_used) {
+        outcome.notices.push(
+          `A ação complementar de ${targetState.display_name} já estava indisponível neste turno.`
+        );
+        continue;
+      }
+
+      targetState.complementary_action_used = true;
+      outcome.notices.push(`Efeito resolvido: a ação complementar de ${targetState.display_name} foi anulada.`);
     }
   }
 
@@ -1570,6 +1598,10 @@ function resolveAutomationTarget({ automation, actingParticipant, participantsBy
 
   if (automation.targetScope === 'other-player' && targetState.id === actingParticipant.id) {
     throw new AppError('Essa ação exige outro participante como alvo.', 400);
+  }
+
+  if (automation.targetScope === 'selected-enemy' && isAlliedParticipant(actingParticipant, targetState)) {
+    throw new AppError('Essa ação exige um inimigo como alvo.', 400);
   }
 
   return targetState;
@@ -1602,10 +1634,26 @@ function consumeActionSlot({ participant, actionSlot }) {
   participant.standard_action_used = true;
 }
 
+function assertDivisionActionCanBeUsed({ actingParticipant, divisionCard }) {
+  if (divisionCard?.id === 'loucura' && !actingParticipant?.has_exiled_imo_this_turn) {
+    throw new AppError('Loucura exige que essa criatura tenha exilado uma carta de Imo neste turno.', 409);
+  }
+}
+
 function addUniqueCardId(currentIds, cardId) {
   const next = new Set(Array.isArray(currentIds) ? currentIds : []);
   next.add(cardId);
   return [...next];
+}
+
+function buildDivisionActionNotice({ divisionCard, automationOutcome }) {
+  const notices = [...(automationOutcome?.notices || [])];
+
+  if (divisionCard?.id === 'loucura') {
+    notices.unshift('Condicao de Loucura atendida. A recuperacao total de Imo ainda segue resolucao manual.');
+  }
+
+  return notices.filter(Boolean).join(' ');
 }
 
 function createAutomationOutcome() {
@@ -1635,9 +1683,13 @@ async function finalizeActionResponse({ roomId, userId, includeSnapshot, actionS
 module.exports = {
   __testables: {
     addUniqueCardId,
+    applyAutomation,
+    assertDivisionActionCanBeUsed,
     buildGeneratedAllyImoCardKey,
+    buildDivisionActionNotice,
     consumeActionSlot,
     isAlliedParticipant,
+    resolveAutomationTarget,
   },
   completeOpeningHandForPlayer,
   endTurnForPlayer,

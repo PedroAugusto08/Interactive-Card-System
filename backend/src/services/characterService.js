@@ -167,6 +167,10 @@ async function normalizeAndValidateCharacterLoadout({ ownerId, divisionIds, imoC
 
 async function buildCatalogMap(ownerId) {
   const map = new Map(DIVISION_ACTION_CATALOG.map((card) => [card.id, card]));
+  const legacyCeifar = getDivisionActionById('ceifar');
+  if (legacyCeifar) {
+    map.set('ceifar', legacyCeifar);
+  }
   const imoCards = await listImoCardsForUser(ownerId);
   for (const card of imoCards) {
     map.set(card.id, card);

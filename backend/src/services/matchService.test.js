@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { __testables } = require('./matchService');
+const { getDivisionActionById } = require('../config/cardsCatalog');
 
 test('addUniqueCardId stores each exiled card id only once', () => {
   const next = __testables.addUniqueCardId(['imo:1'], 'imo:1');
@@ -67,4 +68,92 @@ test('buildGeneratedAllyImoCardKey creates a stable unique key per owner and car
     }),
     '15::imo:7'
   );
+});
+
+test('assertDivisionActionCanBeUsed blocks Loucura before exiling Imo in the turn', () => {
+  assert.throws(
+    () =>
+      __testables.assertDivisionActionCanBeUsed({
+        actingParticipant: {
+          has_exiled_imo_this_turn: false,
+        },
+        divisionCard: {
+          id: 'loucura',
+        },
+      }),
+    /Loucura exige/
+  );
+});
+
+test('buildDivisionActionNotice adds the partial Loucura reminder', () => {
+  assert.equal(
+    __testables.buildDivisionActionNotice({
+      divisionCard: { id: 'loucura' },
+      automationOutcome: { notices: [] },
+    }),
+    'Condicao de Loucura atendida. A recuperacao total de Imo ainda segue resolucao manual.'
+  );
+});
+
+test('resolveAutomationTarget blocks allied targets for selected-enemy actions', () => {
+  const automation = {
+    targetScope: 'selected-enemy',
+  };
+  const actingParticipant = {
+    id: 1,
+    participant_type: 'player',
+  };
+  const participantsById = new Map([
+    [
+      2,
+      {
+        id: 2,
+        participant_type: 'player',
+      },
+    ],
+  ]);
+
+  assert.throws(
+    () =>
+      __testables.resolveAutomationTarget({
+        automation,
+        actingParticipant,
+        participantsById,
+        targetParticipantId: 2,
+      }),
+    /inimigo/
+  );
+});
+
+test('applyAutomation can cancel the complementary action of a selected enemy', async () => {
+  const automation = getDivisionActionById('interromper').useAutomation;
+  const actingParticipant = {
+    id: 1,
+    display_name: 'Heroi',
+    participant_type: 'player',
+    hand_cards_json: [],
+  };
+  const targetParticipant = {
+    id: 3,
+    display_name: 'Fera',
+    participant_type: 'master-creature',
+    complementary_action_used: false,
+    hand_cards_json: [],
+  };
+  const participantsById = new Map([
+    [1, actingParticipant],
+    [3, targetParticipant],
+  ]);
+
+  const outcome = await __testables.applyAutomation({
+    ownerUserId: 99,
+    automation,
+    actingParticipant,
+    participantsById,
+    targetParticipantId: 3,
+  });
+
+  assert.equal(targetParticipant.complementary_action_used, true);
+  assert.deepEqual(outcome.effects, []);
+  assert.deepEqual(outcome.notices, ['Efeito resolvido: a ação complementar de Fera foi anulada.']);
 });

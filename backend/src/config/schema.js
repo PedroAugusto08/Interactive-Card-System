@@ -125,6 +125,7 @@ async function ensureSchema() {
       has_generated_imo_this_turn BOOLEAN NOT NULL DEFAULT FALSE,
       standard_action_used BOOLEAN NOT NULL DEFAULT FALSE,
       complementary_action_used BOOLEAN NOT NULL DEFAULT FALSE,
+      has_exiled_imo_this_turn BOOLEAN NOT NULL DEFAULT FALSE,
       opening_hand_ready BOOLEAN NOT NULL DEFAULT FALSE,
       is_defeated BOOLEAN NOT NULL DEFAULT FALSE,
       hand_cards_json JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -151,6 +152,11 @@ async function ensureSchema() {
   await query(`
     ALTER TABLE match_participants
     ADD COLUMN IF NOT EXISTS complementary_action_used BOOLEAN NOT NULL DEFAULT FALSE;
+  `);
+
+  await query(`
+    ALTER TABLE match_participants
+    ADD COLUMN IF NOT EXISTS has_exiled_imo_this_turn BOOLEAN NOT NULL DEFAULT FALSE;
   `);
 
   await query(`

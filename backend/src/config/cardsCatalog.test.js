@@ -11,13 +11,31 @@ const { normalizeCardAutomationConfig } = require('./cardAutomation');
 test('division catalog resolves known open arsenal actions', () => {
   const divisao = getDivisionActionById('divisao');
   const visualizar = getDivisionActionById('visualizar');
+  const equalizar = getDivisionActionById('equalizar');
+  const maldicao = getDivisionActionById('maldicao');
+  const interromper = getDivisionActionById('interromper');
+  const memoriaSeletiva = getDivisionActionById('memoria-seletiva');
+  const legacyCeifar = getDivisionActionById('ceifar');
 
   assert.ok(divisao);
   assert.ok(visualizar);
+  assert.ok(equalizar);
+  assert.ok(maldicao);
+  assert.ok(interromper);
+  assert.ok(memoriaSeletiva);
+  assert.ok(legacyCeifar);
   assert.equal(divisao.category, 'division');
   assert.equal(divisao.actionSlot, 'complementary');
+  assert.equal(divisao.imoCost, 2);
   assert.equal(visualizar.useAutomation.effects[0].type, 'revealRandomHandCard');
-  assert.ok(DIVISION_ACTION_CATALOG.length >= 10);
+  assert.equal(equalizar.imoCost, 8);
+  assert.equal(equalizar.useAutomation.effects[0].type, 'destroySelectedHandCard');
+  assert.equal(maldicao.useAutomation.effects[0].type, 'restoreSelectedExiledCardId');
+  assert.equal(interromper.imoCost, 0);
+  assert.equal(interromper.useAutomation.targetScope, 'selected-enemy');
+  assert.equal(interromper.useAutomation.effects[0].type, 'cancelComplementaryAction');
+  assert.equal(legacyCeifar.id, 'ferroada');
+  assert.ok(DIVISION_ACTION_CATALOG.length >= 14);
 });
 
 test('mapImoCardRecordToCatalogCard maps persisted imo cards to the new runtime shape', () => {
