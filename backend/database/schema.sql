@@ -97,7 +97,8 @@ CREATE TABLE IF NOT EXISTS match_participants (
   opening_hand_ready BOOLEAN NOT NULL DEFAULT FALSE,
   is_defeated BOOLEAN NOT NULL DEFAULT FALSE,
   hand_cards_json JSONB NOT NULL DEFAULT '[]'::jsonb,
-  exiled_imo_card_ids_json JSONB NOT NULL DEFAULT '[]'::jsonb
+  exiled_imo_card_ids_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  generated_ally_imo_card_keys_json JSONB NOT NULL DEFAULT '[]'::jsonb
 );
 
 CREATE INDEX IF NOT EXISTS match_participants_match_idx

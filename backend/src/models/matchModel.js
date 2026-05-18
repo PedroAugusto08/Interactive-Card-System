@@ -150,6 +150,7 @@ async function createMatchParticipant({
   isDefeated = false,
   handCards = [],
   exiledImoCardIds = [],
+  generatedAllyImoCardKeys = [],
 }) {
   const result = await query(
     `
@@ -169,9 +170,10 @@ async function createMatchParticipant({
         opening_hand_ready,
         is_defeated,
         hand_cards_json,
-        exiled_imo_card_ids_json
+        exiled_imo_card_ids_json,
+        generated_ally_imo_card_keys_json
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16::jsonb)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16::jsonb, $17::jsonb)
       RETURNING
         id,
         match_id,
@@ -189,7 +191,8 @@ async function createMatchParticipant({
         opening_hand_ready,
         is_defeated,
         hand_cards_json,
-        exiled_imo_card_ids_json;
+        exiled_imo_card_ids_json,
+        generated_ally_imo_card_keys_json;
     `,
     [
       matchId,
@@ -208,6 +211,7 @@ async function createMatchParticipant({
       isDefeated,
       JSON.stringify(handCards),
       JSON.stringify(exiledImoCardIds),
+      JSON.stringify(generatedAllyImoCardKeys),
     ]
   );
 
@@ -227,6 +231,7 @@ async function updateMatchParticipant({
   isDefeated,
   handCards,
   exiledImoCardIds,
+  generatedAllyImoCardKeys,
 }) {
   const result = await query(
     `
@@ -242,7 +247,8 @@ async function updateMatchParticipant({
         opening_hand_ready = $9,
         is_defeated = $10,
         hand_cards_json = $11::jsonb,
-        exiled_imo_card_ids_json = $12::jsonb
+        exiled_imo_card_ids_json = $12::jsonb,
+        generated_ally_imo_card_keys_json = $13::jsonb
       WHERE id = $1
       RETURNING
         id,
@@ -261,7 +267,8 @@ async function updateMatchParticipant({
         opening_hand_ready,
         is_defeated,
         hand_cards_json,
-        exiled_imo_card_ids_json;
+        exiled_imo_card_ids_json,
+        generated_ally_imo_card_keys_json;
     `,
     [
       participantId,
@@ -276,6 +283,7 @@ async function updateMatchParticipant({
       isDefeated,
       JSON.stringify(handCards),
       JSON.stringify(exiledImoCardIds),
+      JSON.stringify(generatedAllyImoCardKeys),
     ]
   );
 
@@ -303,6 +311,7 @@ async function listMatchParticipants(matchId) {
         mp.is_defeated,
         mp.hand_cards_json,
         mp.exiled_imo_card_ids_json,
+        mp.generated_ally_imo_card_keys_json,
         u.username AS controller_username,
         u.email AS controller_email
       FROM match_participants mp
@@ -337,6 +346,7 @@ async function findMatchParticipantById({ matchId, participantId }) {
         mp.is_defeated,
         mp.hand_cards_json,
         mp.exiled_imo_card_ids_json,
+        mp.generated_ally_imo_card_keys_json,
         u.username AS controller_username,
         u.email AS controller_email
       FROM match_participants mp
@@ -371,6 +381,7 @@ async function listMatchParticipantsByController({ matchId, controllerUserId }) 
         mp.is_defeated,
         mp.hand_cards_json,
         mp.exiled_imo_card_ids_json,
+        mp.generated_ally_imo_card_keys_json,
         u.username AS controller_username,
         u.email AS controller_email
       FROM match_participants mp

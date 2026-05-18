@@ -34,3 +34,37 @@ test('consumeActionSlot marks standard action usage', () => {
   assert.equal(participant.standard_action_used, true);
   assert.equal(participant.complementary_action_used, false);
 });
+
+test('isAlliedParticipant treats players as allies and master creatures as a separate team', () => {
+  assert.equal(
+    __testables.isAlliedParticipant(
+      { participant_type: 'player' },
+      { participant_type: 'player' }
+    ),
+    true
+  );
+  assert.equal(
+    __testables.isAlliedParticipant(
+      { participant_type: 'player' },
+      { participant_type: 'master-creature' }
+    ),
+    false
+  );
+  assert.equal(
+    __testables.isAlliedParticipant(
+      { participant_type: 'master-creature' },
+      { participant_type: 'master-creature' }
+    ),
+    true
+  );
+});
+
+test('buildGeneratedAllyImoCardKey creates a stable unique key per owner and card', () => {
+  assert.equal(
+    __testables.buildGeneratedAllyImoCardKey({
+      catalogOwnerId: 15,
+      cardId: 'imo:7',
+    }),
+    '15::imo:7'
+  );
+});

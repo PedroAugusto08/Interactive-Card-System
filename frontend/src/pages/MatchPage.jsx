@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { ActionLogItem } from '../components/system/ActionLogItem';
 import { CardItem } from '../components/system/CardItem';
@@ -43,7 +43,37 @@ function getTargetOptions(participants, actingParticipantId, targetScope) {
   return [];
 }
 
-function openPendingActionConfig({ kind, entity, actingParticipantId, participants, exiledImoCardIds, handCards }) {
+function getGeneratedImoSources(participant) {
+  if (!participant) {
+    return [];
+  }
+
+  const ownSource = (participant.availableImoCatalog || []).length
+    ? [
+        {
+          sourceParticipantId: participant.participantId,
+          displayName: `${participant.displayName} (próprio)`,
+          cards: participant.availableImoCatalog || [],
+        },
+      ]
+    : [];
+  const allySources = (participant.availableAllyImoSources || []).map((source) => ({
+    sourceParticipantId: source.participantId,
+    displayName: source.displayName,
+    cards: source.cards || [],
+  }));
+
+  return [...ownSource, ...allySources];
+}
+
+function openPendingActionConfig({
+  kind,
+  entity,
+  actingParticipantId,
+  participants,
+  exiledImoCardIds,
+  handCards,
+}) {
   const automation = kind === 'useImoCard'
     ? entity.useAutomation
     : kind === 'exileImoCard'
@@ -65,6 +95,8 @@ function openPendingActionConfig({ kind, entity, actingParticipantId, participan
     selectedOwnHandCardId:
       handCards.find((card) => card.instanceId !== entity.instanceId)?.instanceId || handCards[0]?.instanceId || null,
     selectedTargetHandCardId: targetHandCards[0]?.instanceId || null,
+    generatedSourceParticipantId: null,
+    generatedCardId: '',
   };
 }
 
@@ -84,7 +116,10 @@ export function MatchPage() {
   const [localError, setLocalError] = useState('');
   const [syncMessage, setSyncMessage] = useState('');
   const [manualFocusedParticipantId, setManualFocusedParticipantId] = useState(null);
-  const [openingSelection, setOpeningSelection] = useState([]);
+  const [openingSelectionState, setOpeningSelectionState] = useState({
+    participantId: null,
+    selectedCardIds: [],
+  });
   const [pendingAction, setPendingAction] = useState(null);
   const [pendingPrivateView, setPendingPrivateView] = useState(null);
 
@@ -185,18 +220,21 @@ export function MatchPage() {
   const exiledImoCardIds = focusedParticipant?.exiledImoCardIds || [];
   const divisionActions = focusedParticipant?.divisionActions || [];
   const availableImoCatalog = focusedParticipant?.availableImoCatalog || [];
+  const generatedImoSources = getGeneratedImoSources(focusedParticipant);
   const targetOptions = pendingAction
     ? getTargetOptions(participantStates, pendingAction.actingParticipantId, pendingAction.automation?.targetScope)
     : [];
   const targetHandCards = pendingAction?.targetParticipantId
     ? participantStates.find((participant) => participant.participantId === pendingAction.targetParticipantId)?.handCards || []
     : [];
-
-  useEffect(() => {
-    if (!focusedParticipant?.openingHandPending) {
-      setOpeningSelection([]);
-    }
-  }, [focusedParticipant?.openingHandPending, focusedParticipant?.participantId]);
+  const selectedGeneratedImoSource = pendingAction?.generatedSourceParticipantId
+    ? generatedImoSources.find((source) => source.sourceParticipantId === pendingAction.generatedSourceParticipantId) || null
+    : null;
+  const selectedGeneratedImoCards = selectedGeneratedImoSource?.cards || [];
+  const openingSelection =
+    focusedParticipant?.openingHandPending && openingSelectionState.participantId === focusedParticipant.participantId
+      ? openingSelectionState.selectedCardIds
+      : [];
 
   async function executeAction(action, payload = {}) {
     if (!currentRoom?.id) {
@@ -294,6 +332,20 @@ export function MatchPage() {
     const needsOwnHand = automation?.selection === 'own-hand-card';
     const needsTargetHand = automation?.selection === 'target-hand-card';
 
+    if (kind === 'exileImoCard') {
+      setPendingAction(
+        openPendingActionConfig({
+          kind,
+          entity,
+          actingParticipantId: focusedParticipant.participantId,
+          participants: participantStates,
+          exiledImoCardIds,
+          handCards,
+        })
+      );
+      return;
+    }
+
     if (!needsTarget && !needsExile && !needsOwnHand && !needsTargetHand) {
       executeAction(`match:${kind}`, {
         actingParticipantId: focusedParticipant.participantId,
@@ -324,6 +376,8 @@ export function MatchPage() {
       actingParticipantId: pendingAction.actingParticipantId,
       cardId: pendingAction.entity.instanceId,
       divisionId: pendingAction.entity.id,
+      generatedSourceParticipantId: pendingAction.generatedSourceParticipantId,
+      generatedCardId: pendingAction.generatedCardId,
       targetParticipantId: pendingAction.targetParticipantId,
       selectedExiledCardId: pendingAction.selectedExiledCardId,
       selectedOwnHandCardId: pendingAction.selectedOwnHandCardId,
@@ -333,11 +387,26 @@ export function MatchPage() {
   }
 
   function handleAddOpeningCard(cardId) {
-    setOpeningSelection((current) => (current.length >= 2 ? current : [...current, cardId]));
+    setOpeningSelectionState((current) => {
+      const participantId = focusedParticipant?.participantId || null;
+      const selectedCardIds =
+        current.participantId === participantId ? current.selectedCardIds : [];
+      if (selectedCardIds.length >= 2) {
+        return current;
+      }
+
+      return {
+        participantId,
+        selectedCardIds: [...selectedCardIds, cardId],
+      };
+    });
   }
 
   function handleRemoveOpeningCard(index) {
-    setOpeningSelection((current) => current.filter((_, currentIndex) => currentIndex !== index));
+    setOpeningSelectionState((current) => ({
+      participantId: current.participantId,
+      selectedCardIds: current.selectedCardIds.filter((_, currentIndex) => currentIndex !== index),
+    }));
   }
 
   if (!currentRoom || !currentMatch) {
@@ -354,7 +423,7 @@ export function MatchPage() {
         <div className="stack-gap" style={{ gap: '8px' }}>
           <h1 className="page-title">Partida</h1>
           <p className="muted-text">
-            Abertura inicial de Imo, geração tática, mão limitada a 3 e arsenal aberto de Divisão.
+            Abertura inicial de Imo, geração com ação padrão, exílio tático e arsenal aberto de Divisão.
           </p>
         </div>
         <div className="row-wrap">
@@ -404,7 +473,7 @@ export function MatchPage() {
                     Complementar {focusedParticipant.turnActions?.complementaryAvailable ? 'livre' : 'usada'}
                   </Badge>
                   <Badge tone={focusedParticipant.turnActions?.canGenerateImo ? 'accent' : 'secondary'}>
-                    Geração {focusedParticipant.turnActions?.canGenerateImo ? 'disponível' : 'fechada'}
+                    Gerar Imo {focusedParticipant.turnActions?.canGenerateImo ? 'disponível' : 'fechado'}
                   </Badge>
                 </div>
 
@@ -427,7 +496,7 @@ export function MatchPage() {
             )}
           </Card>
 
-          <Card title="Gerar Imo" description="Uma geração por turno, sem consumir ação, respeitando custo e mão máxima.">
+          <Card title="Gerar Imo" description="Gasta a ação padrão, paga o custo de Imo e respeita o limite de 3 cartas na mão.">
             {focusedParticipant?.turnActions?.canGenerateImo ? (
               <div className="player-hand">
                 {availableImoCatalog.map((card) => (
@@ -461,7 +530,7 @@ export function MatchPage() {
                 ))}
               </div>
             ) : (
-              <div className="empty-state">A geração de Imo não está disponível para essa criatura agora.</div>
+              <div className="empty-state">Essa criatura não pode gerar Imo agora.</div>
             )}
           </Card>
 
@@ -640,7 +709,13 @@ export function MatchPage() {
       <Modal
         cancelLabel="Cancelar"
         confirmLabel="Confirmar ação"
-        description={pendingAction ? `Conclua os detalhes para usar ${pendingAction.entity.name}.` : ''}
+        description={
+          pendingAction
+            ? pendingAction.kind === 'exileImoCard'
+              ? `Conclua os detalhes para exilar ${pendingAction.entity.name}.`
+              : `Conclua os detalhes para usar ${pendingAction.entity.name}.`
+            : ''
+        }
         isLoading={isSubmitting}
         onClose={() => setPendingAction(null)}
         onConfirm={handleConfirmPendingAction}
@@ -675,6 +750,77 @@ export function MatchPage() {
                     </Button>
                   ))}
                 </div>
+              </section>
+            ) : null}
+
+            {pendingAction.kind === 'exileImoCard' ? (
+              <section className="stack-gap" style={{ gap: '10px' }}>
+                <span className="status-label">Gerar nova carta após o exílio (opcional)</span>
+                <div className="row-wrap">
+                  <Button
+                    onClick={() =>
+                      setPendingAction((current) =>
+                        current
+                          ? {
+                              ...current,
+                              generatedSourceParticipantId: null,
+                              generatedCardId: '',
+                            }
+                          : current
+                      )
+                    }
+                    type="button"
+                    variant={!pendingAction.generatedCardId ? 'primary' : 'secondary'}
+                  >
+                    Somente exilar
+                  </Button>
+                  {generatedImoSources.map((source) => (
+                    <Button
+                      key={`generated-source-${source.sourceParticipantId}`}
+                      onClick={() =>
+                        setPendingAction((current) =>
+                          current
+                            ? {
+                                ...current,
+                                generatedSourceParticipantId: source.sourceParticipantId,
+                                generatedCardId: '',
+                              }
+                            : current
+                        )
+                      }
+                      type="button"
+                      variant={
+                        pendingAction.generatedSourceParticipantId === source.sourceParticipantId ? 'primary' : 'secondary'
+                      }
+                    >
+                      {source.displayName}
+                    </Button>
+                  ))}
+                </div>
+
+                {selectedGeneratedImoSource ? (
+                  <div className="row-wrap">
+                    {selectedGeneratedImoCards.map((card) => (
+                      <Button
+                        key={`generated-card-${selectedGeneratedImoSource.sourceParticipantId}-${card.id}`}
+                        onClick={() =>
+                          setPendingAction((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  generatedCardId: card.id,
+                                }
+                              : current
+                          )
+                        }
+                        type="button"
+                        variant={pendingAction.generatedCardId === card.id ? 'primary' : 'secondary'}
+                      >
+                        {card.name}
+                      </Button>
+                    ))}
+                  </div>
+                ) : null}
               </section>
             ) : null}
 

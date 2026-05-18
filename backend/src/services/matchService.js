@@ -119,6 +119,7 @@ async function startMatchForRoom({ roomId, userId, requesterUser = null, include
       isDefeated: false,
       handCards: [],
       exiledImoCardIds: [],
+      generatedAllyImoCardKeys: [],
     });
   }
 
@@ -329,6 +330,7 @@ async function generateImoForPlayer({ roomId, userId, actingParticipantId, cardI
     throw new AppError('Imo insuficiente para gerar essa carta.', 409);
   }
 
+  consumeActionSlot({ participant: actingParticipant, actionSlot: 'standard' });
   actingParticipant.imo -= Number(catalogCard.imoCost || 0);
   actingParticipant.has_generated_imo_this_turn = true;
   actingParticipant.hand_cards_json = [
@@ -453,6 +455,8 @@ async function exileImoCardForPlayer({
   userId,
   actingParticipantId,
   cardId,
+  generatedSourceParticipantId = null,
+  generatedCardId = null,
   targetParticipantId = null,
   selectedExiledCardId = null,
   selectedOwnHandCardId = null,
@@ -487,8 +491,31 @@ async function exileImoCardForPlayer({
     throw new AppError(`A carta ${resolvedCard.name} não pode ser exilada manualmente.`, 409);
   }
 
+  consumeActionSlot({ participant: actingParticipant, actionSlot: 'standard' });
   actingParticipant.hand_cards_json = handCards;
   actingParticipant.exiled_imo_card_ids_json = addUniqueCardId(actingParticipant.exiled_imo_card_ids_json, exiledCard.cardId);
+
+  let generatedCardNotice = '';
+  const normalizedGeneratedCardId = String(generatedCardId || '').trim();
+  if (normalizedGeneratedCardId) {
+    const generatedOutcome = await generateFreeImoFromExile({
+      participantsById,
+      actingParticipant,
+      sourceParticipantId: generatedSourceParticipantId,
+      cardId: normalizedGeneratedCardId,
+    });
+    actingParticipant.hand_cards_json = [
+      ...actingParticipant.hand_cards_json,
+      createMatchCardEntry(generatedOutcome.cardEntry),
+    ];
+    if (generatedOutcome.generatedAllyCardKey) {
+      actingParticipant.generated_ally_imo_card_keys_json = addUniqueCardId(
+        actingParticipant.generated_ally_imo_card_keys_json,
+        generatedOutcome.generatedAllyCardKey
+      );
+    }
+    generatedCardNotice = generatedOutcome.notice;
+  }
 
   const automationOutcome = await applyAutomation({
     ownerUserId: actingParticipant.controller_user_id,
@@ -526,7 +553,7 @@ async function exileImoCardForPlayer({
       participants: [...updatedParticipantsById.values()],
       currentUserId: userId,
       log: createdLog,
-      notice: automationOutcome.notices.join(' '),
+      notice: [generatedCardNotice, ...automationOutcome.notices].filter(Boolean).join(' '),
       effectResults: automationOutcome.effects,
     }),
   });
@@ -850,6 +877,7 @@ async function buildParticipantStates({ activeMatch, participants, requesterUser
       buildParticipantState({
         activeMatch,
         matchParticipant: participant,
+        allParticipants: participants,
         requesterUserId,
         characterCache,
       })
@@ -857,7 +885,7 @@ async function buildParticipantStates({ activeMatch, participants, requesterUser
   );
 }
 
-async function buildParticipantState({ activeMatch, matchParticipant, requesterUserId, characterCache }) {
+async function buildParticipantState({ activeMatch, matchParticipant, allParticipants, requesterUserId, characterCache }) {
   const canRevealPrivateState = shouldRevealParticipantPrivateState({
     requesterUserId,
     participant: {
@@ -879,6 +907,13 @@ async function buildParticipantState({ activeMatch, matchParticipant, requesterU
     ? (resolvedCharacter.imoCards || []).filter(
         (card) => !(matchParticipant.exiled_imo_card_ids_json || []).includes(card.id)
       )
+    : [];
+  const availableAllyImoSources = canRevealPrivateState
+    ? await buildAvailableAllyImoSources({
+        actingParticipant: matchParticipant,
+        allParticipants,
+        characterCache,
+      })
     : [];
 
   return {
@@ -907,12 +942,14 @@ async function buildParticipantState({ activeMatch, matchParticipant, requesterU
     handCards,
     exiledImoCardIds: canRevealPrivateState ? matchParticipant.exiled_imo_card_ids_json || [] : [],
     availableImoCatalog,
+    availableAllyImoSources,
     divisionActions: resolvedCharacter.divisionCards || [],
     turnActions: {
       openingHandPending: !matchParticipant.opening_hand_ready,
       canGenerateImo:
         activeMatch.status === 'active' &&
         activeMatch.current_turn_participant_id === matchParticipant.id &&
+        !matchParticipant.standard_action_used &&
         !matchParticipant.has_generated_imo_this_turn &&
         (matchParticipant.hand_cards_json || []).length < MAX_HAND_SIZE,
       standardAvailable:
@@ -1065,6 +1102,7 @@ function createMutableParticipantMap(participants) {
         ...participant,
         hand_cards_json: [...(participant.hand_cards_json || [])],
         exiled_imo_card_ids_json: [...(participant.exiled_imo_card_ids_json || [])],
+        generated_ally_imo_card_keys_json: [...(participant.generated_ally_imo_card_keys_json || [])],
       },
     ])
   );
@@ -1092,6 +1130,7 @@ async function persistParticipantStates({ participantsById, originalParticipants
       isDefeated: participantState.is_defeated,
       handCards: participantState.hand_cards_json,
       exiledImoCardIds: participantState.exiled_imo_card_ids_json,
+      generatedAllyImoCardKeys: participantState.generated_ally_imo_card_keys_json,
     });
     updatedEntries.push([
       participantState.id,
@@ -1157,13 +1196,161 @@ async function getCharacterStateForParticipant({ matchParticipant, characterCach
   return resolved;
 }
 
-function createMatchCardEntry({ cardId, ownerParticipantId, catalogOwnerId }) {
+async function buildAvailableAllyImoSources({ actingParticipant, allParticipants, characterCache }) {
+  const generatedAllyKeys = new Set(actingParticipant.generated_ally_imo_card_keys_json || []);
+  const allies = (allParticipants || []).filter(
+    (participant) =>
+      participant.id !== actingParticipant.id &&
+      !participant.is_defeated &&
+      isAlliedParticipant(actingParticipant, participant)
+  );
+  const sources = [];
+
+  for (const allyParticipant of allies) {
+    const allyCharacter = await getCharacterStateForParticipant({
+      matchParticipant: allyParticipant,
+      characterCache,
+    });
+    const availableCards = (allyCharacter.imoCards || []).filter((card) => {
+      if ((allyParticipant.exiled_imo_card_ids_json || []).includes(card.id)) {
+        return false;
+      }
+
+      return !generatedAllyKeys.has(buildGeneratedAllyImoCardKey({
+        catalogOwnerId: allyParticipant.controller_user_id,
+        cardId: card.id,
+      }));
+    });
+
+    if (!availableCards.length) {
+      continue;
+    }
+
+    sources.push({
+      participantId: allyParticipant.id,
+      displayName: allyParticipant.display_name,
+      cards: availableCards,
+    });
+  }
+
+  return sources;
+}
+
+async function generateFreeImoFromExile({ participantsById, actingParticipant, sourceParticipantId, cardId }) {
+  if ((actingParticipant.hand_cards_json || []).length >= MAX_HAND_SIZE) {
+    throw new AppError('A mÃ£o jÃ¡ estÃ¡ no limite de 3 cartas.', 409);
+  }
+
+  const normalizedSourceParticipantId = Number(sourceParticipantId);
+  const sourceParticipant =
+    Number.isInteger(normalizedSourceParticipantId) && normalizedSourceParticipantId > 0
+      ? participantsById.get(normalizedSourceParticipantId) || null
+      : actingParticipant;
+  if (!sourceParticipant) {
+    throw new AppError('O aliado escolhido para gerar Imo nÃ£o estÃ¡ disponÃ­vel.', 404);
+  }
+
+  const isOwnGeneration = sourceParticipant.id === actingParticipant.id;
+  if (!isOwnGeneration && !isAlliedParticipant(actingParticipant, sourceParticipant)) {
+    throw new AppError('A geraÃ§Ã£o gratuita por exÃ­lio sÃ³ pode usar cartas prÃ³prias ou de aliados.', 403);
+  }
+
+  const { imoCards } = await getResolvedCharacterForUser({
+    characterId: sourceParticipant.source_character_id,
+    ownerId: sourceParticipant.controller_user_id,
+  });
+  const catalogCard = imoCards.find((item) => item.id === cardId);
+  if (!catalogCard) {
+    throw new AppError('A carta escolhida nÃ£o pertence ao conjunto de Imo disponÃ­vel.', 404);
+  }
+
+  if ((sourceParticipant.exiled_imo_card_ids_json || []).includes(cardId)) {
+    throw new AppError('Essa carta estÃ¡ exilada para o personagem escolhido.', 409);
+  }
+
+  if (isOwnGeneration) {
+    if ((actingParticipant.exiled_imo_card_ids_json || []).includes(cardId)) {
+      throw new AppError('Essa carta estÃ¡ exilada para essa criatura.', 409);
+    }
+
+    return {
+      notice: `${actingParticipant.display_name} gerou ${catalogCard.name} sem custo ao exilar uma carta.`,
+      cardEntry: {
+        cardId,
+        ownerParticipantId: actingParticipant.id,
+        catalogOwnerId: actingParticipant.controller_user_id,
+      },
+      generatedAllyCardKey: '',
+    };
+  }
+
+  const generatedAllyCardKey = buildGeneratedAllyImoCardKey({
+    catalogOwnerId: sourceParticipant.controller_user_id,
+    cardId,
+  });
+  if ((actingParticipant.generated_ally_imo_card_keys_json || []).includes(generatedAllyCardKey)) {
+    throw new AppError('Essa carta de aliado jÃ¡ foi gerada por essa criatura e nÃ£o pode ser recebida novamente.', 409);
+  }
+
   return {
+    notice: `${actingParticipant.display_name} gerou ${catalogCard.name} de ${sourceParticipant.display_name} sem custo ao exilar uma carta.`,
+    cardEntry: {
+      cardId,
+      ownerParticipantId: actingParticipant.id,
+      catalogOwnerId: sourceParticipant.controller_user_id,
+      borrowedFromParticipantId: sourceParticipant.id,
+      borrowedFromDisplayName: sourceParticipant.display_name,
+      generatedAllyCardKey,
+    },
+    generatedAllyCardKey,
+  };
+}
+
+function isAlliedParticipant(leftParticipant, rightParticipant) {
+  const leftType = String(leftParticipant?.participant_type || '');
+  const rightType = String(rightParticipant?.participant_type || '');
+
+  if (!leftType || !rightType) {
+    return false;
+  }
+
+  if (leftType === 'player') {
+    return rightType === 'player';
+  }
+
+  return rightType === 'master-creature';
+}
+
+function buildGeneratedAllyImoCardKey({ catalogOwnerId, cardId }) {
+  return `${Number(catalogOwnerId)}::${String(cardId || '').trim()}`;
+}
+
+function createMatchCardEntry({
+  cardId,
+  ownerParticipantId,
+  catalogOwnerId,
+  borrowedFromParticipantId = null,
+  borrowedFromDisplayName = '',
+  generatedAllyCardKey = '',
+}) {
+  const entry = {
     cardId,
     instanceId: `${cardId}::${Math.random().toString(36).slice(2, 10)}`,
     ownerId: ownerParticipantId,
     catalogOwnerId,
   };
+
+  if (Number.isInteger(Number(borrowedFromParticipantId)) && Number(borrowedFromParticipantId) > 0) {
+    entry.borrowedFromParticipantId = Number(borrowedFromParticipantId);
+  }
+  if (borrowedFromDisplayName) {
+    entry.borrowedFromDisplayName = borrowedFromDisplayName;
+  }
+  if (generatedAllyCardKey) {
+    entry.generatedAllyCardKey = generatedAllyCardKey;
+  }
+
+  return entry;
 }
 
 async function resolveMatchCardEntry({ cardEntry, fallbackOwnerUserId }) {
@@ -1195,6 +1382,10 @@ async function hydrateCards({ fallbackOwnerUserId, cardEntries }) {
       instanceId: entry.instanceId,
       ownerId: Number(entry?.ownerId) || null,
       catalogOwnerId: Number(entry.catalogOwnerId) || fallbackOwnerUserId,
+      borrowedFromParticipantId: Number(entry?.borrowedFromParticipantId) || null,
+      borrowedFromDisplayName: entry?.borrowedFromDisplayName || '',
+      generatedAllyCardKey: entry?.generatedAllyCardKey || '',
+      isBorrowedAllyCard: Boolean(entry?.generatedAllyCardKey),
     });
   }
 
@@ -1444,7 +1635,9 @@ async function finalizeActionResponse({ roomId, userId, includeSnapshot, actionS
 module.exports = {
   __testables: {
     addUniqueCardId,
+    buildGeneratedAllyImoCardKey,
     consumeActionSlot,
+    isAlliedParticipant,
   },
   completeOpeningHandForPlayer,
   endTurnForPlayer,

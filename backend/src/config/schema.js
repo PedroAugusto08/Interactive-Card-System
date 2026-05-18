@@ -128,7 +128,8 @@ async function ensureSchema() {
       opening_hand_ready BOOLEAN NOT NULL DEFAULT FALSE,
       is_defeated BOOLEAN NOT NULL DEFAULT FALSE,
       hand_cards_json JSONB NOT NULL DEFAULT '[]'::jsonb,
-      exiled_imo_card_ids_json JSONB NOT NULL DEFAULT '[]'::jsonb
+      exiled_imo_card_ids_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+      generated_ally_imo_card_keys_json JSONB NOT NULL DEFAULT '[]'::jsonb
     );
   `);
 
@@ -160,6 +161,11 @@ async function ensureSchema() {
   await query(`
     ALTER TABLE match_participants
     ADD COLUMN IF NOT EXISTS exiled_imo_card_ids_json JSONB NOT NULL DEFAULT '[]'::jsonb;
+  `);
+
+  await query(`
+    ALTER TABLE match_participants
+    ADD COLUMN IF NOT EXISTS generated_ally_imo_card_keys_json JSONB NOT NULL DEFAULT '[]'::jsonb;
   `);
 
   await query(`

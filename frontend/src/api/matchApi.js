@@ -50,6 +50,8 @@ export const matchApi = {
     roomId,
     actingParticipantId,
     cardId,
+    generatedSourceParticipantId,
+    generatedCardId,
     targetParticipantId,
     selectedExiledCardId,
     selectedOwnHandCardId,
@@ -62,6 +64,8 @@ export const matchApi = {
       body: {
         actingParticipantId,
         cardId,
+        generatedSourceParticipantId,
+        generatedCardId,
         targetParticipantId,
         selectedExiledCardId,
         selectedOwnHandCardId,

@@ -213,6 +213,10 @@ function createSocketServer(httpServer) {
         userId: user.id,
         actingParticipantId: Number(payload.actingParticipantId),
         cardId: payload.cardId,
+        generatedSourceParticipantId: payload.generatedSourceParticipantId
+          ? Number(payload.generatedSourceParticipantId)
+          : undefined,
+        generatedCardId: payload.generatedCardId,
         targetParticipantId: payload.targetParticipantId ? Number(payload.targetParticipantId) : undefined,
         selectedExiledCardId: payload.selectedExiledCardId,
         selectedOwnHandCardId: payload.selectedOwnHandCardId,

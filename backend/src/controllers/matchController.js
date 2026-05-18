@@ -9,6 +9,8 @@ const roomIdParamSchema = z.object({
 const targetedActionSchema = z.object({
   actingParticipantId: z.coerce.number().int().positive(),
   targetParticipantId: z.coerce.number().int().positive().optional(),
+  generatedSourceParticipantId: z.coerce.number().int().positive().optional(),
+  generatedCardId: z.string().trim().min(1).optional(),
   selectedExiledCardId: z.string().trim().min(1).optional(),
   selectedOwnHandCardId: z.string().trim().min(1).optional(),
   selectedTargetHandCardId: z.string().trim().min(1).optional(),
@@ -95,6 +97,8 @@ async function useImoCard(req, res) {
     userId: req.user.id,
     actingParticipantId: payload.actingParticipantId,
     cardId: payload.cardId,
+    generatedSourceParticipantId: payload.generatedSourceParticipantId,
+    generatedCardId: payload.generatedCardId,
     targetParticipantId: payload.targetParticipantId,
     selectedExiledCardId: payload.selectedExiledCardId,
     selectedOwnHandCardId: payload.selectedOwnHandCardId,
