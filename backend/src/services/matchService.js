@@ -950,6 +950,7 @@ async function buildParticipantState({ activeMatch, matchParticipant, allPartici
     exiledImoCardIds: canRevealPrivateState ? matchParticipant.exiled_imo_card_ids_json || [] : [],
     availableImoCatalog,
     availableAllyImoSources,
+    division: resolvedCharacter.division || null,
     divisionActions: resolvedCharacter.divisionCards || [],
     turnActions: {
       openingHandPending: !matchParticipant.opening_hand_ready,

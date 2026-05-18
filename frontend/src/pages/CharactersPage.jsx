@@ -15,7 +15,7 @@ const EMPTY_CHARACTER_FORM = {
   id: null,
   name: '',
   description: '',
-  divisionIds: [],
+  divisionId: '',
   imoCardIds: [],
 };
 
@@ -74,10 +74,16 @@ function buildImoAutomationPayload(form) {
   };
 }
 
-function toggleId(currentIds, nextId) {
-  return currentIds.includes(nextId)
-    ? currentIds.filter((value) => value !== nextId)
-    : [...currentIds, nextId];
+function toggleSingleId(currentIds, nextId, maxLength) {
+  if (currentIds.includes(nextId)) {
+    return currentIds.filter((value) => value !== nextId);
+  }
+
+  if (currentIds.length >= maxLength) {
+    return [...currentIds.slice(1 - maxLength), nextId].slice(-maxLength);
+  }
+
+  return [...currentIds, nextId];
 }
 
 export function CharactersPage() {
@@ -127,7 +133,12 @@ export function CharactersPage() {
   }, [setModuleData, token]);
 
   const allImoCards = useMemo(() => catalog?.imoCards || [], [catalog]);
-  const divisionCards = useMemo(() => catalog?.divisions || [], [catalog]);
+  const divisions = useMemo(() => catalog?.divisions || [], [catalog]);
+  const selectedDivision = useMemo(
+    () => divisions.find((division) => division.id === characterForm.divisionId) || null,
+    [characterForm.divisionId, divisions]
+  );
+  const allowedImoSlots = Number(selectedDivision?.imoCardSlots || 0);
   const canManageMultipleCharacters = Boolean(
     user?.canManageMultipleCharacters ||
       user?.canManageMultipleDecks ||
@@ -155,7 +166,7 @@ export function CharactersPage() {
       id: character.id,
       name: character.name || '',
       description: character.description || '',
-      divisionIds: character.division_ids_json || [],
+      divisionId: character.division_id || character.division?.id || '',
       imoCardIds: character.imo_card_ids_json || [],
     });
     setStatusMessage('');
@@ -176,7 +187,7 @@ export function CharactersPage() {
       const payload = {
         name: characterForm.name.trim(),
         description: characterForm.description.trim(),
-        divisionIds: characterForm.divisionIds,
+        divisionId: characterForm.divisionId,
         imoCardIds: characterForm.imoCardIds,
       };
 
@@ -298,28 +309,52 @@ export function CharactersPage() {
               />
 
               <div className="stack-gap" style={{ gap: '10px' }}>
-                <span className="status-label">Divisão aberta</span>
-                <div className="row-wrap">
-                  {divisionCards.map((card) => (
-                    <Button
-                      key={card.id}
-                      onClick={() =>
-                        setCharacterForm((current) => ({
-                          ...current,
-                          divisionIds: toggleId(current.divisionIds, card.id),
-                        }))
-                      }
-                      type="button"
-                      variant={characterForm.divisionIds.includes(card.id) ? 'primary' : 'secondary'}
-                    >
-                      {card.name}
-                    </Button>
+                <span className="status-label">Divisão do personagem</span>
+                <div className="player-hand">
+                  {divisions.map((division) => (
+                    <div className="player-hand__slot" key={division.id}>
+                      <CardItem
+                        category="Divisão"
+                        description={`${division.passive}\n\nCartas: ${(division.cards || []).map((card) => card.name).join(', ')}.`}
+                        footer={
+                          <div className="row-wrap">
+                            <Button
+                              onClick={() =>
+                                setCharacterForm((current) => ({
+                                  ...current,
+                                  divisionId: division.id,
+                                  imoCardIds:
+                                    (current.imoCardIds || []).length > Number(division.imoCardSlots || 0)
+                                      ? current.imoCardIds.slice(0, Number(division.imoCardSlots || 0))
+                                      : current.imoCardIds,
+                                }))
+                              }
+                              type="button"
+                              variant={characterForm.divisionId === division.id ? 'primary' : 'secondary'}
+                            >
+                              {characterForm.divisionId === division.id ? 'Selecionada' : 'Selecionar'}
+                            </Button>
+                          </div>
+                        }
+                        imageSrc={resolveCardImageUrl(division.cards?.[0]?.imagePath)}
+                        name={division.name}
+                      />
+                    </div>
                   ))}
                 </div>
               </div>
 
               <div className="stack-gap" style={{ gap: '10px' }}>
-                <span className="status-label">Imos do personagem</span>
+                <span className="status-label">
+                  Imos do personagem {selectedDivision ? `(${characterForm.imoCardIds.length}/${allowedImoSlots})` : ''}
+                </span>
+                {selectedDivision ? (
+                  <p className="muted-text compact">
+                    Passiva: {selectedDivision.passive} Essa Divisão exige {allowedImoSlots} carta(s) de Imo configurada(s).
+                  </p>
+                ) : (
+                  <p className="muted-text compact">Selecione uma Divisão para definir quantas cartas de Imo este personagem domina.</p>
+                )}
                 <div className="row-wrap">
                   {allImoCards.map((card) => (
                     <Button
@@ -327,10 +362,11 @@ export function CharactersPage() {
                       onClick={() =>
                         setCharacterForm((current) => ({
                           ...current,
-                          imoCardIds: toggleId(current.imoCardIds, card.id),
+                          imoCardIds: toggleSingleId(current.imoCardIds, card.id, Math.max(allowedImoSlots, 0)),
                         }))
                       }
                       type="button"
+                      disabled={!selectedDivision}
                       variant={characterForm.imoCardIds.includes(card.id) ? 'primary' : 'secondary'}
                     >
                       {card.name}
@@ -471,6 +507,11 @@ export function CharactersPage() {
                         <div className="stack-gap" style={{ gap: '4px' }}>
                           <strong>{character.name}</strong>
                           <span className="muted-text compact">{character.description || 'Sem descrição'}</span>
+                          <span className="muted-text compact">
+                            {character.division
+                              ? `${character.division.name} • ${character.division.imoCardSlots} carta(s) de Imo`
+                              : 'Divisão não configurada'}
+                          </span>
                         </div>
                         <div className="row-wrap">
                           <Button onClick={() => loadCharacterIntoForm(character)} size="sm" type="button" variant="secondary">
@@ -483,7 +524,7 @@ export function CharactersPage() {
                       </div>
 
                       <div className="row-wrap">
-                        <Badge tone="secondary">Divisão {character.division_ids_json?.length || 0}</Badge>
+                        <Badge tone="secondary">{character.division?.name || 'Sem Divisão'}</Badge>
                         <Badge tone="accent">Imo {character.imo_card_ids_json?.length || 0}</Badge>
                       </div>
                     </div>
@@ -495,17 +536,15 @@ export function CharactersPage() {
             )}
           </Card>
 
-          <Card title="Catálogo de Divisão">
+          <Card title="Catálogo de Divisões">
             <div className="player-hand">
-              {divisionCards.map((card) => (
-                <div className="player-hand__slot" key={`division-catalog-${card.id}`}>
+              {divisions.map((division) => (
+                <div className="player-hand__slot" key={`division-catalog-${division.id}`}>
                   <CardItem
                     category="Divisão"
-                    cost={card.imoCost || 0}
-                    costLabel="Imo"
-                    description={card.effect}
-                    imageSrc={resolveCardImageUrl(card.imagePath)}
-                    name={card.name}
+                    description={`${division.passive}\n\nCartas: ${(division.cards || []).map((card) => card.name).join(', ')}.\nImos do personagem: ${division.imoCardSlots}.`}
+                    imageSrc={resolveCardImageUrl(division.cards?.[0]?.imagePath)}
+                    name={division.name}
                   />
                 </div>
               ))}

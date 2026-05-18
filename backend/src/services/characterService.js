@@ -17,19 +17,24 @@ const {
   getDivisionActionById,
   mapImoCardRecordToCatalogCard,
 } = require('../config/cardsCatalog');
+const {
+  getDivisionById,
+  getDivisionCatalogEntries,
+  hydrateDivision,
+  inferDivisionIdFromActionIds,
+} = require('../config/divisionCatalog');
 const { canUserManageMultipleDecks } = require('./masterOverride');
 
 async function getCharacterCatalog(ownerId) {
   const imoCards = await listImoCardsByOwner(ownerId);
-  return [...DIVISION_ACTION_CATALOG, ...imoCards.map(mapImoCardRecordToCatalogCard)];
+  return {
+    divisions: getDivisionCatalogEntries(),
+    imoCards: imoCards.map(mapImoCardRecordToCatalogCard),
+  };
 }
 
 async function getCharacterCatalogSections(ownerId) {
-  const catalog = await getCharacterCatalog(ownerId);
-  return {
-    divisions: catalog.filter((card) => card.category === CARD_CATEGORIES.DIVISION),
-    imoCards: catalog.filter((card) => card.category === CARD_CATEGORIES.IMO),
-  };
+  return getCharacterCatalog(ownerId);
 }
 
 async function createImoCardForUser({
@@ -66,21 +71,25 @@ async function listImoCardsForUser(ownerId) {
   return cards.map(mapImoCardRecordToCatalogCard);
 }
 
-async function createCharacterForUser({ ownerId, name, description, divisionIds, imoCardIds, requesterUser = null }) {
+async function createCharacterForUser({ ownerId, name, description, divisionId, imoCardIds, requesterUser = null }) {
   await assertUserCanCreateCharacter({ ownerId, requesterUser });
-  const normalized = await normalizeAndValidateCharacterLoadout({ ownerId, divisionIds, imoCardIds });
+  const normalized = await normalizeAndValidateCharacterLoadout({ ownerId, divisionId, imoCardIds });
 
-  return createCharacter({
+  const created = await createCharacter({
     ownerId,
     name,
     description: description || null,
+    divisionId: normalized.divisionId,
     divisionIds: normalized.divisionIds,
     imoCardIds: normalized.imoCardIds,
   });
+
+  return serializeCharacterRecord(created);
 }
 
 async function listCharactersForUser(ownerId) {
-  return listCharactersByOwner(ownerId);
+  const characters = await listCharactersByOwner(ownerId);
+  return characters.map(serializeCharacterRecord);
 }
 
 async function getCharacterForUser({ characterId, ownerId }) {
@@ -89,7 +98,7 @@ async function getCharacterForUser({ characterId, ownerId }) {
     throw new AppError('Personagem não encontrado.', 404);
   }
 
-  return character;
+  return serializeCharacterRecord(character);
 }
 
 async function updateCharacterForUser({
@@ -97,7 +106,7 @@ async function updateCharacterForUser({
   ownerId,
   name,
   description,
-  divisionIds,
+  divisionId,
   imoCardIds,
 }) {
   const existing = await findCharacterById(characterId);
@@ -105,15 +114,18 @@ async function updateCharacterForUser({
     throw new AppError('Personagem não encontrado.', 404);
   }
 
-  const normalized = await normalizeAndValidateCharacterLoadout({ ownerId, divisionIds, imoCardIds });
-  return updateCharacterById({
+  const normalized = await normalizeAndValidateCharacterLoadout({ ownerId, divisionId, imoCardIds });
+  const updated = await updateCharacterById({
     characterId,
     ownerId,
     name,
     description: description || null,
+    divisionId: normalized.divisionId,
     divisionIds: normalized.divisionIds,
     imoCardIds: normalized.imoCardIds,
   });
+
+  return serializeCharacterRecord(updated);
 }
 
 async function deleteCharacterForUser({ characterId, ownerId }) {
@@ -122,17 +134,20 @@ async function deleteCharacterForUser({ characterId, ownerId }) {
     throw new AppError('Personagem não encontrado.', 404);
   }
 
-  return deleteCharacterById({ characterId, ownerId });
+  const deleted = await deleteCharacterById({ characterId, ownerId });
+  return serializeCharacterRecord(deleted);
 }
 
 async function getResolvedCharacterForUser({ characterId, ownerId }) {
   const character = await getCharacterForUser({ characterId, ownerId });
   const catalogMap = await buildCatalogMap(ownerId);
+  const division = getCharacterDivision(character);
 
   return {
     character,
-    divisionCards: (character.division_ids_json || [])
-      .map((cardId) => catalogMap.get(cardId))
+    division,
+    divisionCards: (division?.actionIds || [])
+      .map((cardId) => catalogMap.get(cardId) || getDivisionActionById(cardId))
       .filter(Boolean),
     imoCards: (character.imo_card_ids_json || [])
       .map((cardId) => catalogMap.get(cardId))
@@ -140,16 +155,21 @@ async function getResolvedCharacterForUser({ characterId, ownerId }) {
   };
 }
 
-async function normalizeAndValidateCharacterLoadout({ ownerId, divisionIds, imoCardIds }) {
+async function normalizeAndValidateCharacterLoadout({ ownerId, divisionId, imoCardIds }) {
   const catalogMap = await buildCatalogMap(ownerId);
-  const nextDivisionIds = normalizeStringList(divisionIds);
+  const normalizedDivisionId = String(divisionId || '').trim();
   const nextImoCardIds = normalizeStringList(imoCardIds);
+  const division = getDivisionById(normalizedDivisionId);
 
-  for (const divisionId of nextDivisionIds) {
-    const card = catalogMap.get(divisionId);
-    if (!card || card.category !== CARD_CATEGORIES.DIVISION) {
-      throw new AppError(`Ação de Divisão desconhecida: ${divisionId}.`, 400);
-    }
+  if (!division) {
+    throw new AppError('Escolha uma Divisão válida para o personagem.', 400);
+  }
+
+  if (nextImoCardIds.length !== Number(division.imoCardSlots || 0)) {
+    throw new AppError(
+      `A Divisão ${division.name} exige exatamente ${division.imoCardSlots} carta(s) de Imo no personagem.`,
+      400
+    );
   }
 
   for (const imoCardId of nextImoCardIds) {
@@ -160,7 +180,8 @@ async function normalizeAndValidateCharacterLoadout({ ownerId, divisionIds, imoC
   }
 
   return {
-    divisionIds: nextDivisionIds,
+    divisionId: division.id,
+    divisionIds: [...division.actionIds],
     imoCardIds: nextImoCardIds,
   };
 }
@@ -196,6 +217,34 @@ async function resolveCardById({ ownerId, cardId }) {
   return getDivisionActionById(cardId);
 }
 
+function getCharacterDivision(character) {
+  const divisionId = String(character?.division_id || '').trim() || inferDivisionIdFromActionIds(character?.division_ids_json || []);
+  return hydrateDivision(getDivisionById(divisionId));
+}
+
+function serializeCharacterRecord(character) {
+  if (!character) {
+    return null;
+  }
+
+  const division = getCharacterDivision(character);
+  return {
+    ...character,
+    division_id: division?.id || String(character.division_id || '').trim() || null,
+    division_ids_json: division?.actionIds || character.division_ids_json || [],
+    division: division
+      ? {
+          id: division.id,
+          name: division.name,
+          passive: division.passive,
+          imoCardSlots: division.imoCardSlots,
+          actionIds: division.actionIds,
+          cards: division.cards,
+        }
+      : null,
+  };
+}
+
 async function assertUserCanCreateCharacter({ ownerId, requesterUser = null }) {
   if (canUserManageMultipleDecks(requesterUser)) {
     return;
@@ -223,4 +272,8 @@ module.exports = {
   deleteCharacterForUser,
   getResolvedCharacterForUser,
   resolveCardById,
+  __testables: {
+    getCharacterDivision,
+    serializeCharacterRecord,
+  },
 };

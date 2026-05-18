@@ -509,6 +509,15 @@ export function MatchPage() {
                   </Badge>
                 </div>
 
+                {focusedParticipant.division ? (
+                  <div className="stack-gap" style={{ gap: '4px' }}>
+                    <strong>{focusedParticipant.division.name}</strong>
+                    <span className="muted-text compact">
+                      Passiva: {focusedParticipant.division.passive}
+                    </span>
+                  </div>
+                ) : null}
+
                 <div className="row-wrap">
                   <Button
                     disabled={!focusedParticipant.turnActions?.canEndTurn || isSubmitting}

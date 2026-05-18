@@ -1,22 +1,23 @@
 const { query } = require('../config/db');
 
-async function createCharacter({ ownerId, name, description = null, divisionIds = [], imoCardIds = [] }) {
+async function createCharacter({ ownerId, name, description = null, divisionId = null, divisionIds = [], imoCardIds = [] }) {
   const result = await query(
     `
-      INSERT INTO characters (owner_id, name, description, division_ids_json, imo_card_ids_json)
-      VALUES ($1, $2, $3, $4::jsonb, $5::jsonb)
+      INSERT INTO characters (owner_id, name, description, division_id, division_ids_json, imo_card_ids_json)
+      VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)
       RETURNING
         id,
         owner_id,
         legacy_deck_id,
         name,
         description,
+        division_id,
         division_ids_json,
         imo_card_ids_json,
         created_at,
         updated_at;
     `,
-    [ownerId, name, description, JSON.stringify(divisionIds), JSON.stringify(imoCardIds)]
+    [ownerId, name, description, divisionId, JSON.stringify(divisionIds), JSON.stringify(imoCardIds)]
   );
 
   return result.rows[0] || null;
@@ -31,6 +32,7 @@ async function listCharactersByOwner(ownerId) {
         legacy_deck_id,
         name,
         description,
+        division_id,
         division_ids_json,
         imo_card_ids_json,
         created_at,
@@ -59,6 +61,7 @@ async function listCharactersByIds(characterIds = []) {
         legacy_deck_id,
         name,
         description,
+        division_id,
         division_ids_json,
         imo_card_ids_json,
         created_at,
@@ -82,6 +85,7 @@ async function findCharacterById(characterId) {
         legacy_deck_id,
         name,
         description,
+        division_id,
         division_ids_json,
         imo_card_ids_json,
         created_at,
@@ -101,6 +105,7 @@ async function updateCharacterById({
   ownerId,
   name,
   description = null,
+  divisionId = null,
   divisionIds = [],
   imoCardIds = [],
 }) {
@@ -110,8 +115,9 @@ async function updateCharacterById({
       SET
         name = $3,
         description = $4,
-        division_ids_json = $5::jsonb,
-        imo_card_ids_json = $6::jsonb,
+        division_id = $5,
+        division_ids_json = $6::jsonb,
+        imo_card_ids_json = $7::jsonb,
         updated_at = NOW()
       WHERE id = $1 AND owner_id = $2
       RETURNING
@@ -120,12 +126,13 @@ async function updateCharacterById({
         legacy_deck_id,
         name,
         description,
+        division_id,
         division_ids_json,
         imo_card_ids_json,
         created_at,
         updated_at;
     `,
-    [characterId, ownerId, name, description, JSON.stringify(divisionIds), JSON.stringify(imoCardIds)]
+    [characterId, ownerId, name, description, divisionId, JSON.stringify(divisionIds), JSON.stringify(imoCardIds)]
   );
 
   return result.rows[0] || null;
@@ -142,6 +149,7 @@ async function deleteCharacterById({ characterId, ownerId }) {
         legacy_deck_id,
         name,
         description,
+        division_id,
         division_ids_json,
         imo_card_ids_json,
         created_at,

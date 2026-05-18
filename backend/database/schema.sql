@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS characters (
   legacy_deck_id INTEGER UNIQUE REFERENCES decks(id) ON DELETE SET NULL,
   name VARCHAR(80) NOT NULL,
   description TEXT,
+  division_id VARCHAR(80),
   division_ids_json JSONB NOT NULL DEFAULT '[]'::jsonb,
   imo_card_ids_json JSONB NOT NULL DEFAULT '[]'::jsonb,
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),

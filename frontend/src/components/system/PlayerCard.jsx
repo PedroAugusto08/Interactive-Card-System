@@ -78,7 +78,10 @@ export function PlayerCard({
             selectedCharacters.length ? (
               <div className="stack-gap" style={{ gap: '4px' }}>
                 {selectedCharacters.map((character) => (
-                  <strong key={`master-character-${character.id}`}>{character.name}</strong>
+                  <div className="stack-gap" key={`master-character-${character.id}`} style={{ gap: '2px' }}>
+                    <strong>{character.name}</strong>
+                    <span className="muted-text compact">{character.division?.name || 'Sem Divisão'}</span>
+                  </div>
                 ))}
                 <span className="muted-text compact">
                   {selectedCharacters.length} criatura{selectedCharacters.length === 1 ? '' : 's'} selecionada
@@ -91,6 +94,9 @@ export function PlayerCard({
           ) : (
             <>
               <strong>{selectedCharacter?.name || 'Personagem não selecionado'}</strong>
+              {selectedCharacter?.division ? (
+                <span className="muted-text compact">{selectedCharacter.division.name}</span>
+              ) : null}
               <span className="muted-text compact">
                 {selectedCharacter ? 'Pronto para entrar no combate.' : 'Selecione um personagem para liberar o pronto.'}
               </span>

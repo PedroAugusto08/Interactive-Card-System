@@ -12,7 +12,7 @@ const stringIdListSchema = z.array(z.string().trim().min(1));
 const createCharacterSchema = z.object({
   name: z.string().trim().min(2).max(80),
   description: z.string().trim().max(500).optional(),
-  divisionIds: stringIdListSchema,
+  divisionId: z.string().trim().min(1),
   imoCardIds: stringIdListSchema,
 });
 
@@ -63,7 +63,7 @@ async function createCharacter(req, res) {
     ownerId: req.user.id,
     name: payload.name,
     description: payload.description,
-    divisionIds: payload.divisionIds,
+    divisionId: payload.divisionId,
     imoCardIds: payload.imoCardIds,
     requesterUser: req.user,
   });
@@ -94,7 +94,7 @@ async function updateCharacter(req, res) {
     ownerId: req.user.id,
     name: payload.name,
     description: payload.description,
-    divisionIds: payload.divisionIds,
+    divisionId: payload.divisionId,
     imoCardIds: payload.imoCardIds,
   });
 

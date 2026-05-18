@@ -1,5 +1,6 @@
 const { query } = require('./db');
 const { DIVISION_ACTION_CATALOG, getDivisionActionById } = require('./cardsCatalog');
+const { getDivisionById, inferDivisionIdFromActionIds } = require('./divisionCatalog');
 
 async function ensureSchema() {
   await query(`
@@ -42,11 +43,17 @@ async function ensureSchema() {
       legacy_deck_id INTEGER UNIQUE REFERENCES decks(id) ON DELETE SET NULL,
       name VARCHAR(80) NOT NULL,
       description TEXT,
+      division_id VARCHAR(80),
       division_ids_json JSONB NOT NULL DEFAULT '[]'::jsonb,
       imo_card_ids_json JSONB NOT NULL DEFAULT '[]'::jsonb,
       created_at TIMESTAMP NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
+  `);
+
+  await query(`
+    ALTER TABLE characters
+    ADD COLUMN IF NOT EXISTS division_id VARCHAR(80);
   `);
 
   await query(`
@@ -196,6 +203,7 @@ async function ensureSchema() {
   `);
 
   await migrateDecksToCharacters();
+  await migrateCharactersToDivisionCatalog();
   await migrateRoomSelectionsToCharacters();
   await migrateMatchParticipantsToCharacters();
 }
@@ -214,7 +222,7 @@ async function migrateDecksToCharacters() {
       continue;
     }
 
-    const { divisionIds, imoCardIds } = extractCharacterLoadout(deck.cards_json);
+    const { divisionId, divisionIds, imoCardIds } = extractCharacterLoadout(deck.cards_json);
     await query(
       `
         INSERT INTO characters (
@@ -222,18 +230,20 @@ async function migrateDecksToCharacters() {
           legacy_deck_id,
           name,
           description,
+          division_id,
           division_ids_json,
           imo_card_ids_json,
           created_at,
           updated_at
         )
-        VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8);
+        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9);
       `,
       [
         deck.owner_id,
         deck.id,
         deck.name,
         deck.description,
+        divisionId,
         JSON.stringify(divisionIds),
         JSON.stringify(imoCardIds),
         deck.created_at,
@@ -340,6 +350,34 @@ async function migrateMatchParticipantsToCharacters() {
   `);
 }
 
+async function migrateCharactersToDivisionCatalog() {
+  const result = await query(`
+    SELECT id, division_id, division_ids_json
+    FROM characters
+    ORDER BY id ASC;
+  `);
+
+  for (const character of result.rows) {
+    const inferredDivisionId =
+      String(character.division_id || '').trim() || inferDivisionIdFromActionIds(character.division_ids_json || []);
+    const division = getDivisionById(inferredDivisionId);
+    if (!division) {
+      continue;
+    }
+
+    await query(
+      `
+        UPDATE characters
+        SET
+          division_id = $2,
+          division_ids_json = $3::jsonb
+        WHERE id = $1;
+      `,
+      [character.id, division.id, JSON.stringify(division.actionIds)]
+    );
+  }
+}
+
 function extractCharacterLoadout(cardsJson) {
   const divisionIds = [];
   const imoCardIds = [];
@@ -360,8 +398,13 @@ function extractCharacterLoadout(cardsJson) {
     }
   }
 
+  const normalizedDivisionIds = [...new Set(divisionIds.filter((cardId) => DIVISION_ACTION_CATALOG.some((card) => card.id === cardId)))];
+  const divisionId = inferDivisionIdFromActionIds(normalizedDivisionIds);
+  const division = getDivisionById(divisionId);
+
   return {
-    divisionIds: [...new Set(divisionIds.filter((cardId) => DIVISION_ACTION_CATALOG.some((card) => card.id === cardId)))],
+    divisionId: division?.id || null,
+    divisionIds: division?.actionIds || normalizedDivisionIds,
     imoCardIds: [...new Set(imoCardIds)],
   };
 }
