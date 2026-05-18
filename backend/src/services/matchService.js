@@ -12,6 +12,8 @@ const {
   updateMatchState,
 } = require('../models/matchModel');
 const { listCharactersByIds } = require('../models/characterModel');
+const { DIVISION_ACTION_CATALOG, getDivisionActionById } = require('../config/cardsCatalog');
+const { getDivisionById } = require('../config/divisionCatalog');
 const { AppError } = require('../utils/AppError');
 const { getResolvedCharacterForUser, resolveCardById } = require('./characterService');
 const { resolveRoomMasterUserId } = require('./masterOverride');
@@ -29,6 +31,9 @@ const INITIAL_IMO = 3;
 const MAX_IMO = 10;
 const MAX_HAND_SIZE = 3;
 const OPENING_HAND_SIZE = 2;
+const ATTACK_DAMAGE = 1;
+const FLAGELADO_TEMP_IMO_GAIN = 1;
+const EXECUTOR_ATTACK_COOLDOWN_TURNS = 2;
 
 async function startMatchForRoom({ roomId, userId, requesterUser = null, includeSnapshot = true }) {
   const room = await findRoomById(roomId);
@@ -91,6 +96,7 @@ async function startMatchForRoom({ roomId, userId, requesterUser = null, include
     currentTurnParticipantId: null,
     currentTurnPlayerId: null,
     status: 'opening',
+    combatState: createEmptyCombatState(),
   });
 
   const lobbyParticipantsByEntryId = new Map(lobbyParticipants.map((entry) => [entry.entryId, entry]));
@@ -267,7 +273,7 @@ async function completeOpeningHandForPlayer({
       currentTurnParticipantId: firstParticipant?.id || null,
       winnerUserId: null,
       winnerParticipantId: null,
-      combatState: null,
+      combatState: normalizeCombatState(context.match.combat_state_json),
     });
     logMessage = 'Todos os participantes concluíram a abertura. A rodada 1 começou.';
   }
@@ -295,7 +301,14 @@ async function completeOpeningHandForPlayer({
   });
 }
 
-async function generateImoForPlayer({ roomId, userId, actingParticipantId, cardId, includeSnapshot = true }) {
+async function generateImoForPlayer({
+  roomId,
+  userId,
+  actingParticipantId,
+  cardId,
+  selectedCardIds = null,
+  includeSnapshot = true,
+}) {
   const context = await requireActiveTurnContext({
     roomId,
     userId,
@@ -305,6 +318,16 @@ async function generateImoForPlayer({ roomId, userId, actingParticipantId, cardI
 
   const participantsById = createMutableParticipantMap(context.participants);
   const actingParticipant = participantsById.get(context.currentParticipant.id);
+  const combatState = normalizeCombatState(context.match.combat_state_json);
+  const actingParticipantCombatState = getParticipantCombatState(combatState, actingParticipant.id);
+  const { imoCards, division } = await getResolvedCharacterForUser({
+    characterId: actingParticipant.source_character_id,
+    ownerId: actingParticipant.controller_user_id,
+  });
+  const requestedCardIds = Array.isArray(selectedCardIds) && selectedCardIds.length
+    ? selectedCardIds.map((value) => String(value || '').trim()).filter(Boolean)
+    : [String(cardId || '').trim()].filter(Boolean);
+  const canUseRuinRatGeneration = division?.id === 'rato-de-ruina';
 
   if (actingParticipant.has_generated_imo_this_turn) {
     throw new AppError('Essa criatura já gerou uma carta de Imo neste turno.', 409);
@@ -314,47 +337,87 @@ async function generateImoForPlayer({ roomId, userId, actingParticipantId, cardI
     throw new AppError('A mão já está no limite de 3 cartas.', 409);
   }
 
-  if ((actingParticipant.exiled_imo_card_ids_json || []).includes(cardId)) {
-    throw new AppError('Essa carta está exilada para essa criatura.', 409);
+  if (!requestedCardIds.length) {
+    throw new AppError('Escolha ao menos uma carta de Imo para gerar.', 400);
   }
 
-  const { imoCards } = await getResolvedCharacterForUser({
-    characterId: actingParticipant.source_character_id,
-    ownerId: actingParticipant.controller_user_id,
+  const availableHandSpace = MAX_HAND_SIZE - (actingParticipant.hand_cards_json || []).length;
+  if (requestedCardIds.length > availableHandSpace) {
+    throw new AppError(
+      availableHandSpace <= 1
+        ? 'Essa criatura só pode gerar 1 carta porque resta apenas 1 espaço na mão.'
+        : 'A mão não comporta todas as cartas de Imo escolhidas.',
+      409
+    );
+  }
+
+  if (!canUseRuinRatGeneration && requestedCardIds.length !== 1) {
+    throw new AppError('Essa criatura só pode gerar 1 carta de Imo por vez.', 409);
+  }
+
+  if (canUseRuinRatGeneration && requestedCardIds.length > 2) {
+    throw new AppError('Rato de Ruína pode gerar no máximo 2 cartas por turno.', 409);
+  }
+
+  const catalogMap = new Map(imoCards.map((item) => [item.id, item]));
+  const cardsToGenerate = requestedCardIds.map((requestedCardId) => {
+    if ((actingParticipant.exiled_imo_card_ids_json || []).includes(requestedCardId)) {
+      throw new AppError('Uma das cartas escolhidas está exilada para essa criatura.', 409);
+    }
+
+    const catalogCard = catalogMap.get(requestedCardId);
+    if (!catalogCard) {
+      throw new AppError('Uma das cartas escolhidas não pertence ao conjunto de Imo do personagem.', 404);
+    }
+
+    return catalogCard;
   });
-  const catalogCard = imoCards.find((item) => item.id === cardId);
-  if (!catalogCard) {
-    throw new AppError('Essa carta não pertence ao conjunto de Imo do personagem.', 404);
+
+  const totalImoCost = cardsToGenerate.reduce((sum, currentCard) => sum + Number(currentCard.imoCost || 0), 0);
+  if (getSpendableImo(actingParticipant, actingParticipantCombatState) < totalImoCost) {
+    throw new AppError('Imo insuficiente para gerar as cartas escolhidas.', 409);
   }
 
-  if (actingParticipant.imo < Number(catalogCard.imoCost || 0)) {
-    throw new AppError('Imo insuficiente para gerar essa carta.', 409);
-  }
-
-  consumeActionSlot({ participant: actingParticipant, actionSlot: 'standard' });
-  actingParticipant.imo -= Number(catalogCard.imoCost || 0);
+  consumeActionSlot({ participant: actingParticipant, actionSlot: 'complementary' });
+  spendImo({
+    participant: actingParticipant,
+    participantCombatState: actingParticipantCombatState,
+    amount: totalImoCost,
+  });
   actingParticipant.has_generated_imo_this_turn = true;
   actingParticipant.hand_cards_json = [
     ...actingParticipant.hand_cards_json,
-    createMatchCardEntry({
-      cardId,
-      ownerParticipantId: actingParticipant.id,
-      catalogOwnerId: actingParticipant.controller_user_id,
-    }),
+    ...cardsToGenerate.map((generatedCard) =>
+      createMatchCardEntry({
+        cardId: generatedCard.id,
+        ownerParticipantId: actingParticipant.id,
+        catalogOwnerId: actingParticipant.controller_user_id,
+      })
+    ),
   ];
 
   const updatedParticipantsById = await persistParticipantStates({
     participantsById,
     originalParticipants: context.participants,
   });
+  const updatedMatch = await updateMatchState({
+    matchId: context.match.id,
+    status: context.match.status,
+    round: context.match.round,
+    currentTurnPlayerId: context.match.current_turn_player_id,
+    currentTurnParticipantId: context.match.current_turn_participant_id,
+    winnerUserId: context.match.winner_user_id,
+    winnerParticipantId: context.match.winner_participant_id,
+    combatState,
+  });
 
   const createdLog = await addMatchLog({
     matchId: context.match.id,
     type: 'MATCH_GENERATE_IMO',
-    message: `${actingParticipant.display_name} gerou ${catalogCard.name}.`,
+    message: `${actingParticipant.display_name} gerou ${cardsToGenerate.map((item) => item.name).join(' e ')}.`,
     payload: {
       actingParticipantId: actingParticipant.id,
-      cardId,
+      cardIds: cardsToGenerate.map((item) => item.id),
     },
   });
 
@@ -363,10 +426,14 @@ async function generateImoForPlayer({ roomId, userId, actingParticipantId, cardI
     userId,
     includeSnapshot,
     actionState: await buildActionRealtimeState({
-      activeMatch: context.match,
+      activeMatch: updatedMatch,
       participants: [...updatedParticipantsById.values()],
       currentUserId: userId,
       log: createdLog,
+      notice:
+        cardsToGenerate.length > 1
+          ? `${actingParticipant.display_name} gerou ${cardsToGenerate.length} cartas de Imo usando a passiva de Rato de Ruína.`
+          : '',
     }),
   });
 }
@@ -391,6 +458,7 @@ async function useImoCardForPlayer({
 
   const participantsById = createMutableParticipantMap(context.participants);
   const actingParticipant = participantsById.get(context.currentParticipant.id);
+  const combatState = normalizeCombatState(context.match.combat_state_json);
   const handCards = [...actingParticipant.hand_cards_json];
   const cardIndex = handCards.findIndex((entry) => entry.instanceId === cardId);
   if (cardIndex < 0) {
@@ -419,10 +487,20 @@ async function useImoCardForPlayer({
     selectedOwnHandCardId,
     selectedTargetHandCardId,
   });
+  const passiveOutcome = await applyPostUseImoPassives({
+    actingParticipant,
+    participantsById,
+    combatState,
+  });
 
   const updatedParticipantsById = await persistParticipantStates({
     participantsById,
     originalParticipants: context.participants,
+  });
+  const updatedMatch = await buildUpdatedMatchStateAfterAction({
+    match: context.match,
+    participantsById: updatedParticipantsById,
+    combatState,
   });
 
   const createdLog = await addMatchLog({
@@ -441,12 +519,13 @@ async function useImoCardForPlayer({
     userId,
     includeSnapshot,
     actionState: await buildActionRealtimeState({
-      activeMatch: context.match,
+      activeMatch: updatedMatch,
       participants: [...updatedParticipantsById.values()],
       currentUserId: userId,
       log: createdLog,
-      notice: buildDivisionActionNotice({ divisionCard, automationOutcome }),
-      effectResults: automationOutcome.effects,
+      notice: automationOutcome.notices.join(' '),
+      effectResults: [...automationOutcome.effects, ...passiveOutcome.effectResults],
+      privateEffectsByUserId: passiveOutcome.privateEffectsByUserId,
     }),
   });
 }
@@ -473,6 +552,7 @@ async function exileImoCardForPlayer({
 
   const participantsById = createMutableParticipantMap(context.participants);
   const actingParticipant = participantsById.get(context.currentParticipant.id);
+  const combatState = normalizeCombatState(context.match.combat_state_json);
   const handCards = [...actingParticipant.hand_cards_json];
   const cardIndex = handCards.findIndex((entry) => entry.instanceId === cardId);
   if (cardIndex < 0) {
@@ -534,6 +614,16 @@ async function exileImoCardForPlayer({
     participantsById,
     originalParticipants: context.participants,
   });
+  const updatedMatch = await updateMatchState({
+    matchId: context.match.id,
+    status: context.match.status,
+    round: context.match.round,
+    currentTurnPlayerId: context.match.current_turn_player_id,
+    currentTurnParticipantId: context.match.current_turn_participant_id,
+    winnerUserId: context.match.winner_user_id,
+    winnerParticipantId: context.match.winner_participant_id,
+    combatState,
+  });
 
   const createdLog = await addMatchLog({
     matchId: context.match.id,
@@ -551,7 +641,7 @@ async function exileImoCardForPlayer({
     userId,
     includeSnapshot,
     actionState: await buildActionRealtimeState({
-      activeMatch: context.match,
+      activeMatch: updatedMatch,
       participants: [...updatedParticipantsById.values()],
       currentUserId: userId,
       log: createdLog,
@@ -566,6 +656,7 @@ async function useDivisionActionForPlayer({
   userId,
   actingParticipantId,
   divisionId,
+  divisionInstanceId = null,
   targetParticipantId = null,
   selectedExiledCardId = null,
   selectedOwnHandCardId = null,
@@ -581,26 +672,34 @@ async function useDivisionActionForPlayer({
 
   const participantsById = createMutableParticipantMap(context.participants);
   const actingParticipant = participantsById.get(context.currentParticipant.id);
-  const { divisionCards } = await getResolvedCharacterForUser({
-    characterId: actingParticipant.source_character_id,
-    ownerId: actingParticipant.controller_user_id,
+  const combatState = normalizeCombatState(context.match.combat_state_json);
+  const resolvedDivisionActions = await resolveParticipantDivisionActions({
+    actingParticipant,
+    combatState,
   });
-  const divisionCard = divisionCards.find((item) => item.id === divisionId);
-  if (!divisionCard) {
+  const normalizedDivisionInstanceId = String(divisionInstanceId || '').trim();
+  const divisionAction =
+    resolvedDivisionActions.find((item) => normalizedDivisionInstanceId && item.instanceId === normalizedDivisionInstanceId) ||
+    resolvedDivisionActions.find((item) => item.id === divisionId && !item.isTemporary);
+  if (!divisionAction) {
     throw new AppError('Essa ação de Divisão não pertence ao personagem.', 404);
   }
 
-  if (actingParticipant.imo < Number(divisionCard.imoCost || 0)) {
+  if (getSpendableImo(actingParticipant, getParticipantCombatState(combatState, actingParticipant.id)) < Number(divisionAction.imoCost || 0)) {
     throw new AppError('Imo insuficiente para usar essa ação de Divisão.', 409);
   }
 
-  assertDivisionActionCanBeUsed({ actingParticipant, divisionCard });
-  consumeActionSlot({ participant: actingParticipant, actionSlot: divisionCard.actionSlot || 'complementary' });
-  actingParticipant.imo -= Number(divisionCard.imoCost || 0);
+  assertDivisionActionCanBeUsed({ actingParticipant, divisionCard: divisionAction });
+  consumeActionSlot({ participant: actingParticipant, actionSlot: divisionAction.actionSlot || 'complementary' });
+  spendImo({
+    participant: actingParticipant,
+    participantCombatState: getParticipantCombatState(combatState, actingParticipant.id),
+    amount: Number(divisionAction.imoCost || 0),
+  });
 
   const automationOutcome = await applyAutomation({
     ownerUserId: actingParticipant.controller_user_id,
-    automation: divisionCard.useAutomation,
+    automation: divisionAction.useAutomation,
     actingParticipant,
     participantsById,
     targetParticipantId,
@@ -608,19 +707,32 @@ async function useDivisionActionForPlayer({
     selectedOwnHandCardId,
     selectedTargetHandCardId,
   });
+  if (divisionAction.isTemporary) {
+    removeTemporaryDivisionAction({
+      combatState,
+      participantId: actingParticipant.id,
+      divisionInstanceId: divisionAction.instanceId,
+    });
+  }
 
   const updatedParticipantsById = await persistParticipantStates({
     participantsById,
     originalParticipants: context.participants,
   });
+  const updatedMatch = await buildUpdatedMatchStateAfterAction({
+    match: context.match,
+    participantsById: updatedParticipantsById,
+    combatState,
+  });
 
   const createdLog = await addMatchLog({
     matchId: context.match.id,
     type: 'MATCH_USE_DIVISION',
-    message: `${actingParticipant.display_name} usou ${divisionCard.name}.`,
+    message: `${actingParticipant.display_name} usou ${divisionAction.name}.`,
     payload: {
       actingParticipantId,
       divisionId,
+      divisionInstanceId: divisionAction.instanceId,
       targetParticipantId,
     },
   });
@@ -630,12 +742,309 @@ async function useDivisionActionForPlayer({
     userId,
     includeSnapshot,
     actionState: await buildActionRealtimeState({
-      activeMatch: context.match,
+      activeMatch: updatedMatch,
       participants: [...updatedParticipantsById.values()],
       currentUserId: userId,
       log: createdLog,
-      notice: automationOutcome.notices.join(' '),
+      notice: buildDivisionActionNotice({ divisionCard: divisionAction, automationOutcome }),
       effectResults: automationOutcome.effects,
+    }),
+  });
+}
+
+async function usePassiveActionForPlayer({
+  roomId,
+  userId,
+  actingParticipantId,
+  passiveActionId,
+  targetParticipantId = null,
+  selectedOwnHandCardId = null,
+  selectedCatalogCardId = null,
+  selectedDivisionActionId = null,
+  includeSnapshot = true,
+}) {
+  const context = await requireActiveTurnContext({
+    roomId,
+    userId,
+    actingParticipantId,
+    includeAllParticipants: true,
+  });
+
+  const participantsById = createMutableParticipantMap(context.participants);
+  const actingParticipant = participantsById.get(context.currentParticipant.id);
+  const combatState = normalizeCombatState(context.match.combat_state_json);
+  const { division, imoCards } = await getResolvedCharacterForUser({
+    characterId: actingParticipant.source_character_id,
+    ownerId: actingParticipant.controller_user_id,
+  });
+  const passiveConfig = division?.passiveConfig || null;
+  if (!passiveConfig || passiveConfig.id !== passiveActionId || passiveConfig.type !== 'active') {
+    throw new AppError('Essa criatura não possui essa ação passiva.', 404);
+  }
+
+  if (passiveConfig.actionSlot && passiveConfig.actionSlot !== 'free') {
+    consumeActionSlot({ participant: actingParticipant, actionSlot: passiveConfig.actionSlot });
+  }
+
+  if (getSpendableImo(actingParticipant, getParticipantCombatState(combatState, actingParticipant.id)) < Number(passiveConfig.imoCost || 0)) {
+    throw new AppError('Imo insuficiente para usar essa passiva.', 409);
+  }
+
+  if (passiveConfig.id === 'condutor-share-imo') {
+    const targetState = resolvePassiveTargetState({
+      actingParticipant,
+      participantsById,
+      targetParticipantId,
+      targetScope: passiveConfig.targetScope,
+    });
+    if (!selectedOwnHandCardId) {
+      throw new AppError('Escolha uma carta da mão do Condutor para consumir.', 400);
+    }
+    if (!selectedCatalogCardId) {
+      throw new AppError('Escolha uma carta do catálogo do Condutor para entregar ao aliado.', 400);
+    }
+
+    const ownHandIndex = actingParticipant.hand_cards_json.findIndex((entry) => entry.instanceId === selectedOwnHandCardId);
+    if (ownHandIndex < 0) {
+      throw new AppError('A carta escolhida não está na mão do Condutor.', 404);
+    }
+    if ((targetState.hand_cards_json || []).length >= MAX_HAND_SIZE) {
+      throw new AppError('A mão do aliado já está cheia.', 409);
+    }
+
+    const [consumedEntry] = actingParticipant.hand_cards_json.splice(ownHandIndex, 1);
+    const consumedCard = await resolveMatchCardEntry({
+      cardEntry: consumedEntry,
+      fallbackOwnerUserId: actingParticipant.controller_user_id,
+    });
+    const catalogCard = imoCards.find((item) => item.id === selectedCatalogCardId);
+    if (!consumedCard || !catalogCard) {
+      throw new AppError('A combinação escolhida para a passiva do Condutor é inválida.', 404);
+    }
+    if (Number(consumedCard.imoCost || 0) !== Number(catalogCard.imoCost || 0)) {
+      throw new AppError('A carta entregue ao aliado precisa ter o mesmo custo da carta consumida.', 409);
+    }
+
+    spendImo({
+      participant: actingParticipant,
+      participantCombatState: getParticipantCombatState(combatState, actingParticipant.id),
+      amount: Number(passiveConfig.imoCost || 0),
+    });
+    targetState.hand_cards_json = [
+      ...(targetState.hand_cards_json || []),
+      createMatchCardEntry({
+        cardId: catalogCard.id,
+        ownerParticipantId: targetState.id,
+        catalogOwnerId: actingParticipant.controller_user_id,
+      }),
+    ];
+
+    const updatedParticipantsById = await persistParticipantStates({
+      participantsById,
+      originalParticipants: context.participants,
+    });
+    const updatedMatch = await buildUpdatedMatchStateAfterAction({
+      match: context.match,
+      participantsById: updatedParticipantsById,
+      combatState,
+    });
+    const createdLog = await addMatchLog({
+      matchId: context.match.id,
+      type: 'MATCH_USE_PASSIVE',
+      message: `${actingParticipant.display_name} usou a passiva de Condutor de Ecos.`,
+      payload: {
+        actingParticipantId,
+        passiveActionId,
+        targetParticipantId: targetState.id,
+        selectedCatalogCardId,
+      },
+    });
+
+    return finalizeActionResponse({
+      roomId,
+      userId,
+      includeSnapshot,
+      actionState: await buildActionRealtimeState({
+        activeMatch: updatedMatch,
+        participants: [...updatedParticipantsById.values()],
+        currentUserId: userId,
+        log: createdLog,
+        notice: `${targetState.display_name} recebeu ${catalogCard.name} pela passiva de Condutor de Ecos.`,
+      }),
+    });
+  }
+
+  if (passiveConfig.id === 'remendador-borrow-division') {
+    if (!selectedDivisionActionId) {
+      throw new AppError('Escolha uma carta de Divisão para preparar no arsenal.', 400);
+    }
+    const divisionAction = getDivisionActionById(selectedDivisionActionId);
+    if (!divisionAction) {
+      throw new AppError('A carta de Divisão escolhida é inválida.', 404);
+    }
+
+    spendImo({
+      participant: actingParticipant,
+      participantCombatState: getParticipantCombatState(combatState, actingParticipant.id),
+      amount: Number(passiveConfig.imoCost || 0),
+    });
+    addTemporaryDivisionAction({
+      combatState,
+      participantId: actingParticipant.id,
+      actionId: divisionAction.id,
+    });
+
+    const updatedParticipantsById = await persistParticipantStates({
+      participantsById,
+      originalParticipants: context.participants,
+    });
+    const updatedMatch = await buildUpdatedMatchStateAfterAction({
+      match: context.match,
+      participantsById: updatedParticipantsById,
+      combatState,
+    });
+    const createdLog = await addMatchLog({
+      matchId: context.match.id,
+      type: 'MATCH_USE_PASSIVE',
+      message: `${actingParticipant.display_name} preparou ${divisionAction.name} com a passiva de Remendador.`,
+      payload: {
+        actingParticipantId,
+        passiveActionId,
+        selectedDivisionActionId,
+      },
+    });
+
+    return finalizeActionResponse({
+      roomId,
+      userId,
+      includeSnapshot,
+      actionState: await buildActionRealtimeState({
+        activeMatch: updatedMatch,
+        participants: [...updatedParticipantsById.values()],
+        currentUserId: userId,
+        log: createdLog,
+        notice: `${divisionAction.name} foi adicionada ao arsenal como ação temporária de uso único.`,
+      }),
+    });
+  }
+
+  if (passiveConfig.id === 'executor-extra-attack') {
+    return attackForPlayer({
+      roomId,
+      userId,
+      actingParticipantId,
+      targetParticipantId,
+      attackKind: 'executor-extra',
+      includeSnapshot,
+    });
+  }
+
+  throw new AppError('Essa passiva ainda não possui resolução automática.', 409);
+}
+
+async function attackForPlayer({
+  roomId,
+  userId,
+  actingParticipantId,
+  targetParticipantId,
+  attackKind = 'standard',
+  includeSnapshot = true,
+}) {
+  const context = await requireActiveTurnContext({
+    roomId,
+    userId,
+    actingParticipantId,
+    includeAllParticipants: true,
+  });
+
+  const participantsById = createMutableParticipantMap(context.participants);
+  const actingParticipant = participantsById.get(context.currentParticipant.id);
+  const combatState = normalizeCombatState(context.match.combat_state_json);
+  const targetState = resolvePassiveTargetState({
+    actingParticipant,
+    participantsById,
+    targetParticipantId,
+    targetScope: 'selected-enemy',
+  });
+
+  if (attackKind === 'standard') {
+    consumeActionSlot({ participant: actingParticipant, actionSlot: 'standard' });
+  } else if (attackKind === 'executor-extra') {
+    const actingDivision = getDivisionById((await getResolvedCharacterForUser({
+      characterId: actingParticipant.source_character_id,
+      ownerId: actingParticipant.controller_user_id,
+    })).division?.id);
+    if (actingDivision?.id !== 'executor-desgastado') {
+      throw new AppError('Essa criatura não pode usar ataque extra de Executor.', 403);
+    }
+
+    const participantCombatState = getParticipantCombatState(combatState, actingParticipant.id);
+    if (Number(participantCombatState.executorCooldownTurns || 0) > 0) {
+      throw new AppError('O ataque extra do Executor ainda está em recarga.', 409);
+    }
+    participantCombatState.executorCooldownTurns = EXECUTOR_ATTACK_COOLDOWN_TURNS;
+  } else {
+    throw new AppError('Tipo de ataque inválido.', 400);
+  }
+
+  const attackSuccess = rollAttackOutcome();
+  const damageNotices = [];
+  if (attackSuccess) {
+    damageNotices.push(
+      ...(await applyDamageToParticipant({
+        targetParticipantId: targetState.id,
+        damageAmount: ATTACK_DAMAGE,
+        participantsById,
+        combatState,
+      }))
+    );
+  } else if (attackKind === 'executor-extra') {
+    damageNotices.push(
+      ...(await applyDamageToParticipant({
+        targetParticipantId: actingParticipant.id,
+        damageAmount: 1,
+        participantsById,
+        combatState,
+      }))
+    );
+  }
+
+  const updatedParticipantsById = await persistParticipantStates({
+    participantsById,
+    originalParticipants: context.participants,
+  });
+  const updatedMatch = await buildUpdatedMatchStateAfterAction({
+    match: context.match,
+    participantsById: updatedParticipantsById,
+    combatState,
+  });
+  const createdLog = await addMatchLog({
+    matchId: context.match.id,
+    type: 'MATCH_ATTACK',
+    message: `${actingParticipant.display_name} realizou ${attackKind === 'executor-extra' ? 'um ataque extra' : 'um ataque'} contra ${targetState.display_name}.`,
+    payload: {
+      actingParticipantId,
+      targetParticipantId: targetState.id,
+      attackKind,
+      attackSuccess,
+    },
+  });
+
+  return finalizeActionResponse({
+    roomId,
+    userId,
+    includeSnapshot,
+    actionState: await buildActionRealtimeState({
+      activeMatch: updatedMatch,
+      participants: [...updatedParticipantsById.values()],
+      currentUserId: userId,
+      log: createdLog,
+      notice: [
+        attackSuccess
+          ? `${actingParticipant.display_name} acertou o ataque em ${targetState.display_name}.`
+          : `${actingParticipant.display_name} falhou o ataque.`,
+        ...damageNotices,
+      ].filter(Boolean).join(' '),
     }),
   });
 }
@@ -658,12 +1067,21 @@ async function endTurnForPlayer({ roomId, userId, actingParticipantId, includeSn
   const participantsById = createMutableParticipantMap(context.participants);
   const mutableCurrentParticipant = participantsById.get(context.currentParticipant.id);
   const mutableNextParticipant = participantsById.get(nextParticipant.id);
+  const combatState = normalizeCombatState(context.match.combat_state_json);
   mutableCurrentParticipant.has_exiled_imo_this_turn = false;
+  const nextParticipantCombatState = getParticipantCombatState(combatState, mutableNextParticipant.id);
   mutableNextParticipant.imo = Math.min(mutableNextParticipant.max_imo, mutableNextParticipant.imo + 1);
   mutableNextParticipant.has_generated_imo_this_turn = false;
   mutableNextParticipant.standard_action_used = false;
   mutableNextParticipant.complementary_action_used = false;
   mutableNextParticipant.has_exiled_imo_this_turn = false;
+  const currentParticipantCombatState = getParticipantCombatState(combatState, mutableCurrentParticipant.id);
+  currentParticipantCombatState.temporaryImo = 0;
+  currentParticipantCombatState.flageladoTriggered = false;
+  if (Number(currentParticipantCombatState.executorCooldownTurns || 0) > 0) {
+    currentParticipantCombatState.executorCooldownTurns -= 1;
+  }
+  nextParticipantCombatState.flageladoTriggered = false;
 
   const updatedParticipantsById = await persistParticipantStates({
     participantsById,
@@ -678,7 +1096,7 @@ async function endTurnForPlayer({ roomId, userId, actingParticipantId, includeSn
     currentTurnParticipantId: nextParticipant.id,
     winnerUserId: null,
     winnerParticipantId: null,
-    combatState: null,
+    combatState,
   });
 
   const createdLog = await addMatchLog({
@@ -903,6 +1321,8 @@ async function buildParticipantState({ activeMatch, matchParticipant, allPartici
     matchParticipant,
     characterCache,
   });
+  const combatState = normalizeCombatState(activeMatch.combat_state_json);
+  const participantCombatState = getParticipantCombatState(combatState, matchParticipant.id);
   const handCards = canRevealPrivateState
     ? await hydrateCards({
         fallbackOwnerUserId: matchParticipant.controller_user_id,
@@ -921,6 +1341,23 @@ async function buildParticipantState({ activeMatch, matchParticipant, allPartici
         characterCache,
       })
     : [];
+  const divisionActions = await resolveParticipantDivisionActions({
+    actingParticipant: matchParticipant,
+    combatState,
+    resolvedCharacter,
+  });
+  const passiveState = buildParticipantPassiveState({
+    matchParticipant,
+    participantCombatState,
+    division: resolvedCharacter.division,
+  });
+  const passiveActions = buildParticipantPassiveActions({
+    matchParticipant,
+    participantCombatState,
+    division: resolvedCharacter.division,
+    availableImoCatalog,
+    handCards,
+  });
 
   return {
     participantId: matchParticipant.id,
@@ -933,6 +1370,7 @@ async function buildParticipantState({ activeMatch, matchParticipant, allPartici
     health: matchParticipant.health,
     imo: matchParticipant.imo,
     maxImo: matchParticipant.max_imo,
+    temporaryImo: participantCombatState.temporaryImo || 0,
     hasGeneratedImoThisTurn: matchParticipant.has_generated_imo_this_turn,
     hasExiledImoThisTurn: matchParticipant.has_exiled_imo_this_turn,
     standardActionUsed: matchParticipant.standard_action_used,
@@ -951,13 +1389,15 @@ async function buildParticipantState({ activeMatch, matchParticipant, allPartici
     availableImoCatalog,
     availableAllyImoSources,
     division: resolvedCharacter.division || null,
-    divisionActions: resolvedCharacter.divisionCards || [],
+    divisionActions,
+    passiveState,
+    passiveActions,
     turnActions: {
       openingHandPending: !matchParticipant.opening_hand_ready,
       canGenerateImo:
         activeMatch.status === 'active' &&
         activeMatch.current_turn_participant_id === matchParticipant.id &&
-        !matchParticipant.standard_action_used &&
+        !matchParticipant.complementary_action_used &&
         !matchParticipant.has_generated_imo_this_turn &&
         (matchParticipant.hand_cards_json || []).length < MAX_HAND_SIZE,
       canUseLoucura:
@@ -973,6 +1413,10 @@ async function buildParticipantState({ activeMatch, matchParticipant, allPartici
         activeMatch.status === 'active' &&
         activeMatch.current_turn_participant_id === matchParticipant.id &&
         !matchParticipant.complementary_action_used,
+      canAttack:
+        activeMatch.status === 'active' &&
+        activeMatch.current_turn_participant_id === matchParticipant.id &&
+        !matchParticipant.standard_action_used,
       canEndTurn:
         activeMatch.status === 'active' && activeMatch.current_turn_participant_id === matchParticipant.id,
     },
@@ -1092,6 +1536,7 @@ async function buildNormalizedRoomPlayers({ room, players, masterUserId = null }
           id: character.id,
           name: character.name,
           owner_id: character.owner_id,
+          division: character.division || null,
         })),
     };
   });
@@ -1166,6 +1611,7 @@ async function buildActionRealtimeState({
   log = null,
   notice = '',
   effectResults = [],
+  privateEffectsByUserId = {},
 }) {
   const characterCache = new Map();
   const participantStates = await buildParticipantStates({
@@ -1194,6 +1640,7 @@ async function buildActionRealtimeState({
     },
     notice,
     effectResults,
+    privateEffectsByUserId,
     log: log ? mapLogRecord(log) : null,
   };
 }
@@ -1605,6 +2052,14 @@ function resolveAutomationTarget({ automation, actingParticipant, participantsBy
     throw new AppError('Essa ação exige um inimigo como alvo.', 400);
   }
 
+  if (automation.targetScope === 'selected-ally' && !isAlliedParticipant(actingParticipant, targetState)) {
+    throw new AppError('Essa ação exige um aliado como alvo.', 400);
+  }
+
+  if (automation.targetScope === 'selected-ally' && targetState.id === actingParticipant.id) {
+    throw new AppError('Essa ação exige outro participante aliado como alvo.', 400);
+  }
+
   return targetState;
 }
 
@@ -1618,6 +2073,392 @@ function resolveEffectTargetState({ effect, actingParticipant, selectedTargetSta
   }
 
   return selectedTargetState;
+}
+
+function createEmptyCombatState() {
+  return {
+    participants: {},
+  };
+}
+
+function normalizeCombatState(rawCombatState) {
+  const source = rawCombatState && typeof rawCombatState === 'object' ? rawCombatState : {};
+  const participants = source.participants && typeof source.participants === 'object' ? source.participants : {};
+
+  return {
+    participants: Object.fromEntries(
+      Object.entries(participants).map(([participantId, state]) => [
+        participantId,
+        {
+          temporaryImo: Number(state?.temporaryImo || 0),
+          flageladoTriggered: Boolean(state?.flageladoTriggered),
+          executorCooldownTurns: Number(state?.executorCooldownTurns || 0),
+          temporaryDivisionActions: Array.isArray(state?.temporaryDivisionActions)
+            ? state.temporaryDivisionActions.map((entry) => ({
+                instanceId: String(entry?.instanceId || '').trim(),
+                actionId: String(entry?.actionId || '').trim(),
+              })).filter((entry) => entry.instanceId && entry.actionId)
+            : [],
+        },
+      ])
+    ),
+  };
+}
+
+function getParticipantCombatState(combatState, participantId) {
+  const key = String(Number(participantId));
+  if (!combatState.participants[key]) {
+    combatState.participants[key] = {
+      temporaryImo: 0,
+      flageladoTriggered: false,
+      executorCooldownTurns: 0,
+      temporaryDivisionActions: [],
+    };
+  }
+
+  return combatState.participants[key];
+}
+
+async function resolveParticipantDivisionActions({ actingParticipant, combatState, resolvedCharacter = null }) {
+  const resolved =
+    resolvedCharacter ||
+    (await getResolvedCharacterForUser({
+      characterId: actingParticipant.source_character_id,
+      ownerId: actingParticipant.controller_user_id,
+    }));
+  const baseActions = (resolved.divisionCards || []).map((card) => ({
+    ...card,
+    instanceId: `base::${card.id}`,
+    isTemporary: false,
+  }));
+  const participantCombatState = getParticipantCombatState(combatState, actingParticipant.id);
+  const temporaryActions = (participantCombatState.temporaryDivisionActions || [])
+    .map((entry) => {
+      const baseCard = getDivisionActionById(entry.actionId);
+      if (!baseCard) {
+        return null;
+      }
+
+      return {
+        ...baseCard,
+        instanceId: entry.instanceId,
+        isTemporary: true,
+      };
+    })
+    .filter(Boolean);
+
+  return [...baseActions, ...temporaryActions];
+}
+
+function addTemporaryDivisionAction({ combatState, participantId, actionId }) {
+  const participantCombatState = getParticipantCombatState(combatState, participantId);
+  participantCombatState.temporaryDivisionActions = [
+    ...(participantCombatState.temporaryDivisionActions || []),
+    {
+      instanceId: `temp::${actionId}::${Math.random().toString(36).slice(2, 10)}`,
+      actionId,
+    },
+  ];
+}
+
+function removeTemporaryDivisionAction({ combatState, participantId, divisionInstanceId }) {
+  const participantCombatState = getParticipantCombatState(combatState, participantId);
+  participantCombatState.temporaryDivisionActions = (participantCombatState.temporaryDivisionActions || []).filter(
+    (entry) => entry.instanceId !== divisionInstanceId
+  );
+}
+
+function buildParticipantPassiveState({ matchParticipant, participantCombatState, division }) {
+  return {
+    temporaryImo: participantCombatState.temporaryImo || 0,
+    generateImoLimit: division?.id === 'rato-de-ruina' ? 2 : 1,
+    executorCooldownTurns: participantCombatState.executorCooldownTurns || 0,
+    executorExtraAttackReady:
+      division?.id === 'executor-desgastado' && Number(participantCombatState.executorCooldownTurns || 0) <= 0,
+    temporaryDivisionActionsCount: (participantCombatState.temporaryDivisionActions || []).length,
+    hasFlageladoTriggeredThisTurn: Boolean(participantCombatState.flageladoTriggered),
+    hasGeneratedImoThisTurn: Boolean(matchParticipant.has_generated_imo_this_turn),
+  };
+}
+
+function buildParticipantPassiveActions({ matchParticipant, participantCombatState, division, availableImoCatalog, handCards }) {
+  if (!division?.passiveConfig) {
+    return [];
+  }
+
+  if (division.id === 'condutor-de-ecos') {
+    const costOptions = [...new Set((handCards || []).filter((card) => card.category === 'imo').map((card) => Number(card.imoCost || 0)))];
+    const ownCatalogByCost = Object.fromEntries(
+      costOptions.map((cost) => [
+        String(cost),
+        (availableImoCatalog || []).filter((card) => Number(card.imoCost || 0) === Number(cost)),
+      ])
+    );
+
+    return [
+      {
+        id: division.passiveConfig.id,
+        name: 'Compartilhar Eco',
+        description: division.passive,
+        actionSlot: division.passiveConfig.actionSlot,
+        imoCost: division.passiveConfig.imoCost || 0,
+        targetScope: division.passiveConfig.targetScope,
+        selection: division.passiveConfig.selection,
+        extraSelection: division.passiveConfig.extraSelection,
+        ownCatalogByCost,
+      },
+    ];
+  }
+
+  if (division.id === 'remendador') {
+    return [
+      {
+        id: division.passiveConfig.id,
+        name: 'Montar Divisão',
+        description: division.passive,
+        actionSlot: division.passiveConfig.actionSlot,
+        imoCost: division.passiveConfig.imoCost || 0,
+        selection: division.passiveConfig.selection,
+        divisionCatalogOptions: DIVISION_ACTION_CATALOG.map((card) => ({
+          id: card.id,
+          name: card.name,
+          description: card.effect,
+        })),
+      },
+    ];
+  }
+
+  if (division.id === 'executor-desgastado') {
+    return [
+      {
+        id: division.passiveConfig.id,
+        name: 'Ataque Extra',
+        description: division.passive,
+        actionSlot: division.passiveConfig.actionSlot,
+        targetScope: division.passiveConfig.targetScope,
+        cooldownTurns: participantCombatState.executorCooldownTurns || 0,
+      },
+    ];
+  }
+
+  return [];
+}
+
+function getSpendableImo(participant, participantCombatState) {
+  return Number(participant?.imo || 0) + Number(participantCombatState?.temporaryImo || 0);
+}
+
+function spendImo({ participant, participantCombatState, amount }) {
+  const numericAmount = Number(amount || 0);
+  if (numericAmount <= 0) {
+    return;
+  }
+
+  const temporaryImo = Number(participantCombatState.temporaryImo || 0);
+  const consumedTemporary = Math.min(temporaryImo, numericAmount);
+  participantCombatState.temporaryImo = temporaryImo - consumedTemporary;
+  participant.imo -= numericAmount - consumedTemporary;
+}
+
+async function buildUpdatedMatchStateAfterAction({ match, participantsById, combatState }) {
+  const participants = [...participantsById.values()];
+  const resolution = resolveMatchProgressAfterDamage({
+    match,
+    participants,
+  });
+
+  return updateMatchState({
+    matchId: match.id,
+    status: resolution.status,
+    round: resolution.round,
+    currentTurnPlayerId: resolution.currentTurnPlayerId,
+    currentTurnParticipantId: resolution.currentTurnParticipantId,
+    winnerUserId: resolution.winnerUserId,
+    winnerParticipantId: resolution.winnerParticipantId,
+    combatState,
+    endedAt: resolution.status === 'finished' ? new Date() : null,
+  });
+}
+
+function resolveMatchProgressAfterDamage({ match, participants }) {
+  const aliveParticipants = participants.filter((participant) => !participant.is_defeated);
+  if (!aliveParticipants.length) {
+    return {
+      status: 'finished',
+      round: match.round,
+      currentTurnPlayerId: null,
+      currentTurnParticipantId: null,
+      winnerUserId: null,
+      winnerParticipantId: null,
+    };
+  }
+
+  const firstAlive = aliveParticipants[0];
+  const hasOpposingTeamAlive = aliveParticipants.some(
+    (participant) => !isAlliedParticipant(firstAlive, participant)
+  );
+  if (!hasOpposingTeamAlive) {
+    return {
+      status: 'finished',
+      round: match.round,
+      currentTurnPlayerId: firstAlive.controller_user_id,
+      currentTurnParticipantId: firstAlive.id,
+      winnerUserId: firstAlive.controller_user_id,
+      winnerParticipantId: firstAlive.id,
+    };
+  }
+
+  const currentTurnAlive = aliveParticipants.some(
+    (participant) => participant.id === match.current_turn_participant_id
+  );
+  if (!currentTurnAlive) {
+    const nextParticipant = getNextActiveParticipant(aliveParticipants, match.current_turn_participant_id);
+    return {
+      status: 'active',
+      round: match.round,
+      currentTurnPlayerId: nextParticipant?.controller_user_id || match.current_turn_player_id,
+      currentTurnParticipantId: nextParticipant?.id || match.current_turn_participant_id,
+      winnerUserId: null,
+      winnerParticipantId: null,
+    };
+  }
+
+  return {
+    status: match.status,
+    round: match.round,
+    currentTurnPlayerId: match.current_turn_player_id,
+    currentTurnParticipantId: match.current_turn_participant_id,
+    winnerUserId: match.winner_user_id,
+    winnerParticipantId: match.winner_participant_id,
+  };
+}
+
+async function applyDamageToParticipant({ targetParticipantId, damageAmount, participantsById, combatState }) {
+  const targetState = participantsById.get(Number(targetParticipantId));
+  if (!targetState || targetState.is_defeated) {
+    return [];
+  }
+
+  targetState.health = Math.max(0, Number(targetState.health || 0) - Number(damageAmount || 0));
+  if (targetState.health <= 0) {
+    targetState.is_defeated = true;
+  }
+
+  const passiveNotices = await applyTakeDamagePassives({
+    targetState,
+    combatState,
+  });
+  const notices = [...passiveNotices];
+  if (targetState.is_defeated) {
+    notices.push(`${targetState.display_name} foi derrotado.`);
+  }
+
+  return notices;
+}
+
+async function applyTakeDamagePassives({ targetState, combatState }) {
+  const { division } = await getResolvedCharacterForUser({
+    characterId: targetState.source_character_id,
+    ownerId: targetState.controller_user_id,
+  });
+  if (division?.id !== 'flagelado-voluntario') {
+    return [];
+  }
+
+  const participantCombatState = getParticipantCombatState(combatState, targetState.id);
+  if (participantCombatState.flageladoTriggered) {
+    return [];
+  }
+
+  participantCombatState.flageladoTriggered = true;
+  participantCombatState.temporaryImo += FLAGELADO_TEMP_IMO_GAIN;
+  return [`A passiva de ${targetState.display_name} gerou 1 Imo Temporário.`];
+}
+
+function resolvePassiveTargetState({ actingParticipant, participantsById, targetParticipantId, targetScope }) {
+  const targetState = participantsById.get(Number(targetParticipantId));
+  if (!targetState) {
+    throw new AppError('Escolha um alvo válido.', 404);
+  }
+
+  if (targetScope === 'selected-enemy' && isAlliedParticipant(actingParticipant, targetState)) {
+    throw new AppError('Essa ação exige um inimigo como alvo.', 400);
+  }
+
+  if (targetScope === 'selected-ally' && !isAlliedParticipant(actingParticipant, targetState)) {
+    throw new AppError('Essa ação exige um aliado como alvo.', 400);
+  }
+
+  if (targetState.id === actingParticipant.id) {
+    throw new AppError('Essa ação exige outro participante como alvo.', 400);
+  }
+
+  return targetState;
+}
+
+async function applyPostUseImoPassives({ actingParticipant, participantsById, combatState }) {
+  const privateEffectsByUserId = {};
+  const effectResults = [];
+
+  for (const participant of participantsById.values()) {
+    if (participant.id === actingParticipant.id || participant.is_defeated) {
+      continue;
+    }
+
+    if (isAlliedParticipant(actingParticipant, participant)) {
+      continue;
+    }
+
+    const { division } = await getResolvedCharacterForUser({
+      characterId: participant.source_character_id,
+      ownerId: participant.controller_user_id,
+    });
+    if (division?.id !== 'arquivista-do-vazio') {
+      continue;
+    }
+
+    if (!(actingParticipant.hand_cards_json || []).length) {
+      continue;
+    }
+
+    const randomIndex = Math.floor(Math.random() * actingParticipant.hand_cards_json.length);
+    const revealedEntry = actingParticipant.hand_cards_json[randomIndex];
+    const revealedCard = await resolveMatchCardEntry({
+      cardEntry: revealedEntry,
+      fallbackOwnerUserId: actingParticipant.controller_user_id,
+    });
+    if (!revealedCard) {
+      continue;
+    }
+
+    const effect = {
+      type: 'viewRandomHandCard',
+      actorParticipantId: participant.id,
+      targetParticipantId: actingParticipant.id,
+      targetDisplayName: actingParticipant.display_name,
+      card: {
+        ...revealedCard,
+        instanceId: revealedEntry.instanceId,
+      },
+      notice: `${participant.display_name} visualizou uma carta da mão de ${actingParticipant.display_name} pela passiva de Arquivista do Vazio.`,
+    };
+    if (!privateEffectsByUserId[participant.controller_user_id]) {
+      privateEffectsByUserId[participant.controller_user_id] = [];
+    }
+    privateEffectsByUserId[participant.controller_user_id].push(effect);
+    if (participant.controller_user_id === actingParticipant.controller_user_id) {
+      effectResults.push(effect);
+    }
+  }
+
+  return {
+    effectResults,
+    privateEffectsByUserId,
+  };
+}
+
+function rollAttackOutcome(randomFn = Math.random) {
+  return Number(randomFn()) >= 0.5;
 }
 
 function consumeActionSlot({ participant, actionSlot }) {
@@ -1670,7 +2511,11 @@ async function finalizeActionResponse({ roomId, userId, includeSnapshot, actionS
   }
 
   const snapshot = await getMatchSnapshot({ roomId, userId });
-  if (!actionState?.notice && !actionState?.effectResults?.length) {
+  if (
+    !actionState?.notice &&
+    !actionState?.effectResults?.length &&
+    !Object.keys(actionState?.privateEffectsByUserId || {}).length
+  ) {
     return snapshot;
   }
 
@@ -1678,6 +2523,7 @@ async function finalizeActionResponse({ roomId, userId, includeSnapshot, actionS
     ...snapshot,
     actionNotice: actionState.notice,
     actionEffects: actionState.effectResults || [],
+    privateEffectsByUserId: actionState.privateEffectsByUserId || {},
   };
 }
 
@@ -1685,13 +2531,27 @@ module.exports = {
   __testables: {
     addUniqueCardId,
     applyAutomation,
+    applyDamageToParticipant,
+    buildParticipantPassiveActions,
+    buildParticipantPassiveState,
+    buildUpdatedMatchStateAfterAction,
+    createEmptyCombatState,
     assertDivisionActionCanBeUsed,
     buildGeneratedAllyImoCardKey,
     buildDivisionActionNotice,
     consumeActionSlot,
+    getParticipantCombatState,
+    getSpendableImo,
     isAlliedParticipant,
+    normalizeCombatState,
+    resolveMatchProgressAfterDamage,
+    resolveParticipantDivisionActions,
+    resolvePassiveTargetState,
     resolveAutomationTarget,
+    rollAttackOutcome,
+    spendImo,
   },
+  attackForPlayer,
   completeOpeningHandForPlayer,
   endTurnForPlayer,
   exileImoCardForPlayer,
@@ -1701,5 +2561,6 @@ module.exports = {
   getRealtimeMatchStatesForUsers,
   startMatchForRoom,
   useDivisionActionForPlayer,
+  usePassiveActionForPlayer,
   useImoCardForPlayer,
 };

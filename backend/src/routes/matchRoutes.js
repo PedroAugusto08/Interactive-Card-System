@@ -15,6 +15,8 @@ router.post('/:roomId/generate-imo', asyncHandler(matchController.generateImo));
 router.post('/:roomId/use-imo-card', asyncHandler(matchController.useImoCard));
 router.post('/:roomId/exile-imo-card', asyncHandler(matchController.exileImoCard));
 router.post('/:roomId/use-division-action', asyncHandler(matchController.useDivisionAction));
+router.post('/:roomId/use-passive-action', asyncHandler(matchController.usePassiveAction));
+router.post('/:roomId/attack', asyncHandler(matchController.attack));
 router.post('/:roomId/end-turn', asyncHandler(matchController.endTurn));
 
 module.exports = { matchRoutes: router };

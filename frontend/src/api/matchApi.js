@@ -16,11 +16,11 @@ export const matchApi = {
       body: { actingParticipantId, selectedCardIds },
     }),
 
-  generateImo: ({ roomId, actingParticipantId, cardId, token }) =>
+  generateImo: ({ roomId, actingParticipantId, cardId, selectedCardIds, token }) =>
     request(`/match/${roomId}/generate-imo`, {
       method: 'POST',
       token,
-      body: { actingParticipantId, cardId },
+      body: { actingParticipantId, cardId, selectedCardIds },
     }),
 
   useImoCard: ({
@@ -77,6 +77,7 @@ export const matchApi = {
     roomId,
     actingParticipantId,
     divisionId,
+    divisionInstanceId,
     targetParticipantId,
     selectedExiledCardId,
     selectedOwnHandCardId,
@@ -89,10 +90,51 @@ export const matchApi = {
       body: {
         actingParticipantId,
         divisionId,
+        divisionInstanceId,
         targetParticipantId,
         selectedExiledCardId,
         selectedOwnHandCardId,
         selectedTargetHandCardId,
+      },
+    }),
+
+  usePassiveAction: ({
+    roomId,
+    actingParticipantId,
+    passiveActionId,
+    targetParticipantId,
+    selectedOwnHandCardId,
+    selectedCatalogCardId,
+    selectedDivisionActionId,
+    token,
+  }) =>
+    request(`/match/${roomId}/use-passive-action`, {
+      method: 'POST',
+      token,
+      body: {
+        actingParticipantId,
+        passiveActionId,
+        targetParticipantId,
+        selectedOwnHandCardId,
+        selectedCatalogCardId,
+        selectedDivisionActionId,
+      },
+    }),
+
+  attack: ({
+    roomId,
+    actingParticipantId,
+    targetParticipantId,
+    attackKind,
+    token,
+  }) =>
+    request(`/match/${roomId}/attack`, {
+      method: 'POST',
+      token,
+      body: {
+        actingParticipantId,
+        targetParticipantId,
+        attackKind,
       },
     }),
 

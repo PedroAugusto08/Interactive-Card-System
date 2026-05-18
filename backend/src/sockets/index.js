@@ -189,6 +189,7 @@ function createSocketServer(httpServer) {
         userId: user.id,
         actingParticipantId: Number(payload.actingParticipantId),
         cardId: payload.cardId,
+        selectedCardIds: Array.isArray(payload.selectedCardIds) ? payload.selectedCardIds : undefined,
         includeSnapshot: false,
       })
     );
@@ -231,10 +232,36 @@ function createSocketServer(httpServer) {
         userId: user.id,
         actingParticipantId: Number(payload.actingParticipantId),
         divisionId: payload.divisionId,
+        divisionInstanceId: payload.divisionInstanceId,
         targetParticipantId: payload.targetParticipantId ? Number(payload.targetParticipantId) : undefined,
         selectedExiledCardId: payload.selectedExiledCardId,
         selectedOwnHandCardId: payload.selectedOwnHandCardId,
         selectedTargetHandCardId: payload.selectedTargetHandCardId,
+        includeSnapshot: false,
+      })
+    );
+
+    bindMatchAction(io, socket, 'match:usePassiveAction', (payload) =>
+      matchService.usePassiveActionForPlayer({
+        roomId: Number(payload.roomId),
+        userId: user.id,
+        actingParticipantId: Number(payload.actingParticipantId),
+        passiveActionId: payload.passiveActionId,
+        targetParticipantId: payload.targetParticipantId ? Number(payload.targetParticipantId) : undefined,
+        selectedOwnHandCardId: payload.selectedOwnHandCardId,
+        selectedCatalogCardId: payload.selectedCatalogCardId,
+        selectedDivisionActionId: payload.selectedDivisionActionId,
+        includeSnapshot: false,
+      })
+    );
+
+    bindMatchAction(io, socket, 'match:attack', (payload) =>
+      matchService.attackForPlayer({
+        roomId: Number(payload.roomId),
+        userId: user.id,
+        actingParticipantId: Number(payload.actingParticipantId),
+        targetParticipantId: payload.targetParticipantId ? Number(payload.targetParticipantId) : undefined,
+        attackKind: payload.attackKind,
         includeSnapshot: false,
       })
     );
@@ -274,12 +301,42 @@ function bindMatchAction(io, socket, eventName, handler) {
           metrics: { totalMs: 0 },
         });
       }
+      if (actionState?.privateEffectsByUserId) {
+        emitPrivateMatchEffects(io, Number(payload?.roomId), actionState.privateEffectsByUserId);
+      }
       queueMatchBroadcast(io, Number(payload?.roomId), [socket.id]);
     } catch (error) {
       acknowledgeSocketError(acknowledge, error.message);
       emitSocketError(socket, error.message);
     }
   });
+}
+
+function emitPrivateMatchEffects(io, roomId, privateEffectsByUserId) {
+  if (!roomId || !privateEffectsByUserId || typeof privateEffectsByUserId !== 'object') {
+    return;
+  }
+
+  for (const [targetUserId, effects] of Object.entries(privateEffectsByUserId)) {
+    const normalizedUserId = Number(targetUserId);
+    if (!Number.isInteger(normalizedUserId) || !Array.isArray(effects) || !effects.length) {
+      continue;
+    }
+
+    for (const socketInstance of io.sockets.sockets.values()) {
+      if (Number(socketInstance.data?.user?.id) !== normalizedUserId) {
+        continue;
+      }
+
+      if (Number(socketInstance.data?.currentRoomId) !== roomId) {
+        continue;
+      }
+
+      socketInstance.emit('match:private-effect', {
+        effects,
+      });
+    }
+  }
 }
 
 async function syncSocketRoomState(socket, roomId) {

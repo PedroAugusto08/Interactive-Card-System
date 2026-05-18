@@ -157,3 +157,83 @@ test('applyAutomation can cancel the complementary action of a selected enemy', 
   assert.deepEqual(outcome.effects, []);
   assert.deepEqual(outcome.notices, ['Efeito resolvido: a ação complementar de Fera foi anulada.']);
 });
+
+test('spendImo consumes temporary Imo before normal Imo', () => {
+  const participant = { imo: 3 };
+  const participantCombatState = { temporaryImo: 2 };
+
+  __testables.spendImo({
+    participant,
+    participantCombatState,
+    amount: 4,
+  });
+
+  assert.equal(participantCombatState.temporaryImo, 0);
+  assert.equal(participant.imo, 1);
+});
+
+test('buildParticipantPassiveState reflects Rato generation and Executor cooldown', () => {
+  const ratoState = __testables.buildParticipantPassiveState({
+    matchParticipant: { has_generated_imo_this_turn: false },
+    participantCombatState: { temporaryImo: 0, executorCooldownTurns: 0, temporaryDivisionActions: [] },
+    division: { id: 'rato-de-ruina' },
+  });
+  const executorState = __testables.buildParticipantPassiveState({
+    matchParticipant: { has_generated_imo_this_turn: false },
+    participantCombatState: { temporaryImo: 0, executorCooldownTurns: 2, temporaryDivisionActions: [] },
+    division: { id: 'executor-desgastado' },
+  });
+
+  assert.equal(ratoState.generateImoLimit, 2);
+  assert.equal(executorState.executorExtraAttackReady, false);
+  assert.equal(executorState.executorCooldownTurns, 2);
+});
+
+test('resolvePassiveTargetState accepts allied targets and blocks self for ally passives', () => {
+  const actingParticipant = { id: 1, participant_type: 'player' };
+  const participantsById = new Map([
+    [1, actingParticipant],
+    [2, { id: 2, participant_type: 'player' }],
+  ]);
+
+  assert.equal(
+    __testables.resolvePassiveTargetState({
+      actingParticipant,
+      participantsById,
+      targetParticipantId: 2,
+      targetScope: 'selected-ally',
+    }).id,
+    2
+  );
+
+  assert.throws(
+    () =>
+      __testables.resolvePassiveTargetState({
+        actingParticipant,
+        participantsById,
+        targetParticipantId: 1,
+        targetScope: 'selected-ally',
+      }),
+    /outro participante/
+  );
+});
+
+test('resolveMatchProgressAfterDamage finishes the match when only one team remains', () => {
+  const resolution = __testables.resolveMatchProgressAfterDamage({
+    match: {
+      status: 'active',
+      round: 3,
+      current_turn_player_id: 10,
+      current_turn_participant_id: 1,
+      winner_user_id: null,
+      winner_participant_id: null,
+    },
+    participants: [
+      { id: 1, controller_user_id: 10, participant_type: 'player', is_defeated: false },
+      { id: 2, controller_user_id: 11, participant_type: 'master-creature', is_defeated: true },
+    ],
+  });
+
+  assert.equal(resolution.status, 'finished');
+  assert.equal(resolution.winnerParticipantId, 1);
+});

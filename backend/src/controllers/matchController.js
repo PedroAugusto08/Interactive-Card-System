@@ -22,11 +22,19 @@ const useImoCardSchema = targetedActionSchema.extend({
 
 const generateImoSchema = z.object({
   actingParticipantId: z.coerce.number().int().positive(),
-  cardId: z.string().trim().min(1),
+  cardId: z.string().trim().min(1).optional(),
+  selectedCardIds: z.array(z.string().trim().min(1)).max(2).optional(),
 });
 
 const useDivisionActionSchema = targetedActionSchema.extend({
   divisionId: z.string().trim().min(1),
+  divisionInstanceId: z.string().trim().min(1).optional(),
+});
+
+const usePassiveActionSchema = targetedActionSchema.extend({
+  passiveActionId: z.string().trim().min(1),
+  selectedCatalogCardId: z.string().trim().min(1).optional(),
+  selectedDivisionActionId: z.string().trim().min(1).optional(),
 });
 
 const completeOpeningHandSchema = z.object({
@@ -40,6 +48,11 @@ const actingParticipantSchema = z.object({
 
 const exileImoCardSchema = targetedActionSchema.extend({
   cardId: z.string().trim().min(1),
+});
+
+const attackSchema = targetedActionSchema.extend({
+  targetParticipantId: z.coerce.number().int().positive(),
+  attackKind: z.enum(['standard', 'executor-extra']).optional(),
 });
 
 async function getMatchSnapshot(req, res) {
@@ -84,6 +97,7 @@ async function generateImo(req, res) {
     userId: req.user.id,
     actingParticipantId: payload.actingParticipantId,
     cardId: payload.cardId,
+    selectedCardIds: payload.selectedCardIds,
   });
 
   return res.status(200).json(data);
@@ -133,6 +147,7 @@ async function useDivisionAction(req, res) {
     userId: req.user.id,
     actingParticipantId: payload.actingParticipantId,
     divisionId: payload.divisionId,
+    divisionInstanceId: payload.divisionInstanceId,
     targetParticipantId: payload.targetParticipantId,
     selectedExiledCardId: payload.selectedExiledCardId,
     selectedOwnHandCardId: payload.selectedOwnHandCardId,
@@ -154,7 +169,39 @@ async function endTurn(req, res) {
   return res.status(200).json(data);
 }
 
+async function usePassiveAction(req, res) {
+  const { roomId } = roomIdParamSchema.parse(req.params);
+  const payload = usePassiveActionSchema.parse(req.body);
+  const data = await matchService.usePassiveActionForPlayer({
+    roomId,
+    userId: req.user.id,
+    actingParticipantId: payload.actingParticipantId,
+    passiveActionId: payload.passiveActionId,
+    targetParticipantId: payload.targetParticipantId,
+    selectedOwnHandCardId: payload.selectedOwnHandCardId,
+    selectedCatalogCardId: payload.selectedCatalogCardId,
+    selectedDivisionActionId: payload.selectedDivisionActionId,
+  });
+
+  return res.status(200).json(data);
+}
+
+async function attack(req, res) {
+  const { roomId } = roomIdParamSchema.parse(req.params);
+  const payload = attackSchema.parse(req.body);
+  const data = await matchService.attackForPlayer({
+    roomId,
+    userId: req.user.id,
+    actingParticipantId: payload.actingParticipantId,
+    targetParticipantId: payload.targetParticipantId,
+    attackKind: payload.attackKind,
+  });
+
+  return res.status(200).json(data);
+}
+
 module.exports = {
+  attack,
   completeOpeningHand,
   endTurn,
   exileImoCard,
@@ -162,5 +209,6 @@ module.exports = {
   getMatchSnapshot,
   startMatch,
   useDivisionAction,
+  usePassiveAction,
   useImoCard,
 };

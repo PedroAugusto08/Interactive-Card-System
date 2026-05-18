@@ -8,6 +8,12 @@ const DIVISION_CATALOG = [
     passive:
       'Pode realizar um ataque extra a cada 2 turnos. Sofre +1 de dano ao falhar neste ataque.',
     imoCardSlots: 1,
+    passiveConfig: {
+      id: 'executor-extra-attack',
+      type: 'active',
+      actionSlot: 'free',
+      targetScope: 'selected-enemy',
+    },
   },
   {
     id: 'condutor-de-ecos',
@@ -16,6 +22,15 @@ const DIVISION_CATALOG = [
     passive:
       'Pode consumir uma carta de Imo da mão para gerar uma carta de mesmo custo na mão de um aliado ao custo de 1 de Imo.',
     imoCardSlots: 2,
+    passiveConfig: {
+      id: 'condutor-share-imo',
+      type: 'active',
+      actionSlot: 'complementary',
+      imoCost: 1,
+      targetScope: 'selected-ally',
+      selection: 'own-hand-card',
+      extraSelection: 'own-catalog-card',
+    },
   },
   {
     id: 'flagelado-voluntario',
@@ -23,6 +38,11 @@ const DIVISION_CATALOG = [
     actionIds: ['divisao', 'maldicao'],
     passive: 'Uma vez por turno ao sofrer dano ganha 1 de Imo Temporário.',
     imoCardSlots: 1,
+    passiveConfig: {
+      id: 'flagelado-temp-imo',
+      type: 'trigger',
+      trigger: 'take-damage',
+    },
   },
   {
     id: 'rato-de-ruina',
@@ -30,6 +50,12 @@ const DIVISION_CATALOG = [
     actionIds: ['exploracao', 'loucura'],
     passive: 'Pode gerar duas de uma carta por turno.',
     imoCardSlots: 2,
+    passiveConfig: {
+      id: 'rato-double-generate',
+      type: 'modifier',
+      trigger: 'generate-imo',
+      maxGeneratedCards: 2,
+    },
   },
   {
     id: 'remendador',
@@ -37,6 +63,13 @@ const DIVISION_CATALOG = [
     actionIds: ['esquema'],
     passive: 'Pode utilizar seu turno para gerar uma carta de qualquer divisão para si ao custo de 3 de Imo.',
     imoCardSlots: 2,
+    passiveConfig: {
+      id: 'remendador-borrow-division',
+      type: 'active',
+      actionSlot: 'standard',
+      imoCost: 3,
+      selection: 'division-action-id',
+    },
   },
   {
     id: 'arquivista-do-vazio',
@@ -44,6 +77,11 @@ const DIVISION_CATALOG = [
     actionIds: ['interromper', 'memoria-seletiva'],
     passive: 'Quando um inimigo usa uma carta de Imo, você pode olhar uma carta da mão dele.',
     imoCardSlots: 2,
+    passiveConfig: {
+      id: 'arquivista-view-on-enemy-imo',
+      type: 'trigger',
+      trigger: 'enemy-use-imo',
+    },
   },
 ];
 

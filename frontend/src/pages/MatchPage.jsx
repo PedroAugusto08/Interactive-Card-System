@@ -69,6 +69,20 @@ function getTargetOptions(participants, actingParticipantId, targetScope) {
     );
   }
 
+  if (targetScope === 'selected-ally') {
+    const actingParticipant = participants.find((participant) => participant.participantId === actingParticipantId);
+    if (!actingParticipant) {
+      return [];
+    }
+
+    return participants.filter(
+      (participant) =>
+        !participant.isDefeated &&
+        participant.participantId !== actingParticipantId &&
+        areParticipantsAllies(actingParticipant, participant)
+    );
+  }
+
   return [];
 }
 
@@ -103,11 +117,16 @@ function openPendingActionConfig({
   exiledImoCardIds,
   handCards,
 }) {
-  const automation = kind === 'useImoCard'
-    ? entity.useAutomation
-    : kind === 'exileImoCard'
-      ? entity.exileAutomation
-      : entity.useAutomation;
+  const automation =
+    kind === 'useImoCard'
+      ? entity.useAutomation
+      : kind === 'exileImoCard'
+        ? entity.exileAutomation
+        : entity.useAutomation || {
+            targetScope: entity.targetScope,
+            selection: entity.selection,
+            extraSelection: entity.extraSelection,
+          };
   const targetOptions = getTargetOptions(participants, actingParticipantId, automation?.targetScope);
   const targetParticipantId = targetOptions[0]?.participantId || null;
   const targetHandCards = targetParticipantId
@@ -124,6 +143,9 @@ function openPendingActionConfig({
     selectedOwnHandCardId:
       handCards.find((card) => card.instanceId !== entity.instanceId)?.instanceId || handCards[0]?.instanceId || null,
     selectedTargetHandCardId: targetHandCards[0]?.instanceId || null,
+    selectedCatalogCardId: '',
+    selectedDivisionActionId: '',
+    selectedCardIds: [],
     generatedSourceParticipantId: null,
     generatedCardId: '',
   };
@@ -150,7 +172,7 @@ export function MatchPage() {
     selectedCardIds: [],
   });
   const [pendingAction, setPendingAction] = useState(null);
-  const [pendingPrivateView, setPendingPrivateView] = useState(null);
+  const [pendingPrivateViews, setPendingPrivateViews] = useState([]);
 
   const isSocketConnected = Boolean(socket?.connected);
   const controlledParticipantIds = viewer?.controlledParticipantIds || [];
@@ -203,14 +225,25 @@ export function MatchPage() {
       appendMatchLog(payload);
     }
 
+    function handlePrivateEffect(payload) {
+      const privateEffects = Array.isArray(payload?.effects) ? payload.effects : [];
+      if (!privateEffects.length) {
+        return;
+      }
+
+      setPendingPrivateViews((current) => [...current, ...privateEffects]);
+    }
+
     socket.on('room:update', handleRoomUpdate);
     socket.on('match:sync', handleMatchSync);
     socket.on('match:log', handleLog);
+    socket.on('match:private-effect', handlePrivateEffect);
 
     return () => {
       socket.off('room:update', handleRoomUpdate);
       socket.off('match:sync', handleMatchSync);
       socket.off('match:log', handleLog);
+      socket.off('match:private-effect', handlePrivateEffect);
     };
   }, [appendMatchLog, setMatchData, setRoomData, socket]);
 
@@ -248,8 +281,10 @@ export function MatchPage() {
   const handCards = focusedParticipant?.handCards || [];
   const exiledImoCardIds = focusedParticipant?.exiledImoCardIds || [];
   const divisionActions = focusedParticipant?.divisionActions || [];
+  const passiveActions = focusedParticipant?.passiveActions || [];
   const availableImoCatalog = focusedParticipant?.availableImoCatalog || [];
   const generatedImoSources = getGeneratedImoSources(focusedParticipant);
+  const pendingPrivateView = pendingPrivateViews[0] || null;
   const targetOptions = pendingAction
     ? getTargetOptions(participantStates, pendingAction.actingParticipantId, pendingAction.automation?.targetScope)
     : [];
@@ -260,6 +295,16 @@ export function MatchPage() {
     ? generatedImoSources.find((source) => source.sourceParticipantId === pendingAction.generatedSourceParticipantId) || null
     : null;
   const selectedGeneratedImoCards = selectedGeneratedImoSource?.cards || [];
+  const selectedPassiveCatalogOptions =
+    pendingAction?.kind === 'usePassiveAction' && pendingAction?.entity?.ownCatalogByCost && pendingAction?.selectedOwnHandCardId
+      ? pendingAction.entity.ownCatalogByCost[
+          String(
+            handCards.find((card) => card.instanceId === pendingAction.selectedOwnHandCardId)?.imoCost || ''
+          )
+        ] || []
+      : [];
+  const passiveDivisionCatalogOptions =
+    pendingAction?.kind === 'usePassiveAction' ? pendingAction?.entity?.divisionCatalogOptions || [] : [];
   const openingSelection =
     focusedParticipant?.openingHandPending && openingSelectionState.participantId === focusedParticipant.participantId
       ? openingSelectionState.selectedCardIds
@@ -294,6 +339,7 @@ export function MatchPage() {
             roomId: currentRoom.id,
             actingParticipantId: payload.actingParticipantId,
             cardId: payload.cardId,
+            selectedCardIds: payload.selectedCardIds,
             token,
           });
         } else if (action === 'match:useImoCard') {
@@ -310,6 +356,18 @@ export function MatchPage() {
           });
         } else if (action === 'match:useDivisionAction') {
           response = await matchApi.useDivisionAction({
+            roomId: currentRoom.id,
+            token,
+            ...payload,
+          });
+        } else if (action === 'match:usePassiveAction') {
+          response = await matchApi.usePassiveAction({
+            roomId: currentRoom.id,
+            token,
+            ...payload,
+          });
+        } else if (action === 'match:attack') {
+          response = await matchApi.attack({
             roomId: currentRoom.id,
             token,
             ...payload,
@@ -341,7 +399,14 @@ export function MatchPage() {
 
       const effectView = response?.effectResults?.find((effect) => effect.type === 'viewRandomHandCard');
       if (effectView) {
-        setPendingPrivateView(effectView);
+        setPendingPrivateViews((current) => [...current, effectView]);
+      }
+
+      const privateEffects = Object.values(response?.privateEffectsByUserId || {})
+        .flat()
+        .filter((effect) => effect?.type === 'viewRandomHandCard');
+      if (privateEffects.length) {
+        setPendingPrivateViews((current) => [...current, ...privateEffects]);
       }
     } catch (error) {
       setLocalError(formatErrorMessage(error));
@@ -351,17 +416,25 @@ export function MatchPage() {
   }
 
   function handleOpenAction(kind, entity) {
-    const automation = kind === 'useImoCard'
-      ? entity.useAutomation
-      : kind === 'exileImoCard'
-        ? entity.exileAutomation
-        : entity.useAutomation;
+    const automation =
+      kind === 'useImoCard'
+        ? entity.useAutomation
+        : kind === 'exileImoCard'
+          ? entity.exileAutomation
+          : entity.useAutomation || {
+              targetScope: entity.targetScope,
+              selection: entity.selection,
+              extraSelection: entity.extraSelection,
+            };
     const needsTarget = Boolean(automation?.targetScope);
     const needsExile = automation?.selection === 'own-exiled-card-id' && exiledImoCardIds.length > 0;
     const needsOwnHand = automation?.selection === 'own-hand-card';
     const needsTargetHand = automation?.selection === 'target-hand-card';
+    const needsCatalogCard = automation?.extraSelection === 'own-catalog-card';
+    const needsDivisionCatalog = automation?.selection === 'division-action-id';
+    const needsGeneratedCards = kind === 'generateImo' && Number(focusedParticipant?.passiveState?.generateImoLimit || 1) > 1;
 
-    if (kind === 'exileImoCard') {
+    if (kind === 'exileImoCard' || kind === 'usePassiveAction' || kind === 'attack' || kind === 'generateImo') {
       setPendingAction(
         openPendingActionConfig({
           kind,
@@ -375,11 +448,12 @@ export function MatchPage() {
       return;
     }
 
-    if (!needsTarget && !needsExile && !needsOwnHand && !needsTargetHand) {
+    if (!needsTarget && !needsExile && !needsOwnHand && !needsTargetHand && !needsCatalogCard && !needsDivisionCatalog && !needsGeneratedCards) {
       executeAction(`match:${kind}`, {
         actingParticipantId: focusedParticipant.participantId,
         cardId: entity.instanceId,
         divisionId: entity.id,
+        divisionInstanceId: entity.instanceId,
       });
       return;
     }
@@ -405,12 +479,18 @@ export function MatchPage() {
       actingParticipantId: pendingAction.actingParticipantId,
       cardId: pendingAction.entity.instanceId,
       divisionId: pendingAction.entity.id,
+      divisionInstanceId: pendingAction.entity.instanceId,
+      passiveActionId: pendingAction.entity.id,
+      attackKind: pendingAction.entity.attackKind,
       generatedSourceParticipantId: pendingAction.generatedSourceParticipantId,
       generatedCardId: pendingAction.generatedCardId,
       targetParticipantId: pendingAction.targetParticipantId,
       selectedExiledCardId: pendingAction.selectedExiledCardId,
       selectedOwnHandCardId: pendingAction.selectedOwnHandCardId,
       selectedTargetHandCardId: pendingAction.selectedTargetHandCardId,
+      selectedCatalogCardId: pendingAction.selectedCatalogCardId,
+      selectedDivisionActionId: pendingAction.selectedDivisionActionId,
+      selectedCardIds: pendingAction.selectedCardIds,
     });
     setPendingAction(null);
   }
@@ -452,7 +532,7 @@ export function MatchPage() {
         <div className="stack-gap" style={{ gap: '8px' }}>
           <h1 className="page-title">Partida</h1>
           <p className="muted-text">
-            Abertura inicial de Imo, geração com ação padrão, exílio tático e arsenal aberto de Divisão.
+            Abertura inicial de Imo, geração com ação complementar, exílio tático, passivas de Divisão e arsenal aberto.
           </p>
         </div>
         <div className="row-wrap">
@@ -485,6 +565,7 @@ export function MatchPage() {
             actions={
               <div className="row-wrap">
                 <Badge tone="secondary">Imo {focusedParticipant?.imo ?? 0}/{focusedParticipant?.maxImo ?? 0}</Badge>
+                <Badge tone="primary">Imo Temp. {focusedParticipant?.temporaryImo ?? 0}</Badge>
                 <Badge tone={focusedParticipant?.isCurrentTurn ? 'accent' : 'secondary'}>
                   {focusedParticipant?.isCurrentTurn ? 'Turno ativo' : 'Aguardando'}
                 </Badge>
@@ -520,6 +601,21 @@ export function MatchPage() {
 
                 <div className="row-wrap">
                   <Button
+                    disabled={!focusedParticipant.turnActions?.canAttack || isSubmitting}
+                    onClick={() =>
+                      handleOpenAction('attack', {
+                        id: 'attack:standard',
+                        name: 'Ataque',
+                        targetScope: 'selected-enemy',
+                        attackKind: 'standard',
+                      })
+                    }
+                    type="button"
+                    variant="secondary"
+                  >
+                    Atacar
+                  </Button>
+                  <Button
                     disabled={!focusedParticipant.turnActions?.canEndTurn || isSubmitting}
                     onClick={() =>
                       executeAction('match:endTurn', {
@@ -537,38 +633,45 @@ export function MatchPage() {
             )}
           </Card>
 
-          <Card title="Gerar Imo" description="Gasta a ação padrão, paga o custo de Imo e respeita o limite de 3 cartas na mão.">
+          <Card
+            title="Gerar Imo"
+            description={
+              Number(focusedParticipant?.passiveState?.generateImoLimit || 1) > 1
+                ? 'Gasta a ação complementar. Rato de Ruína pode escolher gerar 1 ou 2 cartas, iguais ou distintas.'
+                : 'Gasta a ação complementar, paga o custo de Imo e respeita o limite de 3 cartas na mão.'
+            }
+          >
             {focusedParticipant?.turnActions?.canGenerateImo ? (
               <div className="player-hand">
-                {availableImoCatalog.map((card) => (
-                  <div className="player-hand__slot" key={`generate-${card.id}`}>
-                    <CardItem
-                      category="Imo"
-                      cost={card.imoCost || 0}
-                      costLabel="Imo"
-                      description={card.effect}
-                      footer={
-                        <div className="row-wrap">
-                          <Button
-                            disabled={isSubmitting}
-                            onClick={() =>
-                              executeAction('match:generateImo', {
-                                actingParticipantId: focusedParticipant.participantId,
-                                cardId: card.id,
-                              })
-                            }
-                            size="sm"
-                            type="button"
-                          >
-                            Gerar
-                          </Button>
-                        </div>
-                      }
-                      imageSrc={resolveCardImageUrl(card.imagePath)}
-                      name={card.name}
-                    />
-                  </div>
-                ))}
+                <div className="player-hand__slot">
+                  <CardItem
+                    category="Imo"
+                    description={
+                      Number(focusedParticipant?.passiveState?.generateImoLimit || 1) > 1
+                        ? 'Escolha até 2 cartas do seu catálogo para gerar nesta ação complementar.'
+                        : 'Escolha 1 carta do seu catálogo para gerar nesta ação complementar.'
+                    }
+                    footer={
+                      <div className="row-wrap">
+                        <Button
+                          disabled={isSubmitting}
+                          onClick={() =>
+                            handleOpenAction('generateImo', {
+                              id: 'generate-imo',
+                              name: 'Gerar Imo',
+                              selectedCardIds: [],
+                            })
+                          }
+                          size="sm"
+                          type="button"
+                        >
+                          Escolher cartas
+                        </Button>
+                      </div>
+                    }
+                    name="Gerar Imo"
+                  />
+                </div>
               </div>
             ) : (
               <div className="empty-state">Essa criatura não pode gerar Imo agora.</div>
@@ -619,16 +722,77 @@ export function MatchPage() {
         </div>
 
         <div className="stack-gap">
+          <Card title="Passiva de Divisão" description="Estados e ativações especiais da divisão em foco.">
+            {focusedParticipant?.division ? (
+              <div className="stack-gap" style={{ gap: '12px' }}>
+                <div className="stack-gap" style={{ gap: '4px' }}>
+                  <strong>{focusedParticipant.division.name}</strong>
+                  <span className="muted-text compact">{focusedParticipant.division.passive}</span>
+                </div>
+
+                {focusedParticipant.passiveState ? (
+                  <div className="row-wrap">
+                    <Badge tone="secondary">
+                      Gerar até {focusedParticipant.passiveState.generateImoLimit || 1}
+                    </Badge>
+                    <Badge tone="secondary">
+                      Temp. arsenal {focusedParticipant.passiveState.temporaryDivisionActionsCount || 0}
+                    </Badge>
+                    <Badge tone={focusedParticipant.passiveState.executorExtraAttackReady ? 'accent' : 'secondary'}>
+                      Executor extra {focusedParticipant.passiveState.executorExtraAttackReady ? 'pronto' : `recarga ${focusedParticipant.passiveState.executorCooldownTurns || 0}`}
+                    </Badge>
+                  </div>
+                ) : null}
+
+                {passiveActions.length ? (
+                  <div className="player-hand">
+                    {passiveActions.map((action) => (
+                      <div className="player-hand__slot" key={`passive-${action.id}`}>
+                        <CardItem
+                          category="Passiva"
+                          cost={action.imoCost || 0}
+                          costLabel="Imo"
+                          description={action.description}
+                          footer={
+                            <div className="row-wrap">
+                              <Button
+                                disabled={
+                                  isSubmitting ||
+                                  !focusedParticipant?.isCurrentTurn ||
+                                  (action.id === 'executor-extra-attack' && !focusedParticipant?.passiveState?.executorExtraAttackReady)
+                                }
+                                onClick={() => handleOpenAction('usePassiveAction', action)}
+                                size="sm"
+                                type="button"
+                              >
+                                Usar
+                              </Button>
+                            </div>
+                          }
+                          name={action.name}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="empty-state">Essa passiva é automática ou não possui ativação manual agora.</div>
+                )}
+              </div>
+            ) : (
+              <div className="empty-state">Nenhuma divisão em foco.</div>
+            )}
+          </Card>
+
           <Card title="Arsenal de Divisão" description="Ações abertas do personagem, fora da mão e do exílio.">
             {divisionActions.length ? (
               <div className="player-hand">
                 {divisionActions.map((action) => (
-                  <div className="player-hand__slot" key={`division-${action.id}`}>
+                  <div className="player-hand__slot" key={`division-${action.instanceId || action.id}`}>
                     <CardItem
                       category="Divisão"
                       cost={action.imoCost || 0}
                       costLabel="Imo"
-                      description={action.effect}
+                      description={`${action.effect}${action.isTemporary ? '\n\nAção temporária de uso único.' : ''}`}
                       footer={
                         <div className="row-wrap">
                           <Button
@@ -648,6 +812,7 @@ export function MatchPage() {
                           >
                             Usar
                           </Button>
+                          {action.isTemporary ? <Badge tone="primary">Temporária</Badge> : null}
                         </div>
                       }
                       imageSrc={resolveCardImageUrl(action.imagePath)}
@@ -763,7 +928,11 @@ export function MatchPage() {
           pendingAction
             ? pendingAction.kind === 'exileImoCard'
               ? `Conclua os detalhes para exilar ${pendingAction.entity.name}.`
-              : `Conclua os detalhes para usar ${pendingAction.entity.name}.`
+              : pendingAction.kind === 'generateImo'
+                ? 'Escolha as cartas de Imo que serão geradas agora.'
+                : pendingAction.kind === 'attack'
+                  ? `Escolha o alvo para ${pendingAction.entity.name}.`
+                  : `Conclua os detalhes para usar ${pendingAction.entity.name}.`
             : ''
         }
         isLoading={isSubmitting}
@@ -874,6 +1043,72 @@ export function MatchPage() {
               </section>
             ) : null}
 
+            {pendingAction.kind === 'generateImo' ? (
+              <section className="stack-gap" style={{ gap: '10px' }}>
+                <span className="status-label">
+                  Escolha {Number(focusedParticipant?.passiveState?.generateImoLimit || 1) > 1 ? 'até 2 cartas' : '1 carta'}
+                </span>
+                <div className="row-wrap">
+                  {pendingAction.selectedCardIds.map((selectedCardId, index) => {
+                    const selectedCard = availableImoCatalog.find((card) => card.id === selectedCardId);
+                    return (
+                      <Button
+                        key={`selected-generate-card-${selectedCardId}-${index}`}
+                        onClick={() =>
+                          setPendingAction((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  selectedCardIds: current.selectedCardIds.filter((_, currentIndex) => currentIndex !== index),
+                                }
+                              : current
+                          )
+                        }
+                        type="button"
+                        variant="secondary"
+                      >
+                        {selectedCard?.name || 'Carta'} × remover
+                      </Button>
+                    );
+                  })}
+                </div>
+                <div className="row-wrap">
+                  {availableImoCatalog.map((card) => {
+                    const selectedCopies = pendingAction.selectedCardIds.filter((item) => item === card.id).length;
+                    const maxCards = Math.min(
+                      Number(focusedParticipant?.passiveState?.generateImoLimit || 1),
+                      Math.max(1, 3 - handCards.length)
+                    );
+                    return (
+                      <Button
+                        key={`generate-option-${card.id}`}
+                        onClick={() =>
+                          setPendingAction((current) => {
+                            if (!current) {
+                              return current;
+                            }
+
+                            if (current.selectedCardIds.length >= maxCards) {
+                              return current;
+                            }
+
+                            return {
+                              ...current,
+                              selectedCardIds: [...current.selectedCardIds, card.id],
+                            };
+                          })
+                        }
+                        type="button"
+                        variant={selectedCopies ? 'primary' : 'secondary'}
+                      >
+                        {card.name}{selectedCopies ? ` ×${selectedCopies}` : ''}
+                      </Button>
+                    );
+                  })}
+                </div>
+              </section>
+            ) : null}
+
             {pendingAction.automation?.selection === 'own-exiled-card-id' ? (
               <section className="stack-gap" style={{ gap: '10px' }}>
                 <span className="status-label">Escolha a carta do exílio</span>
@@ -937,6 +1172,50 @@ export function MatchPage() {
                 </div>
               </section>
             ) : null}
+
+            {pendingAction.automation?.extraSelection === 'own-catalog-card' ? (
+              <section className="stack-gap" style={{ gap: '10px' }}>
+                <span className="status-label">Escolha a carta do catálogo do Condutor</span>
+                <div className="row-wrap">
+                  {selectedPassiveCatalogOptions.map((card) => (
+                    <Button
+                      key={`passive-catalog-option-${card.id}`}
+                      onClick={() =>
+                        setPendingAction((current) =>
+                          current ? { ...current, selectedCatalogCardId: card.id } : current
+                        )
+                      }
+                      type="button"
+                      variant={pendingAction.selectedCatalogCardId === card.id ? 'primary' : 'secondary'}
+                    >
+                      {card.name}
+                    </Button>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {pendingAction.automation?.selection === 'division-action-id' ? (
+              <section className="stack-gap" style={{ gap: '10px' }}>
+                <span className="status-label">Escolha a ação de Divisão temporária</span>
+                <div className="row-wrap">
+                  {passiveDivisionCatalogOptions.map((card) => (
+                    <Button
+                      key={`division-catalog-option-${card.id}`}
+                      onClick={() =>
+                        setPendingAction((current) =>
+                          current ? { ...current, selectedDivisionActionId: card.id } : current
+                        )
+                      }
+                      type="button"
+                      variant={pendingAction.selectedDivisionActionId === card.id ? 'primary' : 'secondary'}
+                    >
+                      {card.name}
+                    </Button>
+                  ))}
+                </div>
+              </section>
+            ) : null}
           </div>
         ) : null}
       </Modal>
@@ -949,8 +1228,8 @@ export function MatchPage() {
             ? `Você visualizou uma carta aleatória da mão de ${pendingPrivateView.targetDisplayName}.`
             : ''
         }
-        onClose={() => setPendingPrivateView(null)}
-        onConfirm={() => setPendingPrivateView(null)}
+        onClose={() => setPendingPrivateViews((current) => current.slice(1))}
+        onConfirm={() => setPendingPrivateViews((current) => current.slice(1))}
         open={Boolean(pendingPrivateView)}
         title="Informação privada"
       >

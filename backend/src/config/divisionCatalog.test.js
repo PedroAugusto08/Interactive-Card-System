@@ -16,6 +16,7 @@ test('division catalog exposes fixed divisions with passive, cards, and imo slot
   assert.ok(arquivista);
   assert.equal(arquivista.imoCardSlots, 2);
   assert.match(arquivista.passive, /inimigo usa uma carta de Imo/i);
+  assert.equal(arquivista.passiveConfig.id, 'arquivista-view-on-enemy-imo');
   assert.ok(entries.every((division) => Array.isArray(division.cards) && division.cards.length >= 1));
 });
 
