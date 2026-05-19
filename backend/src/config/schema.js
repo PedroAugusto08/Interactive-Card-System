@@ -1,6 +1,11 @@
 const { query } = require('./db');
 const { DIVISION_ACTION_CATALOG, getDivisionActionById } = require('./cardsCatalog');
-const { getDivisionById, inferDivisionIdFromActionIds } = require('./divisionCatalog');
+const {
+  FRAGMENT_KEYS,
+  getDivisionById,
+  inferDivisionIdFromActionIds,
+  normalizeDivisionFragments,
+} = require('./divisionCatalog');
 
 async function ensureSchema() {
   await query(`
@@ -55,6 +60,23 @@ async function ensureSchema() {
     ALTER TABLE characters
     ADD COLUMN IF NOT EXISTS division_id VARCHAR(80);
   `);
+
+  await query(`
+    ALTER TABLE characters
+    ADD COLUMN IF NOT EXISTS base_carne INTEGER NOT NULL DEFAULT 5;
+  `);
+
+  await query(`
+    ALTER TABLE characters
+    ADD COLUMN IF NOT EXISTS base_imo INTEGER NOT NULL DEFAULT 5;
+  `);
+
+  for (const fragmentKey of FRAGMENT_KEYS) {
+    await query(`
+      ALTER TABLE characters
+      ADD COLUMN IF NOT EXISTS ${fragmentKey} INTEGER NOT NULL DEFAULT 0;
+    `);
+  }
 
   await query(`
     CREATE TABLE IF NOT EXISTS room_players (
@@ -182,6 +204,16 @@ async function ensureSchema() {
   `);
 
   await query(`
+    ALTER TABLE match_participants
+    ADD COLUMN IF NOT EXISTS current_carne INTEGER NOT NULL DEFAULT 10;
+  `);
+
+  await query(`
+    ALTER TABLE match_participants
+    ADD COLUMN IF NOT EXISTS current_imo INTEGER NOT NULL DEFAULT 3;
+  `);
+
+  await query(`
     CREATE INDEX IF NOT EXISTS match_participants_match_idx
     ON match_participants (match_id, turn_order);
   `);
@@ -204,6 +236,8 @@ async function ensureSchema() {
 
   await migrateDecksToCharacters();
   await migrateCharactersToDivisionCatalog();
+  await migrateCharacterBaseStats();
+  await migrateMatchParticipantResourceFields();
   await migrateRoomSelectionsToCharacters();
   await migrateMatchParticipantsToCharacters();
 }
@@ -352,7 +386,7 @@ async function migrateMatchParticipantsToCharacters() {
 
 async function migrateCharactersToDivisionCatalog() {
   const result = await query(`
-    SELECT id, division_id, division_ids_json
+    SELECT id, division_id, division_ids_json, ${FRAGMENT_KEYS.join(', ')}
     FROM characters
     ORDER BY id ASC;
   `);
@@ -376,6 +410,69 @@ async function migrateCharactersToDivisionCatalog() {
       [character.id, division.id, JSON.stringify(division.actionIds)]
     );
   }
+}
+
+async function migrateCharacterBaseStats() {
+  const result = await query(`
+    SELECT id, division_id, division_ids_json, base_carne, base_imo, ${FRAGMENT_KEYS.join(', ')}
+    FROM characters
+    ORDER BY id ASC;
+  `);
+
+  for (const character of result.rows) {
+    const inferredDivisionId =
+      String(character.division_id || '').trim() || inferDivisionIdFromActionIds(character.division_ids_json || []);
+    const division = getDivisionById(inferredDivisionId);
+    const baseFragments = normalizeDivisionFragments(division?.fragments);
+    const nextFragments = Object.fromEntries(
+      FRAGMENT_KEYS.map((key) => {
+        const currentValue = Number(character[key] || 0);
+        return [key, currentValue > 0 ? currentValue : Number(baseFragments[key] || 0)];
+      })
+    );
+
+    await query(
+      `
+        UPDATE characters
+        SET
+          base_carne = COALESCE(NULLIF(base_carne, 0), 5),
+          base_imo = COALESCE(NULLIF(base_imo, 0), 5),
+          combate = $2,
+          pontaria = $3,
+          resistencia = $4,
+          furor = $5,
+          percepcao = $6,
+          conhecimento = $7,
+          medicina = $8,
+          furtividade = $9,
+          improviso = $10,
+          mobilidade = $11
+        WHERE id = $1;
+      `,
+      [
+        character.id,
+        nextFragments.combate,
+        nextFragments.pontaria,
+        nextFragments.resistencia,
+        nextFragments.furor,
+        nextFragments.percepcao,
+        nextFragments.conhecimento,
+        nextFragments.medicina,
+        nextFragments.furtividade,
+        nextFragments.improviso,
+        nextFragments.mobilidade,
+      ]
+    );
+  }
+}
+
+async function migrateMatchParticipantResourceFields() {
+  await query(`
+    UPDATE match_participants
+    SET
+      current_carne = COALESCE(current_carne, health),
+      current_imo = COALESCE(current_imo, imo);
+  `);
 }
 
 function extractCharacterLoadout(cardsJson) {

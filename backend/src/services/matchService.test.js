@@ -159,8 +159,8 @@ test('applyAutomation can cancel the complementary action of a selected enemy', 
 });
 
 test('spendImo consumes temporary Imo before normal Imo', () => {
-  const participant = { imo: 3 };
-  const participantCombatState = { temporaryImo: 2 };
+  const participant = { imo: 3, current_imo: 3, current_carne: 5 };
+  const participantCombatState = { temporaryImo: 2, temporaryCarne: 0, combatStatus: 'active' };
 
   __testables.spendImo({
     participant,
@@ -170,6 +170,7 @@ test('spendImo consumes temporary Imo before normal Imo', () => {
 
   assert.equal(participantCombatState.temporaryImo, 0);
   assert.equal(participant.imo, 1);
+  assert.equal(participant.current_imo, 1);
 });
 
 test('buildParticipantPassiveState reflects Rato generation and Executor cooldown', () => {
@@ -236,4 +237,71 @@ test('resolveMatchProgressAfterDamage finishes the match when only one team rema
 
   assert.equal(resolution.status, 'finished');
   assert.equal(resolution.winnerParticipantId, 1);
+});
+
+test('applyCarneDamage consumes temporary Carne before real Carne', () => {
+  const participant = {
+    health: 4,
+    current_carne: 4,
+    imo: 3,
+    current_imo: 3,
+    is_defeated: false,
+  };
+  const participantCombatState = {
+    temporaryCarne: 2,
+    temporaryImo: 0,
+    combatStatus: 'active',
+  };
+
+  __testables.applyCarneDamage({
+    participant,
+    participantCombatState,
+    amount: 3,
+  });
+
+  assert.equal(participantCombatState.temporaryCarne, 0);
+  assert.equal(participant.current_carne, 3);
+  assert.equal(participant.health, 3);
+});
+
+test('updateCombatStatus marks participant as down when effective Imo reaches zero', () => {
+  const participant = {
+    current_carne: 5,
+    current_imo: 0,
+    is_defeated: false,
+  };
+  const participantCombatState = {
+    temporaryCarne: 0,
+    temporaryImo: 0,
+    combatStatus: 'active',
+  };
+
+  const nextStatus = __testables.updateCombatStatus({
+    participant,
+    participantCombatState,
+  });
+
+  assert.equal(nextStatus, 'down');
+  assert.equal(__testables.getCombatStatus(participant, participantCombatState), 'down');
+});
+
+test('updateCombatStatus restores participant to active after resources become positive again', () => {
+  const participant = {
+    current_carne: 2,
+    current_imo: 1,
+    is_defeated: false,
+  };
+  const participantCombatState = {
+    temporaryCarne: 0,
+    temporaryImo: 0,
+    combatStatus: 'down',
+  };
+
+  const nextStatus = __testables.updateCombatStatus({
+    participant,
+    participantCombatState,
+  });
+
+  assert.equal(nextStatus, 'active');
+  assert.equal(__testables.getCombatStatus(participant, participantCombatState), 'active');
 });

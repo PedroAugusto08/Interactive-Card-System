@@ -1,5 +1,22 @@
 const { getDivisionActionById } = require('./cardsCatalog');
 
+const FRAGMENT_KEYS = [
+  'combate',
+  'pontaria',
+  'resistencia',
+  'furor',
+  'percepcao',
+  'conhecimento',
+  'medicina',
+  'furtividade',
+  'improviso',
+  'mobilidade',
+];
+
+function normalizeDivisionFragments(fragments) {
+  return Object.fromEntries(FRAGMENT_KEYS.map((key) => [key, Number(fragments?.[key] || 0)]));
+}
+
 const DIVISION_CATALOG = [
   {
     id: 'executor-desgastado',
@@ -14,13 +31,18 @@ const DIVISION_CATALOG = [
       actionSlot: 'free',
       targetScope: 'selected-enemy',
     },
+    fragments: {
+      combate: 2,
+      pontaria: 2,
+      resistencia: 1,
+    },
   },
   {
     id: 'condutor-de-ecos',
     name: 'Condutor de Ecos',
     actionIds: ['visualizar', 'ecoar', 'equalizar'],
     passive:
-      'Pode consumir uma carta de Imo da mão para gerar uma carta de mesmo custo na mão de um aliado ao custo de 1 de Imo.',
+      'Pode consumir uma carta de Imo da mao para gerar uma carta de mesmo custo na mao de um aliado ao custo de 1 de Imo.',
     imoCardSlots: 2,
     passiveConfig: {
       id: 'condutor-share-imo',
@@ -31,22 +53,31 @@ const DIVISION_CATALOG = [
       selection: 'own-hand-card',
       extraSelection: 'own-catalog-card',
     },
+    fragments: {
+      furor: 3,
+      conhecimento: 2,
+    },
   },
   {
     id: 'flagelado-voluntario',
-    name: 'Flagelado Voluntário',
+    name: 'Flagelado Voluntario',
     actionIds: ['divisao', 'maldicao'],
-    passive: 'Uma vez por turno ao sofrer dano ganha 1 de Imo Temporário.',
+    passive: 'Uma vez por turno ao sofrer dano ganha 1 de Imo Temporario.',
     imoCardSlots: 1,
     passiveConfig: {
       id: 'flagelado-temp-imo',
       type: 'trigger',
       trigger: 'take-damage',
     },
+    fragments: {
+      resistencia: 3,
+      combate: 1,
+      furor: 1,
+    },
   },
   {
     id: 'rato-de-ruina',
-    name: 'Rato de Ruína',
+    name: 'Rato de Ruina',
     actionIds: ['exploracao', 'loucura'],
     passive: 'Pode gerar duas de uma carta por turno.',
     imoCardSlots: 2,
@@ -56,12 +87,16 @@ const DIVISION_CATALOG = [
       trigger: 'generate-imo',
       maxGeneratedCards: 2,
     },
+    fragments: {
+      furtividade: 3,
+      percepcao: 2,
+    },
   },
   {
     id: 'remendador',
     name: 'Remendador',
     actionIds: ['esquema'],
-    passive: 'Pode utilizar seu turno para gerar uma carta de qualquer divisão para si ao custo de 3 de Imo.',
+    passive: 'Pode utilizar seu turno para gerar uma carta de qualquer divisao para si ao custo de 3 de Imo.',
     imoCardSlots: 2,
     passiveConfig: {
       id: 'remendador-borrow-division',
@@ -70,17 +105,26 @@ const DIVISION_CATALOG = [
       imoCost: 3,
       selection: 'division-action-id',
     },
+    fragments: {
+      improviso: 3,
+      conhecimento: 1,
+      resistencia: 1,
+    },
   },
   {
     id: 'arquivista-do-vazio',
     name: 'Arquivista do Vazio',
     actionIds: ['interromper', 'memoria-seletiva'],
-    passive: 'Quando um inimigo usa uma carta de Imo, você pode olhar uma carta da mão dele.',
+    passive: 'Quando um inimigo usa uma carta de Imo, voce pode olhar uma carta da mao dele.',
     imoCardSlots: 2,
     passiveConfig: {
       id: 'arquivista-view-on-enemy-imo',
       type: 'trigger',
       trigger: 'enemy-use-imo',
+    },
+    fragments: {
+      conhecimento: 3,
+      percepcao: 2,
     },
   },
 ];
@@ -98,6 +142,7 @@ function hydrateDivision(division) {
 
   return {
     ...division,
+    fragments: normalizeDivisionFragments(division.fragments),
     cards: division.actionIds.map((actionId) => getDivisionActionById(actionId)).filter(Boolean),
   };
 }
@@ -135,8 +180,10 @@ function inferDivisionIdFromActionIds(actionIds) {
 
 module.exports = {
   DIVISION_CATALOG,
+  FRAGMENT_KEYS,
   getDivisionById,
   getDivisionCatalogEntries,
   hydrateDivision,
   inferDivisionIdFromActionIds,
+  normalizeDivisionFragments,
 };

@@ -18,10 +18,12 @@ const {
   mapImoCardRecordToCatalogCard,
 } = require('../config/cardsCatalog');
 const {
+  FRAGMENT_KEYS,
   getDivisionById,
   getDivisionCatalogEntries,
   hydrateDivision,
   inferDivisionIdFromActionIds,
+  normalizeDivisionFragments,
 } = require('../config/divisionCatalog');
 const { canUserManageMultipleDecks } = require('./masterOverride');
 
@@ -71,15 +73,36 @@ async function listImoCardsForUser(ownerId) {
   return cards.map(mapImoCardRecordToCatalogCard);
 }
 
-async function createCharacterForUser({ ownerId, name, description, divisionId, imoCardIds, requesterUser = null }) {
+async function createCharacterForUser({
+  ownerId,
+  name,
+  description,
+  divisionId,
+  baseCarne,
+  baseImo,
+  fragments,
+  imoCardIds,
+  requesterUser = null,
+}) {
   await assertUserCanCreateCharacter({ ownerId, requesterUser });
-  const normalized = await normalizeAndValidateCharacterLoadout({ ownerId, divisionId, imoCardIds });
+  const normalized = await normalizeAndValidateCharacterLoadout({
+    ownerId,
+    divisionId,
+    baseCarne,
+    baseImo,
+    fragments,
+    imoCardIds,
+    mode: 'create',
+  });
 
   const created = await createCharacter({
     ownerId,
     name,
     description: description || null,
     divisionId: normalized.divisionId,
+    baseCarne: normalized.baseCarne,
+    baseImo: normalized.baseImo,
+    fragments: normalized.fragments,
     divisionIds: normalized.divisionIds,
     imoCardIds: normalized.imoCardIds,
   });
@@ -95,7 +118,7 @@ async function listCharactersForUser(ownerId) {
 async function getCharacterForUser({ characterId, ownerId }) {
   const character = await findCharacterById(characterId);
   if (!character || character.owner_id !== ownerId) {
-    throw new AppError('Personagem não encontrado.', 404);
+    throw new AppError('Personagem nao encontrado.', 404);
   }
 
   return serializeCharacterRecord(character);
@@ -107,20 +130,34 @@ async function updateCharacterForUser({
   name,
   description,
   divisionId,
+  baseCarne,
+  baseImo,
+  fragments,
   imoCardIds,
 }) {
   const existing = await findCharacterById(characterId);
   if (!existing || existing.owner_id !== ownerId) {
-    throw new AppError('Personagem não encontrado.', 404);
+    throw new AppError('Personagem nao encontrado.', 404);
   }
 
-  const normalized = await normalizeAndValidateCharacterLoadout({ ownerId, divisionId, imoCardIds });
+  const normalized = await normalizeAndValidateCharacterLoadout({
+    ownerId,
+    divisionId,
+    baseCarne,
+    baseImo,
+    fragments,
+    imoCardIds,
+    mode: 'update',
+  });
   const updated = await updateCharacterById({
     characterId,
     ownerId,
     name,
     description: description || null,
     divisionId: normalized.divisionId,
+    baseCarne: normalized.baseCarne,
+    baseImo: normalized.baseImo,
+    fragments: normalized.fragments,
     divisionIds: normalized.divisionIds,
     imoCardIds: normalized.imoCardIds,
   });
@@ -131,7 +168,7 @@ async function updateCharacterForUser({
 async function deleteCharacterForUser({ characterId, ownerId }) {
   const existing = await findCharacterById(characterId);
   if (!existing || existing.owner_id !== ownerId) {
-    throw new AppError('Personagem não encontrado.', 404);
+    throw new AppError('Personagem nao encontrado.', 404);
   }
 
   const deleted = await deleteCharacterById({ characterId, ownerId });
@@ -155,19 +192,41 @@ async function getResolvedCharacterForUser({ characterId, ownerId }) {
   };
 }
 
-async function normalizeAndValidateCharacterLoadout({ ownerId, divisionId, imoCardIds }) {
+async function normalizeAndValidateCharacterLoadout({
+  ownerId,
+  divisionId,
+  baseCarne,
+  baseImo,
+  fragments,
+  imoCardIds,
+  mode = 'create',
+}) {
   const catalogMap = await buildCatalogMap(ownerId);
   const normalizedDivisionId = String(divisionId || '').trim();
   const nextImoCardIds = normalizeStringList(imoCardIds);
   const division = getDivisionById(normalizedDivisionId);
+  const numericBaseCarne = Number(baseCarne);
+  const numericBaseImo = Number(baseImo);
 
   if (!division) {
-    throw new AppError('Escolha uma Divisão válida para o personagem.', 400);
+    throw new AppError('Escolha uma Divisao valida para o personagem.', 400);
+  }
+
+  if (!Number.isInteger(numericBaseCarne) || !Number.isInteger(numericBaseImo)) {
+    throw new AppError('Carne e Imo base precisam ser inteiros.', 400);
+  }
+
+  const baseResourceSum = numericBaseCarne + numericBaseImo;
+  if (mode === 'create' && baseResourceSum !== 10) {
+    throw new AppError('Na criacao, Carne base + Imo base precisam somar exatamente 10.', 400);
+  }
+  if (mode !== 'create' && baseResourceSum < 10) {
+    throw new AppError('Os recursos base nao podem ficar abaixo do total inicial de 10.', 400);
   }
 
   if (nextImoCardIds.length !== Number(division.imoCardSlots || 0)) {
     throw new AppError(
-      `A Divisão ${division.name} exige exatamente ${division.imoCardSlots} carta(s) de Imo no personagem.`,
+      `A Divisao ${division.name} exige exatamente ${division.imoCardSlots} carta(s) de Imo no personagem.`,
       400
     );
   }
@@ -179,8 +238,26 @@ async function normalizeAndValidateCharacterLoadout({ ownerId, divisionId, imoCa
     }
   }
 
+  const divisionBaseFragments = normalizeDivisionFragments(division.fragments);
+  const normalizedFragments = normalizeCharacterFragments({
+    fragments,
+    fallbackFragments: divisionBaseFragments,
+  });
+
+  for (const fragmentKey of FRAGMENT_KEYS) {
+    if (normalizedFragments[fragmentKey] < divisionBaseFragments[fragmentKey]) {
+      throw new AppError(
+        `O fragmento ${fragmentKey} nao pode ficar abaixo da base inicial da Divisao ${division.name}.`,
+        400
+      );
+    }
+  }
+
   return {
     divisionId: division.id,
+    baseCarne: numericBaseCarne,
+    baseImo: numericBaseImo,
+    fragments: normalizedFragments,
     divisionIds: [...division.actionIds],
     imoCardIds: nextImoCardIds,
   };
@@ -228,10 +305,22 @@ function serializeCharacterRecord(character) {
   }
 
   const division = getCharacterDivision(character);
+  const fragments = normalizeCharacterFragments({
+    fragments: character,
+    fallbackFragments: division?.fragments,
+  });
+
   return {
     ...character,
     division_id: division?.id || String(character.division_id || '').trim() || null,
+    base_carne: Number(character.base_carne || 0),
+    base_imo: Number(character.base_imo || 0),
     division_ids_json: division?.actionIds || character.division_ids_json || [],
+    fragments,
+    resources: {
+      baseCarne: Number(character.base_carne || 0),
+      baseImo: Number(character.base_imo || 0),
+    },
     division: division
       ? {
           id: division.id,
@@ -240,6 +329,7 @@ function serializeCharacterRecord(character) {
           imoCardSlots: division.imoCardSlots,
           actionIds: division.actionIds,
           cards: division.cards,
+          fragments: normalizeDivisionFragments(division.fragments),
         }
       : null,
   };
@@ -260,6 +350,19 @@ function normalizeStringList(values) {
   return [...new Set((Array.isArray(values) ? values : []).map((value) => String(value || '').trim()).filter(Boolean))];
 }
 
+function normalizeCharacterFragments({ fragments, fallbackFragments = {} }) {
+  return Object.fromEntries(
+    FRAGMENT_KEYS.map((key) => {
+      const rawValue = fragments?.[key];
+      if (Number.isInteger(Number(rawValue))) {
+        return [key, Number(rawValue)];
+      }
+
+      return [key, Number(fallbackFragments?.[key] || 0)];
+    })
+  );
+}
+
 module.exports = {
   getCharacterCatalog,
   getCharacterCatalogSections,
@@ -274,6 +377,7 @@ module.exports = {
   resolveCardById,
   __testables: {
     getCharacterDivision,
+    normalizeCharacterFragments,
     serializeCharacterRecord,
   },
 };

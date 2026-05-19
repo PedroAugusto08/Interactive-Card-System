@@ -26,14 +26,16 @@ const {
   validateTurnOrderDraft,
 } = require('./participantUtils');
 
-const INITIAL_HEALTH = 10;
-const INITIAL_IMO = 3;
-const MAX_IMO = 10;
 const MAX_HAND_SIZE = 3;
 const OPENING_HAND_SIZE = 2;
 const ATTACK_DAMAGE = 1;
 const FLAGELADO_TEMP_IMO_GAIN = 1;
 const EXECUTOR_ATTACK_COOLDOWN_TURNS = 2;
+const COMBAT_STATUS = {
+  ACTIVE: 'active',
+  DOWN: 'down',
+  REMOVED: 'removed',
+};
 
 async function startMatchForRoom({ roomId, userId, requesterUser = null, includeSnapshot = true }) {
   const room = await findRoomById(roomId);
@@ -78,6 +80,7 @@ async function startMatchForRoom({ roomId, userId, requesterUser = null, include
     characterMap: buildCharacterMapFromPlayers(normalizedPlayers),
     masterUserId,
   });
+  const lobbyCharacterMap = buildCharacterMapFromPlayers(normalizedPlayers);
   const validation = validateTurnOrderDraft({
     lobbyEntries: lobbyParticipants,
     draftEntryIds: room.turn_order_draft_json || [],
@@ -108,6 +111,10 @@ async function startMatchForRoom({ roomId, userId, requesterUser = null, include
       throw new AppError('A ordem de turno ficou inconsistente.', 409);
     }
 
+    const sourceCharacter = lobbyCharacterMap.get(lobbyParticipant.sourceCharacterId);
+    const initialCarne = Number(sourceCharacter?.base_carne || 5);
+    const initialImo = Number(sourceCharacter?.base_imo || 5);
+
     await createMatchParticipant({
       matchId: match.id,
       controllerUserId: lobbyParticipant.controllerUserId,
@@ -115,9 +122,11 @@ async function startMatchForRoom({ roomId, userId, requesterUser = null, include
       sourceCharacterId: lobbyParticipant.sourceCharacterId,
       displayName: lobbyParticipant.displayName,
       turnOrder: index + 1,
-      health: INITIAL_HEALTH,
-      imo: INITIAL_IMO,
-      maxImo: MAX_IMO,
+      health: initialCarne,
+      imo: initialImo,
+      maxImo: initialImo,
+      currentCarne: initialCarne,
+      currentImo: initialImo,
       hasGeneratedImoThisTurn: false,
       standardActionUsed: false,
       complementaryActionUsed: false,
@@ -1057,7 +1066,11 @@ async function endTurnForPlayer({ roomId, userId, actingParticipantId, includeSn
     includeAllParticipants: true,
   });
 
-  const activeParticipants = context.participants.filter((participant) => !participant.is_defeated);
+  const combatState = normalizeCombatState(context.match.combat_state_json);
+  const activeParticipants = context.participants.filter(
+    (participant) =>
+      getCombatStatus(participant, getParticipantCombatState(combatState, participant.id)) === COMBAT_STATUS.ACTIVE
+  );
   const nextParticipant = getNextActiveParticipant(activeParticipants, context.currentParticipant.id);
   const nextRound =
     nextParticipant && nextParticipant.id === activeParticipants[0]?.id
@@ -1067,21 +1080,27 @@ async function endTurnForPlayer({ roomId, userId, actingParticipantId, includeSn
   const participantsById = createMutableParticipantMap(context.participants);
   const mutableCurrentParticipant = participantsById.get(context.currentParticipant.id);
   const mutableNextParticipant = participantsById.get(nextParticipant.id);
-  const combatState = normalizeCombatState(context.match.combat_state_json);
   mutableCurrentParticipant.has_exiled_imo_this_turn = false;
   const nextParticipantCombatState = getParticipantCombatState(combatState, mutableNextParticipant.id);
-  mutableNextParticipant.imo = Math.min(mutableNextParticipant.max_imo, mutableNextParticipant.imo + 1);
+  mutableNextParticipant.current_imo = Math.min(
+    mutableNextParticipant.max_imo,
+    Number(mutableNextParticipant.current_imo ?? mutableNextParticipant.imo ?? 0) + 1
+  );
+  mutableNextParticipant.imo = mutableNextParticipant.current_imo;
   mutableNextParticipant.has_generated_imo_this_turn = false;
   mutableNextParticipant.standard_action_used = false;
   mutableNextParticipant.complementary_action_used = false;
   mutableNextParticipant.has_exiled_imo_this_turn = false;
   const currentParticipantCombatState = getParticipantCombatState(combatState, mutableCurrentParticipant.id);
+  currentParticipantCombatState.temporaryCarne = 0;
   currentParticipantCombatState.temporaryImo = 0;
   currentParticipantCombatState.flageladoTriggered = false;
   if (Number(currentParticipantCombatState.executorCooldownTurns || 0) > 0) {
     currentParticipantCombatState.executorCooldownTurns -= 1;
   }
   nextParticipantCombatState.flageladoTriggered = false;
+  updateCombatStatus({ participant: mutableCurrentParticipant, participantCombatState: currentParticipantCombatState });
+  updateCombatStatus({ participant: mutableNextParticipant, participantCombatState: nextParticipantCombatState });
 
   const updatedParticipantsById = await persistParticipantStates({
     participantsById,
@@ -1135,9 +1154,14 @@ async function forfeitMatchByLeavingRoom({ roomId, userId, closeRoom = false }) 
 
   const participants = await listMatchParticipants(match.id);
   const participantsById = createMutableParticipantMap(participants);
+  const combatState = normalizeCombatState(match.combat_state_json);
   for (const participant of controlledParticipants) {
     const mutableParticipant = participantsById.get(participant.id);
     mutableParticipant.is_defeated = true;
+    updateCombatStatus({
+      participant: mutableParticipant,
+      participantCombatState: getParticipantCombatState(combatState, mutableParticipant.id),
+    });
   }
 
   const updatedParticipantsById = await persistParticipantStates({
@@ -1145,7 +1169,10 @@ async function forfeitMatchByLeavingRoom({ roomId, userId, closeRoom = false }) 
     originalParticipants: participants,
   });
 
-  const activeParticipants = [...updatedParticipantsById.values()].filter((participant) => !participant.is_defeated);
+  const activeParticipants = [...updatedParticipantsById.values()].filter(
+    (participant) =>
+      getCombatStatus(participant, getParticipantCombatState(combatState, participant.id)) === COMBAT_STATUS.ACTIVE
+  );
   if (closeRoom || activeParticipants.length <= 1) {
     const winner = activeParticipants[0] || null;
     await updateMatchState({
@@ -1156,7 +1183,7 @@ async function forfeitMatchByLeavingRoom({ roomId, userId, closeRoom = false }) 
       currentTurnParticipantId: winner?.id || null,
       winnerUserId: winner?.controller_user_id || null,
       winnerParticipantId: winner?.id || null,
-      combatState: null,
+      combatState,
       endedAt: new Date(),
     });
     if (closeRoom) {
@@ -1339,6 +1366,7 @@ async function buildParticipantState({ activeMatch, matchParticipant, allPartici
         actingParticipant: matchParticipant,
         allParticipants,
         characterCache,
+        combatState,
       })
     : [];
   const divisionActions = await resolveParticipantDivisionActions({
@@ -1358,6 +1386,19 @@ async function buildParticipantState({ activeMatch, matchParticipant, allPartici
     availableImoCatalog,
     handCards,
   });
+  const combatStatus = getCombatStatus(matchParticipant, participantCombatState);
+  const canTakeTurnAction =
+    activeMatch.status === 'active' &&
+    activeMatch.current_turn_participant_id === matchParticipant.id &&
+    combatStatus === COMBAT_STATUS.ACTIVE;
+  const baseCarne = Number(resolvedCharacter.character?.base_carne || 0);
+  const baseImo = Number(resolvedCharacter.character?.base_imo || 0);
+  const currentCarne = Number(matchParticipant.current_carne ?? matchParticipant.health ?? 0);
+  const currentImo = Number(matchParticipant.current_imo ?? matchParticipant.imo ?? 0);
+  const temporaryCarne = Number(participantCombatState.temporaryCarne || 0);
+  const temporaryImo = Number(participantCombatState.temporaryImo || 0);
+  const effectiveCarne = getEffectiveCarne(matchParticipant, participantCombatState);
+  const effectiveImo = getEffectiveImo(matchParticipant, participantCombatState);
 
   return {
     participantId: matchParticipant.id,
@@ -1367,17 +1408,25 @@ async function buildParticipantState({ activeMatch, matchParticipant, allPartici
     participantType: matchParticipant.participant_type,
     sourceCharacterId: matchParticipant.source_character_id,
     turnOrder: matchParticipant.turn_order,
-    health: matchParticipant.health,
-    imo: matchParticipant.imo,
-    maxImo: matchParticipant.max_imo,
-    temporaryImo: participantCombatState.temporaryImo || 0,
+    baseCarne,
+    baseImo,
+    currentCarne,
+    currentImo,
+    temporaryCarne,
+    temporaryImo,
+    effectiveCarne,
+    effectiveImo,
+    combatStatus,
+    health: currentCarne,
+    imo: currentImo,
+    maxImo: baseImo,
     hasGeneratedImoThisTurn: matchParticipant.has_generated_imo_this_turn,
     hasExiledImoThisTurn: matchParticipant.has_exiled_imo_this_turn,
     standardActionUsed: matchParticipant.standard_action_used,
     complementaryActionUsed: matchParticipant.complementary_action_used,
     openingHandReady: matchParticipant.opening_hand_ready,
     openingHandPending: !matchParticipant.opening_hand_ready,
-    isDefeated: matchParticipant.is_defeated,
+    isDefeated: combatStatus === COMBAT_STATUS.REMOVED,
     isControlledByViewer: canRevealPrivateState,
     isCurrentTurn: activeMatch.current_turn_participant_id === matchParticipant.id,
     zones: {
@@ -1389,36 +1438,25 @@ async function buildParticipantState({ activeMatch, matchParticipant, allPartici
     availableImoCatalog,
     availableAllyImoSources,
     division: resolvedCharacter.division || null,
+    fragments: resolvedCharacter.character?.fragments || {},
     divisionActions,
     passiveState,
     passiveActions,
     turnActions: {
       openingHandPending: !matchParticipant.opening_hand_ready,
       canGenerateImo:
-        activeMatch.status === 'active' &&
-        activeMatch.current_turn_participant_id === matchParticipant.id &&
+        canTakeTurnAction &&
         !matchParticipant.complementary_action_used &&
         !matchParticipant.has_generated_imo_this_turn &&
         (matchParticipant.hand_cards_json || []).length < MAX_HAND_SIZE,
       canUseLoucura:
-        activeMatch.status === 'active' &&
-        activeMatch.current_turn_participant_id === matchParticipant.id &&
+        canTakeTurnAction &&
         !matchParticipant.complementary_action_used &&
         Boolean(matchParticipant.has_exiled_imo_this_turn),
-      standardAvailable:
-        activeMatch.status === 'active' &&
-        activeMatch.current_turn_participant_id === matchParticipant.id &&
-        !matchParticipant.standard_action_used,
-      complementaryAvailable:
-        activeMatch.status === 'active' &&
-        activeMatch.current_turn_participant_id === matchParticipant.id &&
-        !matchParticipant.complementary_action_used,
-      canAttack:
-        activeMatch.status === 'active' &&
-        activeMatch.current_turn_participant_id === matchParticipant.id &&
-        !matchParticipant.standard_action_used,
-      canEndTurn:
-        activeMatch.status === 'active' && activeMatch.current_turn_participant_id === matchParticipant.id,
+      standardAvailable: canTakeTurnAction && !matchParticipant.standard_action_used,
+      complementaryAvailable: canTakeTurnAction && !matchParticipant.complementary_action_used,
+      canAttack: canTakeTurnAction && !matchParticipant.standard_action_used,
+      canEndTurn: canTakeTurnAction,
     },
   };
 }
@@ -1442,6 +1480,12 @@ async function requireActiveTurnContext({ roomId, userId, actingParticipantId, i
   if (context.match.current_turn_participant_id !== context.currentParticipant.id) {
     throw new AppError('Não é o turno dessa criatura.', 409);
   }
+
+  const combatState = normalizeCombatState(context.match.combat_state_json);
+  assertParticipantCanAct({
+    participant: context.currentParticipant,
+    participantCombatState: getParticipantCombatState(combatState, context.currentParticipant.id),
+  });
 
   return context;
 }
@@ -1536,6 +1580,9 @@ async function buildNormalizedRoomPlayers({ room, players, masterUserId = null }
           id: character.id,
           name: character.name,
           owner_id: character.owner_id,
+          base_carne: character.base_carne,
+          base_imo: character.base_imo,
+          fragments: character.fragments || null,
           division: character.division || null,
         })),
     };
@@ -1562,6 +1609,8 @@ function createMutableParticipantMap(participants) {
         exiled_imo_card_ids_json: [...(participant.exiled_imo_card_ids_json || [])],
         generated_ally_imo_card_keys_json: [...(participant.generated_ally_imo_card_keys_json || [])],
         has_exiled_imo_this_turn: Boolean(participant.has_exiled_imo_this_turn),
+        current_carne: Number(participant.current_carne ?? participant.health ?? 0),
+        current_imo: Number(participant.current_imo ?? participant.imo ?? 0),
       },
     ])
   );
@@ -1579,9 +1628,11 @@ async function persistParticipantStates({ participantsById, originalParticipants
     const updatedParticipant = await updateMatchParticipant({
       participantId: participantState.id,
       turnOrder: participantState.turn_order,
-      health: participantState.health,
-      imo: participantState.imo,
+      health: participantState.current_carne,
+      imo: participantState.current_imo,
       maxImo: participantState.max_imo,
+      currentCarne: participantState.current_carne,
+      currentImo: participantState.current_imo,
       hasGeneratedImoThisTurn: participantState.has_generated_imo_this_turn,
       hasExiledImoThisTurn: participantState.has_exiled_imo_this_turn,
       standardActionUsed: participantState.standard_action_used,
@@ -1658,12 +1709,12 @@ async function getCharacterStateForParticipant({ matchParticipant, characterCach
   return resolved;
 }
 
-async function buildAvailableAllyImoSources({ actingParticipant, allParticipants, characterCache }) {
+async function buildAvailableAllyImoSources({ actingParticipant, allParticipants, characterCache, combatState }) {
   const generatedAllyKeys = new Set(actingParticipant.generated_ally_imo_card_keys_json || []);
   const allies = (allParticipants || []).filter(
     (participant) =>
       participant.id !== actingParticipant.id &&
-      !participant.is_defeated &&
+      getCombatStatus(participant, getParticipantCombatState(combatState, participant.id)) === COMBAT_STATUS.ACTIVE &&
       isAlliedParticipant(actingParticipant, participant)
   );
   const sources = [];
@@ -2090,7 +2141,9 @@ function normalizeCombatState(rawCombatState) {
       Object.entries(participants).map(([participantId, state]) => [
         participantId,
         {
+          temporaryCarne: Number(state?.temporaryCarne || 0),
           temporaryImo: Number(state?.temporaryImo || 0),
+          combatStatus: normalizeCombatStatus(state?.combatStatus),
           flageladoTriggered: Boolean(state?.flageladoTriggered),
           executorCooldownTurns: Number(state?.executorCooldownTurns || 0),
           temporaryDivisionActions: Array.isArray(state?.temporaryDivisionActions)
@@ -2109,7 +2162,9 @@ function getParticipantCombatState(combatState, participantId) {
   const key = String(Number(participantId));
   if (!combatState.participants[key]) {
     combatState.participants[key] = {
+      temporaryCarne: 0,
       temporaryImo: 0,
+      combatStatus: COMBAT_STATUS.ACTIVE,
       flageladoTriggered: false,
       executorCooldownTurns: 0,
       temporaryDivisionActions: [],
@@ -2170,7 +2225,9 @@ function removeTemporaryDivisionAction({ combatState, participantId, divisionIns
 
 function buildParticipantPassiveState({ matchParticipant, participantCombatState, division }) {
   return {
+    temporaryCarne: participantCombatState.temporaryCarne || 0,
     temporaryImo: participantCombatState.temporaryImo || 0,
+    combatStatus: getCombatStatus(matchParticipant, participantCombatState),
     generateImoLimit: division?.id === 'rato-de-ruina' ? 2 : 1,
     executorCooldownTurns: participantCombatState.executorCooldownTurns || 0,
     executorExtraAttackReady:
@@ -2179,6 +2236,62 @@ function buildParticipantPassiveState({ matchParticipant, participantCombatState
     hasFlageladoTriggeredThisTurn: Boolean(participantCombatState.flageladoTriggered),
     hasGeneratedImoThisTurn: Boolean(matchParticipant.has_generated_imo_this_turn),
   };
+}
+
+function normalizeCombatStatus(rawStatus) {
+  return Object.values(COMBAT_STATUS).includes(rawStatus) ? rawStatus : COMBAT_STATUS.ACTIVE;
+}
+
+function getCombatStatus(participant, participantCombatState) {
+  if (participant?.is_defeated) {
+    return COMBAT_STATUS.REMOVED;
+  }
+
+  const storedStatus = normalizeCombatStatus(participantCombatState?.combatStatus);
+  if (storedStatus === COMBAT_STATUS.REMOVED) {
+    return COMBAT_STATUS.REMOVED;
+  }
+
+  const hasKnownCarne = participant?.current_carne != null || participant?.health != null;
+  const hasKnownImo = participant?.current_imo != null || participant?.imo != null;
+  if (!hasKnownCarne || !hasKnownImo) {
+    return storedStatus === COMBAT_STATUS.DOWN ? COMBAT_STATUS.ACTIVE : storedStatus;
+  }
+
+  if (getEffectiveCarne(participant, participantCombatState) <= 0 || getEffectiveImo(participant, participantCombatState) <= 0) {
+    return COMBAT_STATUS.DOWN;
+  }
+
+  return storedStatus === COMBAT_STATUS.DOWN ? COMBAT_STATUS.ACTIVE : storedStatus;
+}
+
+function getEffectiveCarne(participant, participantCombatState) {
+  return Number(participant?.current_carne ?? participant?.health ?? 0) + Number(participantCombatState?.temporaryCarne || 0);
+}
+
+function getEffectiveImo(participant, participantCombatState) {
+  return Number(participant?.current_imo ?? participant?.imo ?? 0) + Number(participantCombatState?.temporaryImo || 0);
+}
+
+function updateCombatStatus({ participant, participantCombatState }) {
+  if (participant.is_defeated) {
+    participantCombatState.combatStatus = COMBAT_STATUS.REMOVED;
+    return participantCombatState.combatStatus;
+  }
+
+  if (getEffectiveCarne(participant, participantCombatState) <= 0 || getEffectiveImo(participant, participantCombatState) <= 0) {
+    participantCombatState.combatStatus = COMBAT_STATUS.DOWN;
+    return participantCombatState.combatStatus;
+  }
+
+  participantCombatState.combatStatus = COMBAT_STATUS.ACTIVE;
+  return participantCombatState.combatStatus;
+}
+
+function assertParticipantCanAct({ participant, participantCombatState }) {
+  if (getCombatStatus(participant, participantCombatState) !== COMBAT_STATUS.ACTIVE) {
+    throw new AppError('Essa criatura esta fora de combate e nao pode agir agora.', 409);
+  }
 }
 
 function buildParticipantPassiveActions({ matchParticipant, participantCombatState, division, availableImoCatalog, handCards }) {
@@ -2245,7 +2358,7 @@ function buildParticipantPassiveActions({ matchParticipant, participantCombatSta
 }
 
 function getSpendableImo(participant, participantCombatState) {
-  return Number(participant?.imo || 0) + Number(participantCombatState?.temporaryImo || 0);
+  return getEffectiveImo(participant, participantCombatState);
 }
 
 function spendImo({ participant, participantCombatState, amount }) {
@@ -2257,7 +2370,9 @@ function spendImo({ participant, participantCombatState, amount }) {
   const temporaryImo = Number(participantCombatState.temporaryImo || 0);
   const consumedTemporary = Math.min(temporaryImo, numericAmount);
   participantCombatState.temporaryImo = temporaryImo - consumedTemporary;
-  participant.imo -= numericAmount - consumedTemporary;
+  participant.current_imo = Math.max(0, Number(participant.current_imo ?? participant.imo ?? 0) - (numericAmount - consumedTemporary));
+  participant.imo = participant.current_imo;
+  updateCombatStatus({ participant, participantCombatState });
 }
 
 async function buildUpdatedMatchStateAfterAction({ match, participantsById, combatState }) {
@@ -2265,6 +2380,7 @@ async function buildUpdatedMatchStateAfterAction({ match, participantsById, comb
   const resolution = resolveMatchProgressAfterDamage({
     match,
     participants,
+    combatState,
   });
 
   return updateMatchState({
@@ -2280,9 +2396,14 @@ async function buildUpdatedMatchStateAfterAction({ match, participantsById, comb
   });
 }
 
-function resolveMatchProgressAfterDamage({ match, participants }) {
-  const aliveParticipants = participants.filter((participant) => !participant.is_defeated);
-  if (!aliveParticipants.length) {
+function resolveMatchProgressAfterDamage({ match, participants, combatState = createEmptyCombatState() }) {
+  const normalizedCombatState = normalizeCombatState(combatState);
+  const activeParticipants = participants.filter(
+    (participant) =>
+      getCombatStatus(participant, getParticipantCombatState(normalizedCombatState, participant.id)) ===
+      COMBAT_STATUS.ACTIVE
+  );
+  if (!activeParticipants.length) {
     return {
       status: 'finished',
       round: match.round,
@@ -2293,8 +2414,8 @@ function resolveMatchProgressAfterDamage({ match, participants }) {
     };
   }
 
-  const firstAlive = aliveParticipants[0];
-  const hasOpposingTeamAlive = aliveParticipants.some(
+  const firstAlive = activeParticipants[0];
+  const hasOpposingTeamAlive = activeParticipants.some(
     (participant) => !isAlliedParticipant(firstAlive, participant)
   );
   if (!hasOpposingTeamAlive) {
@@ -2308,11 +2429,11 @@ function resolveMatchProgressAfterDamage({ match, participants }) {
     };
   }
 
-  const currentTurnAlive = aliveParticipants.some(
+  const currentTurnAlive = activeParticipants.some(
     (participant) => participant.id === match.current_turn_participant_id
   );
   if (!currentTurnAlive) {
-    const nextParticipant = getNextActiveParticipant(aliveParticipants, match.current_turn_participant_id);
+    const nextParticipant = getNextActiveParticipant(activeParticipants, match.current_turn_participant_id);
     return {
       status: 'active',
       round: match.round,
@@ -2339,21 +2460,37 @@ async function applyDamageToParticipant({ targetParticipantId, damageAmount, par
     return [];
   }
 
-  targetState.health = Math.max(0, Number(targetState.health || 0) - Number(damageAmount || 0));
-  if (targetState.health <= 0) {
-    targetState.is_defeated = true;
-  }
+  const participantCombatState = getParticipantCombatState(combatState, targetState.id);
+  applyCarneDamage({
+    participant: targetState,
+    participantCombatState,
+    amount: damageAmount,
+  });
 
   const passiveNotices = await applyTakeDamagePassives({
     targetState,
     combatState,
   });
   const notices = [...passiveNotices];
-  if (targetState.is_defeated) {
-    notices.push(`${targetState.display_name} foi derrotado.`);
+  if (getCombatStatus(targetState, participantCombatState) === COMBAT_STATUS.DOWN) {
+    notices.push(`${targetState.display_name} caiu em combate.`);
   }
 
   return notices;
+}
+
+function applyCarneDamage({ participant, participantCombatState, amount }) {
+  const numericAmount = Number(amount || 0);
+  if (numericAmount <= 0) {
+    return;
+  }
+
+  const temporaryCarne = Number(participantCombatState.temporaryCarne || 0);
+  const consumedTemporary = Math.min(temporaryCarne, numericAmount);
+  participantCombatState.temporaryCarne = temporaryCarne - consumedTemporary;
+  participant.current_carne = Math.max(0, Number(participant.current_carne ?? participant.health ?? 0) - (numericAmount - consumedTemporary));
+  participant.health = participant.current_carne;
+  updateCombatStatus({ participant, participantCombatState });
 }
 
 async function applyTakeDamagePassives({ targetState, combatState }) {
@@ -2401,7 +2538,10 @@ async function applyPostUseImoPassives({ actingParticipant, participantsById, co
   const effectResults = [];
 
   for (const participant of participantsById.values()) {
-    if (participant.id === actingParticipant.id || participant.is_defeated) {
+    if (
+      participant.id === actingParticipant.id ||
+      getCombatStatus(participant, getParticipantCombatState(combatState, participant.id)) !== COMBAT_STATUS.ACTIVE
+    ) {
       continue;
     }
 
@@ -2540,16 +2680,21 @@ module.exports = {
     buildGeneratedAllyImoCardKey,
     buildDivisionActionNotice,
     consumeActionSlot,
+    getCombatStatus,
+    getEffectiveCarne,
+    getEffectiveImo,
     getParticipantCombatState,
     getSpendableImo,
     isAlliedParticipant,
     normalizeCombatState,
+    applyCarneDamage,
     resolveMatchProgressAfterDamage,
     resolveParticipantDivisionActions,
     resolvePassiveTargetState,
     resolveAutomationTarget,
     rollAttackOutcome,
     spendImo,
+    updateCombatStatus,
   },
   attackForPlayer,
   completeOpeningHandForPlayer,

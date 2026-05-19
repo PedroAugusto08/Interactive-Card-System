@@ -8,11 +8,26 @@ const characterIdParamSchema = z.object({
 });
 
 const stringIdListSchema = z.array(z.string().trim().min(1));
+const fragmentsSchema = z.object({
+  combate: z.coerce.number().int().min(0),
+  pontaria: z.coerce.number().int().min(0),
+  resistencia: z.coerce.number().int().min(0),
+  furor: z.coerce.number().int().min(0),
+  percepcao: z.coerce.number().int().min(0),
+  conhecimento: z.coerce.number().int().min(0),
+  medicina: z.coerce.number().int().min(0),
+  furtividade: z.coerce.number().int().min(0),
+  improviso: z.coerce.number().int().min(0),
+  mobilidade: z.coerce.number().int().min(0),
+});
 
 const createCharacterSchema = z.object({
   name: z.string().trim().min(2).max(80),
   description: z.string().trim().max(500).optional(),
   divisionId: z.string().trim().min(1),
+  baseCarne: z.coerce.number().int().min(0),
+  baseImo: z.coerce.number().int().min(0),
+  fragments: fragmentsSchema,
   imoCardIds: stringIdListSchema,
 });
 
@@ -64,6 +79,9 @@ async function createCharacter(req, res) {
     name: payload.name,
     description: payload.description,
     divisionId: payload.divisionId,
+    baseCarne: payload.baseCarne,
+    baseImo: payload.baseImo,
+    fragments: payload.fragments,
     imoCardIds: payload.imoCardIds,
     requesterUser: req.user,
   });
@@ -95,6 +113,9 @@ async function updateCharacter(req, res) {
     name: payload.name,
     description: payload.description,
     divisionId: payload.divisionId,
+    baseCarne: payload.baseCarne,
+    baseImo: payload.baseImo,
+    fragments: payload.fragments,
     imoCardIds: payload.imoCardIds,
   });
 

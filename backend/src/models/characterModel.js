@@ -1,23 +1,86 @@
 const { query } = require('../config/db');
 
-async function createCharacter({ ownerId, name, description = null, divisionId = null, divisionIds = [], imoCardIds = [] }) {
+const CHARACTER_SELECT_FIELDS = `
+  id,
+  owner_id,
+  legacy_deck_id,
+  name,
+  description,
+  division_id,
+  base_carne,
+  base_imo,
+  combate,
+  pontaria,
+  resistencia,
+  furor,
+  percepcao,
+  conhecimento,
+  medicina,
+  furtividade,
+  improviso,
+  mobilidade,
+  division_ids_json,
+  imo_card_ids_json,
+  created_at,
+  updated_at
+`;
+
+async function createCharacter({
+  ownerId,
+  name,
+  description = null,
+  divisionId = null,
+  baseCarne = 5,
+  baseImo = 5,
+  fragments = {},
+  divisionIds = [],
+  imoCardIds = [],
+}) {
   const result = await query(
     `
-      INSERT INTO characters (owner_id, name, description, division_id, division_ids_json, imo_card_ids_json)
-      VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)
-      RETURNING
-        id,
+      INSERT INTO characters (
         owner_id,
-        legacy_deck_id,
         name,
         description,
         division_id,
+        base_carne,
+        base_imo,
+        combate,
+        pontaria,
+        resistencia,
+        furor,
+        percepcao,
+        conhecimento,
+        medicina,
+        furtividade,
+        improviso,
+        mobilidade,
         division_ids_json,
-        imo_card_ids_json,
-        created_at,
-        updated_at;
+        imo_card_ids_json
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, $18::jsonb)
+      RETURNING ${CHARACTER_SELECT_FIELDS};
     `,
-    [ownerId, name, description, divisionId, JSON.stringify(divisionIds), JSON.stringify(imoCardIds)]
+    [
+      ownerId,
+      name,
+      description,
+      divisionId,
+      baseCarne,
+      baseImo,
+      fragments.combate,
+      fragments.pontaria,
+      fragments.resistencia,
+      fragments.furor,
+      fragments.percepcao,
+      fragments.conhecimento,
+      fragments.medicina,
+      fragments.furtividade,
+      fragments.improviso,
+      fragments.mobilidade,
+      JSON.stringify(divisionIds),
+      JSON.stringify(imoCardIds),
+    ]
   );
 
   return result.rows[0] || null;
@@ -26,17 +89,7 @@ async function createCharacter({ ownerId, name, description = null, divisionId =
 async function listCharactersByOwner(ownerId) {
   const result = await query(
     `
-      SELECT
-        id,
-        owner_id,
-        legacy_deck_id,
-        name,
-        description,
-        division_id,
-        division_ids_json,
-        imo_card_ids_json,
-        created_at,
-        updated_at
+      SELECT ${CHARACTER_SELECT_FIELDS}
       FROM characters
       WHERE owner_id = $1
       ORDER BY created_at DESC;
@@ -55,17 +108,7 @@ async function listCharactersByIds(characterIds = []) {
 
   const result = await query(
     `
-      SELECT
-        id,
-        owner_id,
-        legacy_deck_id,
-        name,
-        description,
-        division_id,
-        division_ids_json,
-        imo_card_ids_json,
-        created_at,
-        updated_at
+      SELECT ${CHARACTER_SELECT_FIELDS}
       FROM characters
       WHERE id = ANY($1::int[])
       ORDER BY created_at DESC;
@@ -79,17 +122,7 @@ async function listCharactersByIds(characterIds = []) {
 async function findCharacterById(characterId) {
   const result = await query(
     `
-      SELECT
-        id,
-        owner_id,
-        legacy_deck_id,
-        name,
-        description,
-        division_id,
-        division_ids_json,
-        imo_card_ids_json,
-        created_at,
-        updated_at
+      SELECT ${CHARACTER_SELECT_FIELDS}
       FROM characters
       WHERE id = $1
       LIMIT 1;
@@ -106,6 +139,9 @@ async function updateCharacterById({
   name,
   description = null,
   divisionId = null,
+  baseCarne = 5,
+  baseImo = 5,
+  fragments = {},
   divisionIds = [],
   imoCardIds = [],
 }) {
@@ -116,23 +152,45 @@ async function updateCharacterById({
         name = $3,
         description = $4,
         division_id = $5,
-        division_ids_json = $6::jsonb,
-        imo_card_ids_json = $7::jsonb,
+        base_carne = $6,
+        base_imo = $7,
+        combate = $8,
+        pontaria = $9,
+        resistencia = $10,
+        furor = $11,
+        percepcao = $12,
+        conhecimento = $13,
+        medicina = $14,
+        furtividade = $15,
+        improviso = $16,
+        mobilidade = $17,
+        division_ids_json = $18::jsonb,
+        imo_card_ids_json = $19::jsonb,
         updated_at = NOW()
       WHERE id = $1 AND owner_id = $2
-      RETURNING
-        id,
-        owner_id,
-        legacy_deck_id,
-        name,
-        description,
-        division_id,
-        division_ids_json,
-        imo_card_ids_json,
-        created_at,
-        updated_at;
+      RETURNING ${CHARACTER_SELECT_FIELDS};
     `,
-    [characterId, ownerId, name, description, divisionId, JSON.stringify(divisionIds), JSON.stringify(imoCardIds)]
+    [
+      characterId,
+      ownerId,
+      name,
+      description,
+      divisionId,
+      baseCarne,
+      baseImo,
+      fragments.combate,
+      fragments.pontaria,
+      fragments.resistencia,
+      fragments.furor,
+      fragments.percepcao,
+      fragments.conhecimento,
+      fragments.medicina,
+      fragments.furtividade,
+      fragments.improviso,
+      fragments.mobilidade,
+      JSON.stringify(divisionIds),
+      JSON.stringify(imoCardIds),
+    ]
   );
 
   return result.rows[0] || null;
@@ -143,17 +201,7 @@ async function deleteCharacterById({ characterId, ownerId }) {
     `
       DELETE FROM characters
       WHERE id = $1 AND owner_id = $2
-      RETURNING
-        id,
-        owner_id,
-        legacy_deck_id,
-        name,
-        description,
-        division_id,
-        division_ids_json,
-        imo_card_ids_json,
-        created_at,
-        updated_at;
+      RETURNING ${CHARACTER_SELECT_FIELDS};
     `,
     [characterId, ownerId]
   );

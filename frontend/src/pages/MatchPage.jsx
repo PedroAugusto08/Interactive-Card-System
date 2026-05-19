@@ -42,17 +42,53 @@ function areParticipantsAllies(leftParticipant, rightParticipant) {
   return rightType === 'master-creature';
 }
 
+function isParticipantRemoved(participant) {
+  return participant?.combatStatus === 'removed';
+}
+
+function formatCombatStatusLabel(status) {
+  if (status === 'down') {
+    return 'Caido';
+  }
+
+  if (status === 'removed') {
+    return 'Removido';
+  }
+
+  return 'Ativo';
+}
+
+function formatFragmentSummary(fragments) {
+  const labels = [
+    ['combate', 'Comb'],
+    ['pontaria', 'Pont'],
+    ['resistencia', 'Res'],
+    ['furor', 'Fur'],
+    ['percepcao', 'Perc'],
+    ['conhecimento', 'Conh'],
+    ['medicina', 'Med'],
+    ['furtividade', 'Furt'],
+    ['improviso', 'Imp'],
+    ['mobilidade', 'Mob'],
+  ];
+
+  return labels
+    .map(([key, shortLabel]) => `${shortLabel} ${Number(fragments?.[key] || 0)}`)
+    .filter((entry) => !entry.endsWith(' 0'))
+    .join(' • ');
+}
+
 function getTargetOptions(participants, actingParticipantId, targetScope) {
   if (!Array.isArray(participants)) {
     return [];
   }
 
   if (targetScope === 'other-player') {
-    return participants.filter((participant) => participant.participantId !== actingParticipantId && !participant.isDefeated);
+    return participants.filter((participant) => participant.participantId !== actingParticipantId && !isParticipantRemoved(participant));
   }
 
   if (targetScope === 'selected-player') {
-    return participants.filter((participant) => !participant.isDefeated);
+    return participants.filter((participant) => !isParticipantRemoved(participant));
   }
 
   if (targetScope === 'selected-enemy') {
@@ -63,7 +99,7 @@ function getTargetOptions(participants, actingParticipantId, targetScope) {
 
     return participants.filter(
       (participant) =>
-        !participant.isDefeated &&
+        !isParticipantRemoved(participant) &&
         participant.participantId !== actingParticipantId &&
         !areParticipantsAllies(actingParticipant, participant)
     );
@@ -77,7 +113,7 @@ function getTargetOptions(participants, actingParticipantId, targetScope) {
 
     return participants.filter(
       (participant) =>
-        !participant.isDefeated &&
+        !isParticipantRemoved(participant) &&
         participant.participantId !== actingParticipantId &&
         areParticipantsAllies(actingParticipant, participant)
     );
@@ -564,8 +600,25 @@ export function MatchPage() {
           <Card
             actions={
               <div className="row-wrap">
-                <Badge tone="secondary">Imo {focusedParticipant?.imo ?? 0}/{focusedParticipant?.maxImo ?? 0}</Badge>
+                <Badge tone="secondary">
+                  Carne {focusedParticipant?.currentCarne ?? 0}/{focusedParticipant?.baseCarne ?? 0}
+                </Badge>
+                <Badge tone="secondary">
+                  Imo {focusedParticipant?.currentImo ?? 0}/{focusedParticipant?.baseImo ?? 0}
+                </Badge>
+                <Badge tone="primary">Carne Temp. {focusedParticipant?.temporaryCarne ?? 0}</Badge>
                 <Badge tone="primary">Imo Temp. {focusedParticipant?.temporaryImo ?? 0}</Badge>
+                <Badge
+                  tone={
+                    focusedParticipant?.combatStatus === 'active'
+                      ? 'success'
+                      : focusedParticipant?.combatStatus === 'down'
+                        ? 'accent'
+                        : 'secondary'
+                  }
+                >
+                  {formatCombatStatusLabel(focusedParticipant?.combatStatus)}
+                </Badge>
                 <Badge tone={focusedParticipant?.isCurrentTurn ? 'accent' : 'secondary'}>
                   {focusedParticipant?.isCurrentTurn ? 'Turno ativo' : 'Aguardando'}
                 </Badge>
@@ -595,6 +648,9 @@ export function MatchPage() {
                     <strong>{focusedParticipant.division.name}</strong>
                     <span className="muted-text compact">
                       Passiva: {focusedParticipant.division.passive}
+                    </span>
+                    <span className="muted-text compact">
+                      Fragmentos: {formatFragmentSummary(focusedParticipant.fragments) || 'sem fragmentos acima de zero'}
                     </span>
                   </div>
                 ) : null}

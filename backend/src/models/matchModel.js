@@ -1,5 +1,31 @@
 const { query } = require('../config/db');
 
+const MATCH_PARTICIPANT_SELECT_FIELDS = `
+  mp.id,
+  mp.match_id,
+  mp.controller_user_id,
+  mp.participant_type,
+  mp.source_character_id,
+  mp.display_name,
+  mp.turn_order,
+  mp.health,
+  mp.imo,
+  mp.max_imo,
+  mp.current_carne,
+  mp.current_imo,
+  mp.has_generated_imo_this_turn,
+  mp.standard_action_used,
+  mp.complementary_action_used,
+  mp.has_exiled_imo_this_turn,
+  mp.opening_hand_ready,
+  mp.is_defeated,
+  mp.hand_cards_json,
+  mp.exiled_imo_card_ids_json,
+  mp.generated_ally_imo_card_keys_json,
+  u.username AS controller_username,
+  u.email AS controller_email
+`;
+
 async function createMatch({
   roomId,
   currentTurnParticipantId = null,
@@ -143,6 +169,8 @@ async function createMatchParticipant({
   health = 10,
   imo = 3,
   maxImo = 10,
+  currentCarne = 10,
+  currentImo = 3,
   hasGeneratedImoThisTurn = false,
   standardActionUsed = false,
   complementaryActionUsed = false,
@@ -165,6 +193,8 @@ async function createMatchParticipant({
         health,
         imo,
         max_imo,
+        current_carne,
+        current_imo,
         has_generated_imo_this_turn,
         standard_action_used,
         complementary_action_used,
@@ -175,7 +205,7 @@ async function createMatchParticipant({
         exiled_imo_card_ids_json,
         generated_ally_imo_card_keys_json
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::jsonb, $17::jsonb, $18::jsonb)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18::jsonb, $19::jsonb, $20::jsonb)
       RETURNING
         id,
         match_id,
@@ -187,6 +217,8 @@ async function createMatchParticipant({
         health,
         imo,
         max_imo,
+        current_carne,
+        current_imo,
         has_generated_imo_this_turn,
         standard_action_used,
         complementary_action_used,
@@ -207,6 +239,8 @@ async function createMatchParticipant({
       health,
       imo,
       maxImo,
+      currentCarne,
+      currentImo,
       hasGeneratedImoThisTurn,
       standardActionUsed,
       complementaryActionUsed,
@@ -228,6 +262,8 @@ async function updateMatchParticipant({
   health,
   imo,
   maxImo,
+  currentCarne,
+  currentImo,
   hasGeneratedImoThisTurn,
   standardActionUsed,
   complementaryActionUsed,
@@ -246,15 +282,17 @@ async function updateMatchParticipant({
         health = $3,
         imo = $4,
         max_imo = $5,
-        has_generated_imo_this_turn = $6,
-        standard_action_used = $7,
-        complementary_action_used = $8,
-        has_exiled_imo_this_turn = $9,
-        opening_hand_ready = $10,
-        is_defeated = $11,
-        hand_cards_json = $12::jsonb,
-        exiled_imo_card_ids_json = $13::jsonb,
-        generated_ally_imo_card_keys_json = $14::jsonb
+        current_carne = $6,
+        current_imo = $7,
+        has_generated_imo_this_turn = $8,
+        standard_action_used = $9,
+        complementary_action_used = $10,
+        has_exiled_imo_this_turn = $11,
+        opening_hand_ready = $12,
+        is_defeated = $13,
+        hand_cards_json = $14::jsonb,
+        exiled_imo_card_ids_json = $15::jsonb,
+        generated_ally_imo_card_keys_json = $16::jsonb
       WHERE id = $1
       RETURNING
         id,
@@ -267,6 +305,8 @@ async function updateMatchParticipant({
         health,
         imo,
         max_imo,
+        current_carne,
+        current_imo,
         has_generated_imo_this_turn,
         standard_action_used,
         complementary_action_used,
@@ -283,6 +323,8 @@ async function updateMatchParticipant({
       health,
       imo,
       maxImo,
+      currentCarne,
+      currentImo,
       hasGeneratedImoThisTurn,
       standardActionUsed,
       complementaryActionUsed,
@@ -301,28 +343,7 @@ async function updateMatchParticipant({
 async function listMatchParticipants(matchId) {
   const result = await query(
     `
-      SELECT
-        mp.id,
-        mp.match_id,
-        mp.controller_user_id,
-        mp.participant_type,
-        mp.source_character_id,
-        mp.display_name,
-        mp.turn_order,
-        mp.health,
-        mp.imo,
-        mp.max_imo,
-        mp.has_generated_imo_this_turn,
-        mp.standard_action_used,
-        mp.complementary_action_used,
-        mp.has_exiled_imo_this_turn,
-        mp.opening_hand_ready,
-        mp.is_defeated,
-        mp.hand_cards_json,
-        mp.exiled_imo_card_ids_json,
-        mp.generated_ally_imo_card_keys_json,
-        u.username AS controller_username,
-        u.email AS controller_email
+      SELECT ${MATCH_PARTICIPANT_SELECT_FIELDS}
       FROM match_participants mp
       INNER JOIN users u ON u.id = mp.controller_user_id
       WHERE mp.match_id = $1
@@ -337,28 +358,7 @@ async function listMatchParticipants(matchId) {
 async function findMatchParticipantById({ matchId, participantId }) {
   const result = await query(
     `
-      SELECT
-        mp.id,
-        mp.match_id,
-        mp.controller_user_id,
-        mp.participant_type,
-        mp.source_character_id,
-        mp.display_name,
-        mp.turn_order,
-        mp.health,
-        mp.imo,
-        mp.max_imo,
-        mp.has_generated_imo_this_turn,
-        mp.standard_action_used,
-        mp.complementary_action_used,
-        mp.has_exiled_imo_this_turn,
-        mp.opening_hand_ready,
-        mp.is_defeated,
-        mp.hand_cards_json,
-        mp.exiled_imo_card_ids_json,
-        mp.generated_ally_imo_card_keys_json,
-        u.username AS controller_username,
-        u.email AS controller_email
+      SELECT ${MATCH_PARTICIPANT_SELECT_FIELDS}
       FROM match_participants mp
       INNER JOIN users u ON u.id = mp.controller_user_id
       WHERE mp.match_id = $1 AND mp.id = $2
@@ -373,28 +373,7 @@ async function findMatchParticipantById({ matchId, participantId }) {
 async function listMatchParticipantsByController({ matchId, controllerUserId }) {
   const result = await query(
     `
-      SELECT
-        mp.id,
-        mp.match_id,
-        mp.controller_user_id,
-        mp.participant_type,
-        mp.source_character_id,
-        mp.display_name,
-        mp.turn_order,
-        mp.health,
-        mp.imo,
-        mp.max_imo,
-        mp.has_generated_imo_this_turn,
-        mp.standard_action_used,
-        mp.complementary_action_used,
-        mp.has_exiled_imo_this_turn,
-        mp.opening_hand_ready,
-        mp.is_defeated,
-        mp.hand_cards_json,
-        mp.exiled_imo_card_ids_json,
-        mp.generated_ally_imo_card_keys_json,
-        u.username AS controller_username,
-        u.email AS controller_email
+      SELECT ${MATCH_PARTICIPANT_SELECT_FIELDS}
       FROM match_participants mp
       INNER JOIN users u ON u.id = mp.controller_user_id
       WHERE mp.match_id = $1 AND mp.controller_user_id = $2
