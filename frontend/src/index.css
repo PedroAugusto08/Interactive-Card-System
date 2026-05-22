@@ -2189,6 +2189,14 @@ ul {
   transform-origin: center top;
 }
 
+.ui-modal--closing {
+  animation: modal-fade-out 220ms ease forwards;
+}
+
+.ui-modal__panel--closing {
+  animation: modal-panel-out 220ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
 .ui-modal .ui-card {
   max-height: calc(100vh - 48px);
   border-radius: 28px;
@@ -3794,6 +3802,28 @@ ul {
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes modal-fade-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes modal-panel-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
   }
 }
 

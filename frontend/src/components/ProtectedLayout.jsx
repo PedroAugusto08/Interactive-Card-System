@@ -32,6 +32,13 @@ export function ProtectedLayout() {
   const fileInputRef = useRef(null);
   const canUseDevMasterShortcut = import.meta.env.DEV;
   const isDevMasterOverrideEnabled = Boolean(user?.isDevMasterOverride || user?.devMasterOverride);
+  const canManageMultipleCharacters = Boolean(
+    user?.canManageMultipleCharacters ||
+      user?.canManageMultipleDecks ||
+      user?.isMasterAccount ||
+      user?.isDevMasterOverride ||
+      user?.devMasterOverride
+  );
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -217,7 +224,7 @@ export function ProtectedLayout() {
               }
               to="/characters"
             >
-              Personagens
+              {canManageMultipleCharacters ? 'Personagens' : 'Personagem'}
             </NavLink>
             <NavLink
               className={({ isActive }) =>

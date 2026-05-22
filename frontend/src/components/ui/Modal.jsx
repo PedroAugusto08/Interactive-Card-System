@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { Button } from './Button';
@@ -6,6 +6,7 @@ import { Card } from './Card';
 
 let modalLockCount = 0;
 let lockedScrollY = 0;
+const MODAL_CLOSE_DURATION_MS = 220;
 
 function lockDocumentScroll() {
   if (typeof document === 'undefined') {
@@ -54,8 +55,31 @@ export function Modal({
   onClose,
   isLoading = false,
 }) {
+  const [shouldRender, setShouldRender] = useState(open);
+  const [isClosing, setIsClosing] = useState(false);
+
   useEffect(() => {
-    if (!open) {
+    if (open) {
+      setShouldRender(true);
+      setIsClosing(false);
+      return undefined;
+    }
+
+    if (!shouldRender) {
+      return undefined;
+    }
+
+    setIsClosing(true);
+    const closeTimer = window.setTimeout(() => {
+      setShouldRender(false);
+      setIsClosing(false);
+    }, MODAL_CLOSE_DURATION_MS);
+
+    return () => window.clearTimeout(closeTimer);
+  }, [open, shouldRender]);
+
+  useEffect(() => {
+    if (!shouldRender) {
       return undefined;
     }
 
@@ -72,15 +96,22 @@ export function Modal({
       window.removeEventListener('keydown', handleKeyDown);
       unlockDocumentScroll();
     };
-  }, [open, onClose]);
+  }, [shouldRender, onClose]);
 
-  if (!open) {
+  if (!shouldRender) {
     return null;
   }
 
   return createPortal(
-    <div className="ui-modal" onClick={onClose} role="presentation">
-      <div className="ui-modal__panel" onClick={(event) => event.stopPropagation()}>
+    <div
+      className={['ui-modal', isClosing ? 'ui-modal--closing' : null].filter(Boolean).join(' ')}
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        className={['ui-modal__panel', isClosing ? 'ui-modal__panel--closing' : null].filter(Boolean).join(' ')}
+        onClick={(event) => event.stopPropagation()}
+      >
         <Card glow title={title} description={description}>
           {children}
 

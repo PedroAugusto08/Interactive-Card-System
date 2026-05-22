@@ -6,6 +6,7 @@ import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
+import { Modal } from '../components/ui/Modal';
 import { useAuthStore } from '../stores/authStore';
 import { useCharacterStore } from '../stores/characterStore';
 import { resolveCardImageUrl } from '../utils/cardImages';
@@ -23,6 +24,15 @@ const FRAGMENT_FIELDS = [
   { key: 'improviso', label: 'Improviso' },
   { key: 'mobilidade', label: 'Mobilidade' },
 ];
+
+const DIVISION_IMAGE_BY_ID = {
+  'executor-desgastado': '/divisoes/executor_desgastado.png',
+  remendador: '/divisoes/remendador.png',
+  'arquivista-do-vazio': '/divisoes/arquivista_do_vazio.png',
+  'flagelado-voluntario': '/divisoes/flagelado_voluntario.png',
+  'condutor-de-ecos': '/divisoes/condutor_de_ecos.png',
+  'rato-de-ruina': '/divisoes/rato_de_ruina.png',
+};
 
 function createEmptyFragments() {
   return Object.fromEntries(FRAGMENT_FIELDS.map((field) => [field.key, 0]));
@@ -120,10 +130,7 @@ function applyDivisionSelection(currentForm, division) {
   const nextFragments = Object.fromEntries(
     FRAGMENT_FIELDS.map((field) => [
       field.key,
-      Math.max(
-        Number(currentForm.fragments?.[field.key] ?? 0),
-        Number(division.fragments?.[field.key] ?? 0)
-      ),
+      Math.max(Number(currentForm.fragments?.[field.key] ?? 0), Number(division.fragments?.[field.key] ?? 0)),
     ])
   );
 
@@ -144,6 +151,29 @@ function formatFragmentSummary(fragments) {
     .join(' • ');
 }
 
+function resolveDivisionImageUrl(division) {
+  return DIVISION_IMAGE_BY_ID[division?.id] || resolveCardImageUrl(division?.cards?.[0]?.imagePath);
+}
+
+function formatActionSlotLabel(actionSlot) {
+  if (actionSlot === 'complementary') {
+    return 'Acao complementar';
+  }
+
+  return 'Acao padrao';
+}
+
+function buildCatalogCardPreview(card, options = {}) {
+  return {
+    ...card,
+    previewCategory: options.previewCategory || 'Carta',
+    previewDescription: card.effect || card.description || 'Sem descricao.',
+    previewDivisionName: options.previewDivisionName || '',
+    previewImageSrc: resolveCardImageUrl(card.imagePath),
+    previewCost: Number(card.imoCost || 0),
+  };
+}
+
 export function CharactersPage() {
   const token = useAuthStore((state) => state.token);
   const user = useAuthStore((state) => state.user);
@@ -153,6 +183,9 @@ export function CharactersPage() {
 
   const [characterForm, setCharacterForm] = useState(EMPTY_CHARACTER_FORM);
   const [imoForm, setImoForm] = useState(EMPTY_IMO_FORM);
+  const [selectedDivisionPreview, setSelectedDivisionPreview] = useState(null);
+  const [selectedCatalogCardPreview, setSelectedCatalogCardPreview] = useState(null);
+  const [showOtherDivisionCards, setShowOtherDivisionCards] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -192,9 +225,32 @@ export function CharactersPage() {
 
   const allImoCards = useMemo(() => catalog?.imoCards || [], [catalog]);
   const divisions = useMemo(() => catalog?.divisions || [], [catalog]);
+  const divisionCardGroups = useMemo(
+    () =>
+      divisions
+        .map((division) => ({
+          ...division,
+          catalogCards: (division.cards || []).map((card) =>
+            buildCatalogCardPreview(card, {
+              previewCategory: 'Carta de Divisao',
+              previewDivisionName: division.name,
+            })
+          ),
+        }))
+        .filter((division) => division.catalogCards.length),
+    [divisions]
+  );
   const selectedDivision = useMemo(
     () => divisions.find((division) => division.id === characterForm.divisionId) || null,
     [characterForm.divisionId, divisions]
+  );
+  const selectedDivisionCardGroup = useMemo(
+    () => divisionCardGroups.find((division) => division.id === selectedDivision?.id) || null,
+    [divisionCardGroups, selectedDivision]
+  );
+  const otherDivisionCardGroups = useMemo(
+    () => divisionCardGroups.filter((division) => division.id !== selectedDivision?.id),
+    [divisionCardGroups, selectedDivision]
   );
   const allowedImoSlots = Number(selectedDivision?.imoCardSlots || 0);
   const baseResourceSum = Number(characterForm.baseCarne || 0) + Number(characterForm.baseImo || 0);
@@ -205,6 +261,10 @@ export function CharactersPage() {
       user?.isDevMasterOverride ||
       user?.devMasterOverride
   );
+
+  useEffect(() => {
+    setShowOtherDivisionCards(false);
+  }, [characterForm.divisionId]);
 
   async function reloadCharacters() {
     const [catalogResponse, charactersResponse, imoCardsResponse] = await Promise.all([
@@ -346,7 +406,7 @@ export function CharactersPage() {
     <section className="stack-gap-lg">
       <div className="section-header">
         <div className="stack-gap" style={{ gap: '8px' }}>
-          <h1 className="page-title">Personagens</h1>
+          <h1 className="page-title">{canManageMultipleCharacters ? 'Personagens' : 'Personagem'}</h1>
           <p className="muted-text">
             Monte personagens com Divisao aberta, recursos base persistidos e fragmentos que crescem com a progressao.
           </p>
@@ -355,7 +415,7 @@ export function CharactersPage() {
       </div>
 
       <div className="grid-2">
-        <div className="stack-gap">
+        <div className="stack-gap" style={{ alignSelf: 'start' }}>
           <Card
             title="Editor de personagem"
             description="A Divisao define o ponto de partida. Carne, Imo e Fragmentos podem crescer depois pela progressao."
@@ -377,19 +437,27 @@ export function CharactersPage() {
               />
 
               <div className="stack-gap" style={{ gap: '10px' }}>
-                <span className="status-label">Divisao do personagem</span>
+                <div className="row-wrap" style={{ justifyContent: 'space-between' }}>
+                  <span className="status-label">Divisao do personagem</span>
+                  {selectedDivision ? <Badge tone="primary">{selectedDivision.name}</Badge> : null}
+                </div>
                 <div className="player-hand">
                   {divisions.map((division) => (
                     <div className="player-hand__slot" key={division.id}>
                       <CardItem
-                        category="Divisao"
-                        description={`${division.passive}\n\nCartas: ${(division.cards || []).map((card) => card.name).join(', ')}.`}
                         footer={
                           <div className="row-wrap">
                             <Button
-                              onClick={() =>
-                                setCharacterForm((current) => applyDivisionSelection(current, division))
-                              }
+                              onClick={() => setSelectedDivisionPreview(division)}
+                              size="sm"
+                              type="button"
+                              variant="secondary"
+                            >
+                              Ver detalhes
+                            </Button>
+                            <Button
+                              onClick={() => setCharacterForm((current) => applyDivisionSelection(current, division))}
+                              size="sm"
                               type="button"
                               variant={characterForm.divisionId === division.id ? 'primary' : 'secondary'}
                             >
@@ -397,8 +465,11 @@ export function CharactersPage() {
                             </Button>
                           </div>
                         }
-                        imageSrc={resolveCardImageUrl(division.cards?.[0]?.imagePath)}
+                        imageSrc={resolveDivisionImageUrl(division)}
                         name={division.name}
+                        onClick={() => setSelectedDivisionPreview(division)}
+                        selected={characterForm.divisionId === division.id}
+                        showDescription={false}
                       />
                     </div>
                   ))}
@@ -409,18 +480,14 @@ export function CharactersPage() {
                 <Input
                   label="Carne base"
                   min="0"
-                  onChange={(event) =>
-                    setCharacterForm((current) => ({ ...current, baseCarne: event.target.value }))
-                  }
+                  onChange={(event) => setCharacterForm((current) => ({ ...current, baseCarne: event.target.value }))}
                   type="number"
                   value={characterForm.baseCarne}
                 />
                 <Input
                   label="Imo base"
                   min="0"
-                  onChange={(event) =>
-                    setCharacterForm((current) => ({ ...current, baseImo: event.target.value }))
-                  }
+                  onChange={(event) => setCharacterForm((current) => ({ ...current, baseImo: event.target.value }))}
                   type="number"
                   value={characterForm.baseImo}
                 />
@@ -590,9 +657,7 @@ export function CharactersPage() {
                   <span className="ui-input__label">Carta gerada pela automacao</span>
                   <select
                     className="ui-input__field"
-                    onChange={(event) =>
-                      setImoForm((current) => ({ ...current, useGeneratedCardId: event.target.value }))
-                    }
+                    onChange={(event) => setImoForm((current) => ({ ...current, useGeneratedCardId: event.target.value }))}
                     value={imoForm.useGeneratedCardId}
                   >
                     <option value="">Selecione uma carta</option>
@@ -622,7 +687,7 @@ export function CharactersPage() {
 
         <div className="stack-gap">
           <Card
-            title="Personagens salvos"
+            title={canManageMultipleCharacters ? 'Personagens salvos' : 'Personagem salvo'}
             description={canManageMultipleCharacters ? 'O mestre pode manter varios personagens.' : 'Jogadores comuns mantem apenas 1 personagem salvo.'}
           >
             {characters.length ? (
@@ -666,39 +731,291 @@ export function CharactersPage() {
             )}
           </Card>
 
-          <Card title="Catalogo de Divisoes">
-            <div className="player-hand">
-              {divisions.map((division) => (
-                <div className="player-hand__slot" key={`division-catalog-${division.id}`}>
-                  <CardItem
-                    category="Divisao"
-                    description={`${division.passive}\n\nCartas: ${(division.cards || []).map((card) => card.name).join(', ')}.\nImos do personagem: ${division.imoCardSlots}.\nFragmentos base: ${formatFragmentSummary(division.fragments) || 'nenhum'}.`}
-                    imageSrc={resolveCardImageUrl(division.cards?.[0]?.imagePath)}
-                    name={division.name}
-                  />
+          <Card title="Catalogo de Cartas" description="Acoes de Divisao e cartas de Imo disponiveis no sistema.">
+            <div className="stack-gap" style={{ gap: '14px' }}>
+              <div className="stack-gap" style={{ gap: '8px' }}>
+                <div className="row-wrap" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span className="status-label">Cartas de Divisao</span>
+                  {selectedDivision ? (
+                    <Button
+                      onClick={() => setShowOtherDivisionCards((current) => !current)}
+                      size="sm"
+                      type="button"
+                      variant="secondary"
+                    >
+                      {showOtherDivisionCards ? '^ Ocultar outras divisoes' : 'v Mostrar outras divisoes'}
+                    </Button>
+                  ) : null}
                 </div>
-              ))}
-            </div>
-          </Card>
 
-          <Card title="Catalogo de Imo">
-            <div className="player-hand">
-              {allImoCards.map((card) => (
-                <div className="player-hand__slot" key={`imo-catalog-${card.id}`}>
-                  <CardItem
-                    category="Imo"
-                    cost={card.imoCost || 0}
-                    costLabel="Imo"
-                    description={card.effect}
-                    imageSrc={resolveCardImageUrl(card.imagePath)}
-                    name={card.name}
-                  />
+                {selectedDivisionCardGroup ? (
+                  <div className="stack-gap" style={{ gap: '10px' }}>
+                    <div className="row-wrap" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                      <strong>{selectedDivisionCardGroup.name}</strong>
+                      <Badge tone="primary">Selecionada</Badge>
+                    </div>
+                    <div className="player-hand">
+                      {selectedDivisionCardGroup.catalogCards.map((card) => (
+                        <div className="player-hand__slot" key={`selected-division-card-${selectedDivisionCardGroup.id}-${card.id}`}>
+                          <CardItem
+                            imageSrc={card.previewImageSrc}
+                            name={card.name}
+                            onClick={() => setSelectedCatalogCardPreview(card)}
+                            showDescription={false}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {(selectedDivision ? (showOtherDivisionCards ? otherDivisionCardGroups : []) : divisionCardGroups).map((division) => (
+                  <div className="stack-gap" key={`division-card-group-${division.id}`} style={{ gap: '10px' }}>
+                    <strong>{division.name}</strong>
+                    <div className="player-hand">
+                      {division.catalogCards.map((card) => (
+                        <div className="player-hand__slot" key={`division-card-catalog-${division.id}-${card.id}`}>
+                          <CardItem
+                            imageSrc={card.previewImageSrc}
+                            name={card.name}
+                            onClick={() => setSelectedCatalogCardPreview(card)}
+                            showDescription={false}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="stack-gap" style={{ gap: '8px' }}>
+                <span className="status-label">Cartas de Imo</span>
+                <div className="player-hand">
+                  {allImoCards.map((card) => (
+                    <div className="player-hand__slot" key={`imo-catalog-${card.id}`}>
+                      <CardItem
+                        imageSrc={resolveCardImageUrl(card.imagePath)}
+                        name={card.name}
+                        onClick={() =>
+                          setSelectedCatalogCardPreview(
+                            buildCatalogCardPreview(card, {
+                              previewCategory: 'Carta de Imo',
+                            })
+                          )
+                        }
+                        showDescription={false}
+                      />
+                    </div>
+                  ))}
                 </div>
-              ))}
+              </div>
             </div>
           </Card>
         </div>
       </div>
+
+      <Modal
+        cancelLabel={null}
+        confirmLabel="Fechar"
+        description=""
+        onClose={() => setSelectedDivisionPreview(null)}
+        onConfirm={() => setSelectedDivisionPreview(null)}
+        open={Boolean(selectedDivisionPreview)}
+        title={selectedDivisionPreview?.name || 'Divisao'}
+      >
+        {selectedDivisionPreview ? (
+            <div
+              style={{
+                display: 'grid',
+                gap: '16px',
+                gridTemplateColumns: 'minmax(0, 1.7fr) minmax(220px, 0.9fr)',
+                alignItems: 'start',
+                marginTop: '8px',
+              }}
+            >
+            <div
+              style={{
+                display: 'grid',
+                gap: '0',
+              }}
+            >
+              <div
+                style={{
+                  padding: '12px 0 16px',
+                  borderBottom: '1px solid rgba(255, 255, 255, 0.12)',
+                  textAlign: 'center',
+                  color: 'rgba(255, 244, 234, 0.92)',
+                  fontSize: '1.08rem',
+                  lineHeight: 1.55,
+                }}
+              >
+                {FRAGMENT_FIELDS.filter((field) => Number(selectedDivisionPreview.fragments?.[field.key] || 0) > 0).map((field) => (
+                  <div key={`division-fragment-${field.key}`}>
+                    {field.label} [{Number(selectedDivisionPreview.fragments?.[field.key] || 0)}]
+                  </div>
+                ))}
+              </div>
+
+              <div
+                style={{
+                  padding: '16px 0',
+                  borderBottom: '1px solid rgba(255, 255, 255, 0.12)',
+                  textAlign: 'center',
+                  lineHeight: 1.55,
+                  color: 'rgba(255, 244, 234, 0.92)',
+                  fontSize: '1.08rem',
+                }}
+              >
+                {selectedDivisionPreview.passive}
+              </div>
+
+              <div
+                style={{
+                  padding: '16px 0',
+                  borderBottom: '1px solid rgba(255, 255, 255, 0.12)',
+                  lineHeight: 1.55,
+                  color: 'rgba(255, 244, 234, 0.92)',
+                  fontSize: '1.04rem',
+                }}
+              >
+                {(selectedDivisionPreview.cards || []).map((card) => (
+                  <p key={`division-detail-card-${card.id}`} style={{ margin: '0 0 12px' }}>
+                    <strong style={{ color: '#fff7ef' }}>{card.name}:</strong> {card.effect}
+                  </p>
+                ))}
+              </div>
+
+              <div
+                style={{
+                  padding: '16px 0 6px',
+                  textAlign: 'center',
+                  color: 'rgba(255, 244, 234, 0.92)',
+                  fontSize: '1.08rem',
+                }}
+              >
+                Possui <strong style={{ color: '#fff7ef' }}>{selectedDivisionPreview.imoCardSlots} carta de Imo</strong>.
+              </div>
+            </div>
+
+            <div className="stack-gap" style={{ gap: '12px' }}>
+              <img
+                alt={selectedDivisionPreview.name}
+                src={resolveDivisionImageUrl(selectedDivisionPreview)}
+                style={{
+                  width: '100%',
+                  border: '1px solid rgba(255, 255, 255, 0.14)',
+                  borderRadius: '18px',
+                  objectFit: 'cover',
+                }}
+              />
+              <Button
+                onClick={() => {
+                  setCharacterForm((current) => applyDivisionSelection(current, selectedDivisionPreview));
+                  setSelectedDivisionPreview(null);
+                }}
+                type="button"
+                variant={characterForm.divisionId === selectedDivisionPreview.id ? 'primary' : 'secondary'}
+              >
+                {characterForm.divisionId === selectedDivisionPreview.id ? 'Divisao selecionada' : 'Selecionar divisao'}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
+        cancelLabel={null}
+        confirmLabel="Fechar"
+        description=""
+        onClose={() => setSelectedCatalogCardPreview(null)}
+        onConfirm={() => setSelectedCatalogCardPreview(null)}
+        open={Boolean(selectedCatalogCardPreview)}
+        title={selectedCatalogCardPreview?.name || 'Carta'}
+      >
+        {selectedCatalogCardPreview ? (
+          <div
+            style={{
+              display: 'grid',
+              gap: '16px',
+              gridTemplateColumns: 'minmax(0, 1.5fr) minmax(220px, 0.9fr)',
+              alignItems: 'start',
+              marginTop: '8px',
+            }}
+          >
+            <div
+              style={{
+                display: 'grid',
+                gap: '0',
+              }}
+            >
+              <div
+                style={{
+                  padding: '12px 0 16px',
+                  borderBottom: '1px solid rgba(255, 255, 255, 0.12)',
+                  textAlign: 'center',
+                  color: 'rgba(255, 244, 234, 0.92)',
+                  fontSize: '1.08rem',
+                  lineHeight: 1.55,
+                }}
+              >
+                <div>{selectedCatalogCardPreview.previewCategory}</div>
+                {selectedCatalogCardPreview.previewDivisionName ? (
+                  <div style={{ marginTop: '4px' }}>{selectedCatalogCardPreview.previewDivisionName}</div>
+                ) : null}
+              </div>
+
+              <div
+                style={{
+                  padding: '16px 0',
+                  borderBottom: '1px solid rgba(255, 255, 255, 0.12)',
+                  textAlign: 'center',
+                  lineHeight: 1.55,
+                  color: 'rgba(255, 244, 234, 0.92)',
+                  fontSize: '1.08rem',
+                }}
+              >
+                <div>
+                  Custo: <strong style={{ color: '#fff7ef' }}>{selectedCatalogCardPreview.previewCost} de Imo</strong>
+                </div>
+                {selectedCatalogCardPreview.actionSlot ? (
+                  <div>
+                    Uso: <strong style={{ color: '#fff7ef' }}>{formatActionSlotLabel(selectedCatalogCardPreview.actionSlot)}</strong>
+                  </div>
+                ) : null}
+                {typeof selectedCatalogCardPreview.canExile === 'boolean' ? (
+                  <div>
+                    Exilio: <strong style={{ color: '#fff7ef' }}>{selectedCatalogCardPreview.canExile ? 'Permitido' : 'Nao permitido'}</strong>
+                  </div>
+                ) : null}
+              </div>
+
+              <div
+                style={{
+                  padding: '16px 0 6px',
+                  lineHeight: 1.6,
+                  color: 'rgba(255, 244, 234, 0.92)',
+                  fontSize: '1.05rem',
+                }}
+              >
+                {selectedCatalogCardPreview.previewDescription}
+              </div>
+            </div>
+
+            <div className="stack-gap" style={{ gap: '12px' }}>
+              <img
+                alt={selectedCatalogCardPreview.name}
+                src={selectedCatalogCardPreview.previewImageSrc}
+                style={{
+                  width: '100%',
+                  border: '1px solid rgba(255, 255, 255, 0.14)',
+                  borderRadius: '18px',
+                  objectFit: 'cover',
+                }}
+              />
+            </div>
+          </div>
+        ) : null}
+      </Modal>
     </section>
   );
 }
